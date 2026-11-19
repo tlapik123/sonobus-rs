@@ -73,7 +73,34 @@ adb logcat -s sonobus AndroidRuntime     # Rust logs under the "sonobus" tag
   the host's device id and relay, and asks before joining. *Join* > *Invite link* takes a pasted
   link too.
 
-## Manual test checklist (real phone; nothing below was run on a device yet)
+## Debugging on a phone
+
+```sh
+adb logcat -c                                          # clear old logs
+adb logcat -s sonobus AndroidRuntime                   # live: Rust logs + Java crashes
+adb logcat -d -v threadtime > .locki/tmp/logcat.txt    # full dump after reproducing
+adb shell getprop ro.build.version.release             # Android version
+adb shell getprop ro.product.model                     # phone model
+# can the phone reach a connection server at all? (bypasses the app)
+adb shell 'for p in 10998 10999; do echo "port $p:"; nc -w 5 aoo.sonobus.net $p </dev/null; echo "exit=$?"; done'
+```
+
+The public server accepts TCP on 10998, refuses 10999 and does not answer ping. A failed
+connect shows the address it tried: `Connect failed: <ip>:<port>: ...`.
+
+Found on the first phone run (Android 11, 2026-11-19), both fixed:
+
+- `audio device error: device aaudio:-1 not found`: cpal's AAudio default device has the id
+  `aaudio:-1` but is not in `devices()`, so the lookup by id missed it. `find()` in
+  `crates/sonobus-audio/src/device.rs` now falls back to the host's default devices.
+- `Connect failed: connection refused (os error 111)` to `aoo.sonobus.net`: host and port were
+  separate fields and a stale 10999 stayed next to the new host. The connect page now has one
+  `host[:port]` field as upstream, port 10998 unless given.
+
+## Manual test checklist (real phone)
+
+Run so far, on one Android 11 phone: install and start, audio with the default devices, joining
+a group on `aoo.sonobus.net`. Nothing else below was run on a device yet.
 
 Setup: phone with Android 10+ and a desktop running `sonobus` on the same Wi-Fi.
 

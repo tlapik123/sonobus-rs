@@ -4,7 +4,7 @@ State on 2026-11-19. Decisions behind the "not planned" items are in `docs/adr/`
 
 ## Never verified outside the development sandbox
 
-- The Android APK has never been installed on a device. Checklist: `android/README.md`.
+- The Android APK ran on one Android 11 phone: it starts, audio works with the default devices and it joins a group on `aoo.sonobus.net`. The rest of the checklist in `android/README.md`, including sound sharing, was not run.
 - Real audio devices (tests use simulated ones).
 - A real stock SonoBus client talking to ours. Interop is tested against the upstream AOO C++ code only.
 - Any real network: all tests run on one machine; n0 relays were never contacted.
