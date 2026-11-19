@@ -1,0 +1,26 @@
+[package]
+name = "sonobus-plugin"
+description = "SonoBus as a CLAP/VST3 plugin"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[lib]
+# cdylib: the plugin binary (bundled by bundle.sh); lib: for the tests
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# nice-plug (ISC): the maintained fork of NIH-plug. VST3 through the `vst3` crate (MIT OR Apache-2.0
+# bindings to Steinberg's MIT-licensed VST3 SDK), CLAP through clap-sys (MIT OR Apache-2.0).
+nice-plug = { version = "0.4.2", default-features = false, features = ["editor", "vst3"] }
+# egui 0.37 through baseview (OpenGL), the same egui as the app's eframe 0.37.
+nice-plug-egui = "0.6.0"
+egui = { version = "0.37.0", default-features = false }
+# the app's controller (hosted mode) and UI, without its desktop window toolkit
+sonobus-app = { path = "../sonobus-app", default-features = false }
+sonobus-core = { path = "../sonobus-core" }
+sonobus-engine = { path = "../sonobus-engine" }
+
+[dev-dependencies]
+aoo = { path = "../aoo" }
+egui_kittest = "0.37.0"

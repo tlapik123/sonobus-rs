@@ -1,0 +1,25 @@
+[package]
+name = "sonobus-server"
+description = "Self-hostable SonoBus rendezvous server: legacy AOO (1.7.x clients) and sonobus/rdv/1 in one process"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "sonobus-server"
+path = "src/main.rs"
+
+[features]
+# `--relay-http`: an iroh relay (plain http) in the same process. Off by default; see README.
+relay = ["dep:iroh-relay", "dep:tokio"]
+
+[dependencies]
+aoo = { path = "../aoo" }
+sonobus-net = { path = "../sonobus-net" }
+# Same versions sonobus-net links (dev-dependency there); only with the `relay` feature.
+iroh-relay = { version = "=1.4.1", optional = true, default-features = false, features = ["server"] }
+tokio = { version = "1.54.1", optional = true, default-features = false, features = ["rt", "sync"] }
+
+[target.'cfg(unix)'.dependencies]
+# sigwait for SIGINT/SIGTERM/SIGUSR1 (already in the tree through iroh/tokio)
+libc = "0.2"

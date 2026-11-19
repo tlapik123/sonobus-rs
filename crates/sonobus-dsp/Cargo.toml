@@ -1,0 +1,8 @@
+[package]
+name = "sonobus-dsp"
+description = "DSP blocks of SonoBus 1.7.2: channel-group effects, reverbs, monitor delay, metronome"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]

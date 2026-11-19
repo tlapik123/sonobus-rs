@@ -1,0 +1,24 @@
+[package]
+name = "sonobus-files"
+description = "Audio file recording (WAV/FLAC/OGG Vorbis) and streaming playback for the SonoBus engine"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+# Pure-Rust FLAC encoder (Apache-2.0).
+flacenc = { version = "0.5.1", default-features = false }
+rtrb = "0.4.1"
+# FFT resampler for file playback at the device rate (MIT OR Apache-2.0).
+rubato = { version = "5.1.0", default-features = false, features = ["fft_resampler"] }
+# Pure-Rust decoders (MPL-2.0): what JUCE's basic formats give upstream (wav, aiff, flac, ogg, mp3)
+# plus m4a/caf, which upstream only reads on Apple platforms.
+symphonia = { version = "0.6.1", default-features = false, features = [
+    "wav", "aiff", "pcm", "flac", "ogg", "vorbis", "mp3", "isomp4", "aac", "alac", "caf", "id3v1", "id3v2",
+] }
+# libvorbis (aoTuV) + libogg, vendored C built with `cc` (BSD-3-Clause); needs a C compiler for the target.
+vorbis_rs = { version = "0.5.6", default-features = false }
+
+[features]
+# Failure injection for other crates' tests (`testing::fail_writes`); never in a release build.
+test-hooks = []

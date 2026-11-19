@@ -1,0 +1,51 @@
+[package]
+name = "sonobus-app"
+description = "SonoBus desktop application: egui UI over the engine, settings, CLI and links"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[[bin]]
+name = "sonobus"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+# The desktop window (eframe/winit). Off for the plugin, which draws the same UI through its
+# host's window (nice-plug-egui).
+desktop = ["dep:eframe"]
+
+[dependencies]
+aoo = { path = "../aoo" }
+sonobus-audio = { path = "../sonobus-audio" }
+sonobus-core = { path = "../sonobus-core" }
+sonobus-dsp = { path = "../sonobus-dsp" }
+sonobus-engine = { path = "../sonobus-engine" }
+# the UI's toolkit (eframe re-exports this same egui)
+egui = { version = "0.37.0", default-features = false, features = ["default_fonts"] }
+# glow (OpenGL) renderer: runs on Mesa llvmpipe under Xvfb and on old GPUs; no wgpu/Vulkan needed.
+eframe = { version = "0.37.0", optional = true, default-features = false, features = [
+    "accesskit", "clipboard", "default_fonts", "glow", "links", "system_fonts", "wayland", "x11",
+] }
+if-addrs = "0.15.0"
+sonobus-files = { path = "../sonobus-files" }
+# invite links, rendezvous addresses, identity keys (already in the tree through the engine)
+sonobus-net = { path = "../sonobus-net" }
+# QR codes of invite links (MIT OR Apache-2.0; no default features: no image/svg, no dependencies)
+qrcode = { version = "0.14.1", default-features = false }
+# OS locale on Windows/macOS/Android (MIT OR Apache-2.0; no dependencies but libc on Android)
+sys-locale = "0.3.2"
+
+[target.'cfg(unix)'.dependencies]
+# localtime_r for recording names (already in the tree through cpal/alsa)
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies]
+# SystemTimeToTzSpecificLocalTime for recording names (already in the tree through winit/arboard)
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Time"] }
+
+[dev-dependencies]
+egui_kittest = "0.37.0"
+# inflates the TouchOSC template in tests/osc.rs (already in the tree through png)
+miniz_oxide = "0.8.9"

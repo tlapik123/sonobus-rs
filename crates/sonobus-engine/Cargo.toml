@@ -1,0 +1,30 @@
+[package]
+name = "sonobus-engine"
+description = "SonoBus session and audio engine: peers, jitter buffers, mixer and effects signal flow"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+aoo = { path = "../aoo" }
+rtrb = "0.4.1"
+# socket buffer sizes (std cannot set SO_SNDBUF/SO_RCVBUF)
+socket2 = "0.6.5"
+sonobus-core = { path = "../sonobus-core" }
+sonobus-dsp = { path = "../sonobus-dsp" }
+sonobus-files = { path = "../sonobus-files" }
+# Protocol v2 sessions (iroh/QUIC, tokio on its own thread); the `modern` feature.
+sonobus-net = { path = "../sonobus-net", optional = true }
+
+[features]
+default = ["modern"]
+# Protocol v2 sessions next to the legacy protocol. Off: no tokio/iroh in the build.
+modern = ["dep:sonobus-net"]
+
+[dev-dependencies]
+# the recording failure test injects a full disk
+sonobus-files = { path = "../sonobus-files", features = ["test-hooks"] }
+
+[[example]]
+name = "headless"
+required-features = ["modern"]

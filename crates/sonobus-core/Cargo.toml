@@ -1,0 +1,9 @@
+[package]
+name = "sonobus-core"
+description = "SonoBus application-level data formats (JUCE ValueTree binary, channel layouts)"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+aoo = { path = "../aoo" }

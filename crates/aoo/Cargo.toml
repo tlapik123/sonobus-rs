@@ -1,0 +1,16 @@
+[package]
+name = "aoo"
+description = "AOO (audio over OSC) protocol as spoken by SonoBus 1.7.x"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+md-5 = "0.11.0"
+# libopus multistream FFI; links the system libopus unless `opus-bundled` is on.
+opusic-sys = { version = "0.7.7", default-features = false }
+rtrb = "0.4.1"
+
+[features]
+# Build libopus 1.6.1 from source (needs cmake; for Android/Windows cross builds).
+opus-bundled = ["opusic-sys/bundled"]

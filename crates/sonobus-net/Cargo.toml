@@ -1,0 +1,34 @@
+[package]
+name = "sonobus-net"
+description = "SonoBus protocol v2 over iroh (QUIC): wire codecs, authentication, network runtime"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+# Codecs, time DLL and resampler shared with the legacy streams.
+aoo = { path = "../aoo" }
+bytes = "1.12.2"
+getrandom = "0.4.3"
+hkdf = "0.13.0"
+hmac = "0.13.0"
+rtrb = "0.4.1"
+iroh = { version = "=1.4.1", default-features = false, features = ["tls-ring"] }
+sha2 = "0.11.1"
+# Pre-release, but the only spake2 built on curve25519-dalek 5 / sha2 0.11 (what iroh already
+# links); 0.4.0 would add a second copy of the whole curve/hash stack.
+spake2 = { version = "=0.5.0-pre.0", features = ["getrandom"] }
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "net", "sync", "time", "macros"] }
+# Both already linked through iroh (url/idna and the RustCrypto stack): no new code.
+icu_normalizer = { version = "2.4.0", default-features = false, features = ["compiled_data"] }
+zeroize = "1.9.2"
+# LAN session discovery (mDNS/DNS-SD with custom TXT records, browse events, goodbye packets on
+# unregister). Runs its own thread; no async runtime.
+mdns-sd = { version = "0.22.0", default-features = false }
+
+[dev-dependencies]
+# Already linked (spake2/curve25519): deterministic RNG for the PAKE known-answer test.
+rand_core = "0.10.1"
+# In-process relay server (plain http on 127.0.0.1) for the relay tests; same version iroh
+# links. Tests only: never contacts n0's relays.
+iroh-relay = { version = "=1.4.1", default-features = false, features = ["server"] }

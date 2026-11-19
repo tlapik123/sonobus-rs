@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<Root i="42" neg="-7" i64="81985529216486895" t="1" f="0" d="3.25"
+      fl="-0.5960000157356262" zero="0.0" big="1.234567e6" tiny="6.0e-6"
+      small="0.00006" third="0.3333333333333333" thou="1234.5678" hund="-192000.0"
+      e40="1.0e40" s="h&#233;llo &#8364; &#127925;" awk="q&quot;uo'te &amp; &lt;tag&gt; &#9; tab&#10;nl&#13;cr ;:,.!?#$%*+-=@[]&#94;_&#96;{|}~\/"
+      e="" base64:bin="4..Df.+C" arr="[Array]" v="" u="undefined" long="abababababababababababababababababababababababababababababababababababababababab">
+  <A x="1"/>
+  <B>
+    <C y="z"/>
+  </B>
+</Root>

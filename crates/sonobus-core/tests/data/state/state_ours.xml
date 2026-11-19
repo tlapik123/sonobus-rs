@@ -1,0 +1,251 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<SonoBusAoO>
+  <PARAM id="defPeerLevel" value="0.8999999761581421"/>
+  <PARAM id="defnetauto" value="3.0"/>
+  <PARAM id="defnetbuf" value="0.01999999955296516"/>
+  <PARAM id="defsendqual" value="7.0"/>
+  <PARAM id="dry" value="0.300000011920929"/>
+  <PARAM id="dynamicresampling" value="1.0"/>
+  <PARAM id="hearlatencytest" value="1.0"/>
+  <PARAM id="ingain" value="1.5"/>
+  <PARAM id="inmonmonopan" value="0.25"/>
+  <PARAM id="inmonpan1" value="-0.5"/>
+  <PARAM id="inmonpan2" value="0.75"/>
+  <PARAM id="inreverbdamp" value="0.2000000029802322"/>
+  <PARAM id="inreverblevel" value="0.6000000238418579"/>
+  <PARAM id="inreverbpredelay" value="10.0"/>
+  <PARAM id="inreverbsize" value="0.300000011920929"/>
+  <PARAM id="mainreverbdamp" value="0.6000000238418579"/>
+  <PARAM id="mainreverbenabled" value="1.0"/>
+  <PARAM id="mainreverbmodel" value="2.0"/>
+  <PARAM id="mainreverbpredelay" value="35.0"/>
+  <PARAM id="mainreverbsize" value="0.4000000059604645"/>
+  <PARAM id="mastinmute" value="1.0"/>
+  <PARAM id="mastmonsolo" value="1.0"/>
+  <PARAM id="mastrecvmute" value="1.0"/>
+  <PARAM id="mastsendmute" value="1.0"/>
+  <PARAM id="metenabled" value="1.0"/>
+  <PARAM id="metgain" value="0.699999988079071"/>
+  <PARAM id="metisrecorded" value="0.0"/>
+  <PARAM id="mettempo" value="120.0"/>
+  <PARAM id="nmainreverblevel" value="0.800000011920929"/>
+  <PARAM id="reconnectlast" value="1.0"/>
+  <PARAM id="sendchannels" value="2.0"/>
+  <PARAM id="sendfileaudio" value="1.0"/>
+  <PARAM id="sendmetaudio" value="1.0"/>
+  <PARAM id="sendsoundboardaudio" value="1.0"/>
+  <PARAM id="syncMetFile" value="1.0"/>
+  <PARAM id="syncMetHost" value="1.0"/>
+  <PARAM id="wet" value="1.200000047683716"/>
+  <RecentConnections>
+    <ServerConnectionInfo userName="alice" userPassword="pw&amp;&lt;&quot;1" groupName="Jam Group"
+                          groupPassword="secr&#233;t" serverHost="aoo.sonobus.net" serverPort="10998"
+                          timestamp="1700000000123" groupIsPublic="0"/>
+    <ServerConnectionInfo userName="bob" userPassword="" groupName="public1" groupPassword=""
+                          serverHost="example.org" serverPort="10999" timestamp="1600000000000"
+                          groupIsPublic="1"/>
+  </RecentConnections>
+  <ExtraState UseUdpPort="11001" ChangeQualForAll="1" ChangeRecvQualForAll="1"
+              DefaultRecordingOptions="11" DefaultRecordingFormat="3" DefaultRecordingBitsPerSample="24"
+              RecordSelfPreFx="0" RecordSelfSilenceWhenMuted="0" RecordFinishOpen="0"
+              DefaultRecordDir="/home/u/Music/SonoBus" DefaultRecordDirURL="file:///home/u/Music/SonoBus"
+              LastBrowseDir="/home/u/Music" SliderSnapToMouse="0" DisableKeyShortcuts="1"
+              PeerDisplayMode="1" lastChatWidth="300" lastChatShown="1" chatFontSizeOffset="-1"
+              chatFixedWidthFont="1" lastSoundboardWidth="280" lastSoundboardShown="1"
+              linkMonDelayTimes="0" lastUsername="Zo&#235;" langOverrideCode="de"
+              useUnivFont="1" lastWindowWidth="1024" lastWindowHeight="768"
+              autoDropRateThreshNew="2.5" reconnServLoss="0">
+    <VideoLinkInfo roomMode="0" showNames="0" screenShare="1" extraParams="&amp;quality=2"
+                   beDir="1" largeShare="1" pushViewMode="2"/>
+  </ExtraState>
+  <InputChannelGroups numChanGroups="2">
+    <ChannelGroup gain="1.25" chanstart="0" numchan="1" muted="1" span1="-0.800000011920929"
+                  span2="0.8999999761581421" monreverbsend="0.2000000029802322"
+                  inreverbsend="0.1000000014901161" monitorlev="0.800000011920929"
+                  mondeststart="2" mondestchans="2" pandeststart="0" pandestchans="2"
+                  sendmainmix="0" invertpolarity="1" name="Vocal">
+      <StereoPanners>
+        <Panner pan="-0.25"/>
+      </StereoPanners>
+      <CompressorState enabled="1" threshold="-20.0" ratio="3.0" attack="5.0" release="100.0"
+                       makeupgain="6.0" automakeup="0"/>
+      <ExpanderState enabled="1" threshold="-50.0" ratio="4.0" attack="2.0" release="150.0"
+                     makeupgain="0.0" automakeup="1"/>
+      <LimiterState enabled="0" threshold="-2.0" ratio="5.0" attack="0.01999999955296516"
+                    release="120.0" makeupgain="0.0" automakeup="1"/>
+      <ParametricEqState enabled="1" lsfreq="80.0" lsgain="2.0" hsfreq="8000.0" hsgain="-1.0"
+                         p1gain="-3.0" p1freq="200.0" p1q="2.5" p2gain="4.0" p2freq="1000.0"
+                         p2q="6.0"/>
+      <MonitorDelayState enabled="1" delaytimems="25.0"/>
+    </ChannelGroup>
+    <ChannelGroup gain="1.0" chanstart="1" numchan="2" muted="0" span1="-1.0" span2="1.0"
+                  monreverbsend="0.0" inreverbsend="0.0" monitorlev="1.0" mondeststart="0"
+                  mondestchans="2" pandeststart="0" pandestchans="2" sendmainmix="1"
+                  invertpolarity="0" name="Keys">
+      <StereoPanners>
+        <Panner pan="0.1000000014901161"/>
+        <Panner pan="-0.1000000014901161"/>
+      </StereoPanners>
+      <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                       makeupgain="4.0" automakeup="1"/>
+      <ExpanderState enabled="0" threshold="-60.0" ratio="2.0" attack="1.0" release="200.0"
+                     makeupgain="0.0" automakeup="1"/>
+      <LimiterState enabled="1" threshold="-1.0" ratio="4.0" attack="0.009999999776482582"
+                    release="100.0" makeupgain="0.0" automakeup="1"/>
+      <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                         p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                         p2q="4.0"/>
+      <MonitorDelayState enabled="0" delaytimems="0.0"/>
+    </ChannelGroup>
+  </InputChannelGroups>
+  <ExtraChannelGroups>
+    <ChannelGroup gain="0.5" chanstart="0" numchan="2" muted="0" span1="-1.0" span2="1.0"
+                  monreverbsend="0.0" inreverbsend="0.0" monitorlev="0.6000000238418579"
+                  mondeststart="0" mondestchans="2" pandeststart="0" pandestchans="2"
+                  sendmainmix="1" invertpolarity="0" name="File Playback" chgID="filepb">
+      <StereoPanners>
+        <Panner pan="0.0"/>
+        <Panner pan="0.0"/>
+      </StereoPanners>
+      <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                       makeupgain="0.0" automakeup="1"/>
+      <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                     makeupgain="0.0" automakeup="1"/>
+      <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                    makeupgain="0.0" automakeup="1"/>
+      <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                         p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                         p2q="4.0"/>
+      <MonitorDelayState enabled="0" delaytimems="0.0"/>
+    </ChannelGroup>
+    <ChannelGroup gain="1.0" chanstart="0" numchan="1" muted="0" span1="-1.0" span2="1.0"
+                  monreverbsend="0.0" inreverbsend="0.0" monitorlev="0.4000000059604645"
+                  mondeststart="2" mondestchans="2" pandeststart="0" pandestchans="2"
+                  sendmainmix="1" invertpolarity="0" name="Metronome" chgID="met">
+      <StereoPanners>
+        <Panner pan="0.0"/>
+      </StereoPanners>
+      <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                       makeupgain="0.0" automakeup="1"/>
+      <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                     makeupgain="0.0" automakeup="1"/>
+      <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                    makeupgain="0.0" automakeup="1"/>
+      <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                         p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                         p2q="4.0"/>
+      <MonitorDelayState enabled="0" delaytimems="0.0"/>
+    </ChannelGroup>
+    <ChannelGroup gain="0.8999999761581421" chanstart="0" numchan="2" muted="0"
+                  span1="-1.0" span2="1.0" monreverbsend="0.0" inreverbsend="0.0"
+                  monitorlev="1.0" mondeststart="0" mondestchans="2" pandeststart="0"
+                  pandestchans="2" sendmainmix="1" invertpolarity="0" name="Soundboard"
+                  chgID="soundboard">
+      <StereoPanners>
+        <Panner pan="0.0"/>
+        <Panner pan="0.0"/>
+      </StereoPanners>
+      <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                       makeupgain="0.0" automakeup="1"/>
+      <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                     makeupgain="0.0" automakeup="1"/>
+      <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                    makeupgain="0.0" automakeup="1"/>
+      <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                         p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                         p2q="4.0"/>
+      <MonitorDelayState enabled="1" delaytimems="10.0"/>
+    </ChannelGroup>
+  </ExtraChannelGroups>
+  <PeerStateCacheMap>
+    <PeerStateCache name="carol" netbuf="25.5" netbufauto="1" sendformat="9" numChanGroups="2"
+                    level="0.75" orderpriority="3" numMultiChanGroups="1" modifiedChanGroups="1">
+      <ChannelGroups>
+        <ChannelGroup gain="1.100000023841858" chanstart="0" numchan="1" muted="0"
+                      span1="-1.0" span2="1.0" monreverbsend="0.0" inreverbsend="0.0"
+                      monitorlev="1.0" mondeststart="0" mondestchans="2" pandeststart="0"
+                      pandestchans="2" sendmainmix="1" invertpolarity="0" name="carol mic">
+          <StereoPanners>
+            <Panner pan="0.0"/>
+          </StereoPanners>
+          <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                           makeupgain="0.0" automakeup="1"/>
+          <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                         makeupgain="0.0" automakeup="1"/>
+          <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                        makeupgain="0.0" automakeup="1"/>
+          <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                             p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                             p2q="4.0"/>
+          <MonitorDelayState enabled="0" delaytimems="0.0"/>
+        </ChannelGroup>
+        <ChannelGroup gain="1.0" chanstart="1" numchan="1" muted="1" span1="-1.0" span2="1.0"
+                      monreverbsend="0.0" inreverbsend="0.0" monitorlev="1.0" mondeststart="0"
+                      mondestchans="2" pandeststart="0" pandestchans="2" sendmainmix="1"
+                      invertpolarity="0" name="">
+          <StereoPanners>
+            <Panner pan="0.0"/>
+          </StereoPanners>
+          <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                           makeupgain="0.0" automakeup="1"/>
+          <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                         makeupgain="0.0" automakeup="1"/>
+          <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                        makeupgain="0.0" automakeup="1"/>
+          <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                             p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                             p2q="4.0"/>
+          <MonitorDelayState enabled="0" delaytimems="0.0"/>
+        </ChannelGroup>
+      </ChannelGroups>
+      <MultiChannelGroups>
+        <ChannelGroup gain="1.0" chanstart="0" numchan="4" muted="0" span1="-1.0" span2="1.0"
+                      monreverbsend="0.0" inreverbsend="0.0" monitorlev="1.0" mondeststart="0"
+                      mondestchans="2" pandeststart="0" pandestchans="2" sendmainmix="1"
+                      invertpolarity="0" name="multi">
+          <StereoPanners>
+            <Panner pan="0.1000000014901161"/>
+            <Panner pan="0.2000000029802322"/>
+            <Panner pan="0.300000011920929"/>
+            <Panner pan="0.4000000059604645"/>
+          </StereoPanners>
+          <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                           makeupgain="0.0" automakeup="1"/>
+          <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                         makeupgain="0.0" automakeup="1"/>
+          <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                        makeupgain="0.0" automakeup="1"/>
+          <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                             p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                             p2q="4.0"/>
+          <MonitorDelayState enabled="0" delaytimems="0.0"/>
+        </ChannelGroup>
+      </MultiChannelGroups>
+    </PeerStateCache>
+    <PeerStateCache name="dave" netbuf="10.0" netbufauto="2" sendformat="4" numChanGroups="1"
+                    level="1.0" orderpriority="-1" numMultiChanGroups="0" modifiedChanGroups="0">
+      <ChannelGroups>
+        <ChannelGroup gain="1.0" chanstart="0" numchan="1" muted="0" span1="-1.0" span2="1.0"
+                      monreverbsend="0.0" inreverbsend="0.0" monitorlev="1.0" mondeststart="0"
+                      mondestchans="2" pandeststart="0" pandestchans="2" sendmainmix="1"
+                      invertpolarity="0" name="">
+          <StereoPanners>
+            <Panner pan="0.0"/>
+          </StereoPanners>
+          <CompressorState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                           makeupgain="0.0" automakeup="1"/>
+          <ExpanderState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                         makeupgain="0.0" automakeup="1"/>
+          <LimiterState enabled="0" threshold="-16.0" ratio="2.0" attack="10.0" release="80.0"
+                        makeupgain="0.0" automakeup="1"/>
+          <ParametricEqState enabled="0" lsfreq="60.0" lsgain="0.0" hsfreq="10000.0" hsgain="0.0"
+                             p1gain="0.0" p1freq="90.0" p1q="1.5" p2gain="0.0" p2freq="360.0"
+                             p2q="4.0"/>
+          <MonitorDelayState enabled="0" delaytimems="0.0"/>
+        </ChannelGroup>
+      </ChannelGroups>
+      <MultiChannelGroups/>
+    </PeerStateCache>
+  </PeerStateCacheMap>
+</SonoBusAoO>

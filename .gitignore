@@ -1,0 +1,10 @@
+target/
+# Android (SDK/NDK live outside the repository, see android/setup-toolchain.sh)
+android/.gradle/
+android/.kotlin/
+android/build/
+android/app/build/
+android/local.properties
+
+# devenv cache
+.devenv/

@@ -1,0 +1,19 @@
+[package]
+name = "sonobus-audio"
+description = "Audio device layer: platform devices bridged into one fixed-block duplex engine callback"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+[dependencies]
+cpal = "0.18.2"
+rtrb = "0.4.1"
+rubato = { version = "5.1.0", default-features = false }
+
+# Optional cpal backends. Default build: ALSA (Linux), WASAPI (Windows), CoreAudio (macOS),
+# AAudio (Android).
+[features]
+jack = ["cpal/jack"]
+pipewire = ["cpal/pipewire"]
+pulseaudio = ["cpal/pulseaudio"]
+asio = ["cpal/asio"]

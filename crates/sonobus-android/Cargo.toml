@@ -1,0 +1,25 @@
+[package]
+name = "sonobus-android"
+description = "SonoBus Android app: android_main, JNI glue to the Kotlin shell (android/), playback capture input"
+edition.workspace = true
+license.workspace = true
+version.workspace = true
+
+# Built by android/app/build.gradle.kts through cargo-ndk; on other targets only the JNI-free
+# parts compile (for tests).
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+sonobus-app = { path = "../sonobus-app" }
+
+[dev-dependencies]
+sonobus-audio = { path = "../sonobus-audio" }
+
+[target.'cfg(target_os = "android")'.dependencies]
+# libopus from source with the NDK (no system libopus on Android).
+aoo = { path = "../aoo", features = ["opus-bundled"] }
+android-activity = { version = "0.6.1", features = ["game-activity"] }
+eframe = { version = "0.37.0", default-features = false, features = ["android-game-activity", "glow"] }
+jni = "0.21.1"
+sonobus-engine = { path = "../sonobus-engine" }

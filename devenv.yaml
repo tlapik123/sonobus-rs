@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
+inputs:
+  # Stable release branch; the exact commit is in devenv.lock (`devenv update` moves it).
+  nixpkgs:
+    url: github:NixOS/nixpkgs/nixos-26.05
+  rust-overlay:
+    url: github:oxalica/rust-overlay
+    inputs:
+      nixpkgs:
+        follows: nixpkgs
+
+# The Android SDK/NDK are unfree and need their licence accepted.
+allow_unfree: true
+android_sdk:
+  accept_license: true

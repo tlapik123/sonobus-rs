@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<soundboards selected="1" hotkeysMuted="1" hotkeysAllowNumeric="0">
+  <soundboard name="Board A">
+    <samples>
+      <soundSample name="Applause" filePath="/home/u/a b.wav" fileURL="file:///home/u/a%20b.wav"
+                   endPlaybackBehavior="1" loop="1" buttonColour="16746496" hotkey="49"
+                   playbackBehaviour="1" buttonBehaviour="2" replayBehaviour="1"
+                   gain="0.800000011920929"/>
+      <soundSample name="Horn &amp; &lt;stuff&gt;" fileURL="https://example.org/h.wav"
+                   base64:fileURLBM="4.AHv.5C" endPlaybackBehavior="2" loop="0"
+                   buttonColour="2434341" hotkey="-1" playbackBehaviour="0" buttonBehaviour="0"
+                   replayBehaviour="0" gain="1.0"/>
+    </samples>
+  </soundboard>
+  <soundboard name="Board B">
+    <samples/>
+  </soundboard>
+</soundboards>
