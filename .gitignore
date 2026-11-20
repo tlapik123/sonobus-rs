@@ -6,9 +6,10 @@ android/build/
 android/app/build/
 android/local.properties
 
-# devenv cache
-.devenv/
-
+# devenv and direnv state
 .devenv*
+.direnv/
 devenv.local.nix
 devenv.local.yaml
+# written by devenv's Android module on shell entry
+/local.properties
