@@ -1,6 +1,8 @@
 //! Protocol v2 sessions over `sonobus_net` (iroh/QUIC): hosting (mesh or broadcast), joining by
 //! invite link, by a LAN-discovered session plus PIN/password, or by name plus password through
 //! a rendezvous server. The engine owns a [`Net`] only while such a session is active.
+//! A password/PIN/LAN/name joiner (or one with a mesh invite) learns from the host's WELCOME
+//! whether it reached a broadcast hub, and is then a listener exactly as by a broadcast invite.
 //!
 //! Audio: one shared [`TxStream`] (stream [`MAIN_STREAM`], two encodings: main and low) carries
 //! our send mix to every peer that subscribes: each block is encoded once per encoding and the
@@ -76,18 +78,13 @@
 //! late, as without sync; one without PLAYOUT (an older host, sync off) is unchanged.
 //! Latency Match / Receive Sync still set the listener's jitter buffer: a buffer above what the
 //! delay leaves makes it late, below it changes nothing audible.
-//! Whose PLAYOUT counts (`Session::playout_source`): a peer that declares itself host and is
-//! verified as the session's (the invite's host, when we joined a broadcast invite as listener;
-//! for password/PIN/LAN/name joins the endpoint our join learned the key from), while it is our
-//! only peer apart from those we admitted by password ourselves (a name-joined listener also
-//! admits later joiners). Re-checked every tick; when it stops counting, sync is off and the
-//! clock samples are dropped. The offset is used once [`CLOCK_SAMPLES`] samples at most
-//! [`CLOCK_MAX_AGE_MS`] old are in. Limit: password/PIN/LAN/name joins carry nothing that says
-//! "broadcast" (no wire field; the joiner keeps mode mesh), so such a joiner also accepts
-//! PLAYOUT from its key source in a mesh whenever every other peer joined through it (a
-//! two-member mesh, before its dials to the others complete, or when it admitted all the
-//! others). Whatever the case, a PLAYOUT only changes how we play its sender's own stream, by
-//! at most [`MAX_PLAYOUT_MS`], and makes us ping that sender; nobody else's audio.
+//! Whose PLAYOUT counts (`Session::playout_source`): only a broadcast listener's, and only
+//! from the host it joined (its key authority: the invite's host, or the hub a password, PIN,
+//! LAN or name join reached, whose WELCOME made us a listener). Mesh members ignore PLAYOUT.
+//! Re-checked every tick; when it stops counting, sync is off and the clock samples are
+//! dropped. The offset is used once [`CLOCK_SAMPLES`] samples at most [`CLOCK_MAX_AGE_MS`] old
+//! are in. A PLAYOUT only changes how we play its sender's own stream, by at most
+//! [`MAX_PLAYOUT_MS`], and makes us ping that sender; nobody else's audio.
 //!
 //! Not in modern sessions: the measured latency test (`Engine::start_latency_test` returns
 //! false; the latency estimate from RTT, buffers and codec is shown instead), legacy IP block
@@ -258,7 +255,9 @@ impl HostOptions {
 pub enum SessionRole {
     Host,
     Member,
-    /// Broadcast listener: receives the host only, sends nothing.
+    /// Broadcast listener: receives the host only, sends nothing. By a broadcast invite, or by
+    /// a password, PIN, LAN or name join (or a mesh invite) that reached a broadcast hub (until
+    /// its WELCOME says so, such a joiner shows as [`SessionRole::Member`] of a mesh).
     Listener,
 }
 
@@ -1001,25 +1000,12 @@ impl Session {
         }
     }
 
-    /// Peer `i` is our broadcast host, so its PLAYOUT counts: it declares itself host, it is
-    /// verified as the session's (we joined a broadcast invite as listener and it is the host
-    /// the invite named; or, for password, PIN, LAN and name joins, which cannot tell a hub
-    /// from a mesh member, it is the endpoint our join learned the key from), and it is our only
-    /// peer apart from those we admitted by password ourselves. A broadcast listener's peers
-    /// are the hub plus, after a name join, later joiners that came in through it; a mesh
-    /// member also has the members it met through the roster. Re-checked every tick. It steers
-    /// only how we play its own stream.
+    /// Peer `i` is our broadcast host, so its PLAYOUT counts: we are a broadcast listener
+    /// and it is the host we joined, our key authority (the host our invite named, or the hub
+    /// our password join reached). Re-checked every tick. It steers only how we play its own
+    /// stream.
     fn playout_source(&self, i: usize) -> bool {
-        let p = &self.peers[i].info;
-        let others = self.peers.iter().enumerate();
-        let alone = others.filter(|&(k, q)| k != i && !q.info.by_password).count() == 0;
-        alone
-            && p.role == Role::Host
-            && match self.role {
-                SessionRole::Listener => p.is_invite_host,
-                SessionRole::Member => !p.is_invite_host && self.net.authority() == Some(p.id),
-                SessionRole::Host => false,
-            }
+        self.role == SessionRole::Listener && self.net.authority() == Some(self.peers[i].info.id)
     }
 
     /// Listener: ping the host while it asks for sync, and steer the receive stream to its
@@ -1265,7 +1251,7 @@ impl Session {
                     self.remove_peer_at(h, i, false);
                     // the reasons a peer sends (`CloseReason`); local reasons never match
                     let reason = match reason.as_str() {
-                        r @ (END_REMOVED | END_BLOCKED) if host || self.peers.is_empty() => Some(r),
+                        r @ (END_REMOVED | END_BLOCKED | END_FULL) if host || self.peers.is_empty() => Some(r),
                         _ if self.role == SessionRole::Listener && host => Some(END_HOST_LEFT),
                         _ => None,
                     };
@@ -1294,6 +1280,17 @@ impl Session {
                 }
             }
             NetEvent::SessionKey(_) => h.session_event(SessionEvent::SessionKeyChanged),
+            // the host we joined through (password join, or a mesh invite) is a broadcast hub:
+            // a listener from now on, as by a broadcast invite
+            // (the transport refuses connections and dials nobody; it comes before Connected,
+            // so no peer has subscribed to our send stream)
+            NetEvent::JoinedBroadcast if self.role == SessionRole::Member => {
+                (self.mode, self.role) = (SessionMode::Broadcast, SessionRole::Listener);
+                if self.main.take().is_some() {
+                    h.tx.send(AudioCmd::Modern(LinkCmd::Main(None)));
+                }
+            }
+            NetEvent::JoinedBroadcast => {}
             NetEvent::JoinFailed { failed_total } => {
                 self.failed_joins = failed_total;
                 h.session_event(SessionEvent::PasswordJoinFailed { failed_total });

@@ -63,6 +63,7 @@ pub fn kind(e: &Event) -> String {
         Event::Control { .. } => "Control".into(),
         Event::Closed { conn, reason } => format!("Closed({conn}, {reason})"),
         Event::SessionKey(_) => "SessionKey".into(),
+        Event::JoinedBroadcast => "JoinedBroadcast".into(),
         Event::JoinFailed { .. } => "JoinFailed".into(),
         Event::PinInvalidated => "PinInvalidated".into(),
         Event::Throttled { .. } => "Throttled".into(),

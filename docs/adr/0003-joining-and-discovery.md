@@ -10,3 +10,4 @@ A Secure session can be joined by invite link or QR code (`sonobus2://join/...`,
 
 - The invite link is a secret. It is printed or stored only when the user asks, and never written to shared setup files, plugin projects or legacy share links.
 - Tests never contact n0 relays or any external host (`RelayChoice::None`), so the relayed path is unverified.
+- A joiner by password, PIN, LAN or name (or with a mesh invite) learns that the session is a broadcast from a trailing mode byte in the host's WELCOME (1 = broadcast, absent or 0 = mesh) and becomes a listener exactly as with a broadcast invite: no send stream, refuses all connections, leaves the rendezvous, serves no password joins. Only the first connection to the endpoint we joined through can switch us; the byte only restricts the joiner.

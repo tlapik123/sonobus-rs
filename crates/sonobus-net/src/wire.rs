@@ -868,6 +868,11 @@ pub struct Welcome {
     pub key: Option<[u8; 64]>,
     pub roster: Vec<PeerEntry>,
     pub formats: Vec<Format>,
+    /// The acceptor's session mode (trailing byte, sent only for [`SessionMode::Broadcast`]:
+    /// absent or 0 = mesh, 2..=255 refused; a peer from before this field ignores it). A
+    /// broadcast hub's WELCOME tells the joiner whose authority it is that it joins as a
+    /// listener.
+    pub mode: SessionMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1075,6 +1080,9 @@ impl Frame {
                 put_roster(out, &w.roster)?;
                 put_count(out, w.formats.len(), MAX_FORMATS)?;
                 w.formats.iter().try_for_each(|f| put_format(out, f))?;
+                if w.mode != SessionMode::Mesh {
+                    out.push(w.mode as u8);
+                }
             }
             Frame::Roster(r) => put_roster(out, r)?,
             Frame::Format(f) => put_format(out, f)?,
@@ -1149,11 +1157,17 @@ impl Frame {
                 let formats = (0..n)
                     .map(|_| get_format(&mut r))
                     .collect::<Result<_, _>>()?;
+                let mode = match r.0.first() {
+                    None | Some(0) => SessionMode::Mesh,
+                    Some(1) => SessionMode::Broadcast,
+                    Some(_) => return Err(Error::Invalid),
+                };
                 Frame::Welcome(Welcome {
                     mac,
                     key,
                     roster,
                     formats,
+                    mode,
                 })
             }
             T_ROSTER => Frame::Roster(get_roster(&mut r)?),
@@ -1643,12 +1657,14 @@ pub(crate) mod tests {
                 key: Some([5; 64]),
                 roster: vec![entry()],
                 formats: vec![format()],
+                mode: SessionMode::Broadcast,
             }),
             Frame::Welcome(Welcome {
                 mac: [4; 32],
                 key: None,
                 roster: vec![],
                 formats: vec![],
+                mode: SessionMode::Mesh,
             }),
             Frame::Roster(vec![
                 entry(),
@@ -1791,6 +1807,7 @@ pub(crate) mod tests {
                 key: None,
                 roster: vec![],
                 formats: vec![],
+                mode: SessionMode::Mesh,
             })
             .encode(o)
             .unwrap()
@@ -1799,6 +1816,26 @@ pub(crate) mod tests {
             (b.len(), &b[..3], &b[35..]),
             (38, &[35, 0, T_WELCOME][..], &[0, 0, 0][..])
         );
+        // a broadcast hub's WELCOME: one trailing mode byte; a WELCOME without it is a mesh
+        let welcome = |mode| Welcome {
+            mac: [4; 32],
+            key: None,
+            roster: vec![],
+            formats: vec![],
+            mode,
+        };
+        let w = enc(|o| Frame::Welcome(welcome(SessionMode::Broadcast)).encode(o).unwrap());
+        assert_eq!((&w[..3], &w[3..35], &w[35..]), (&[36, 0, T_WELCOME][..], &[4; 32][..], &[0, 0, 0, 1][..]));
+        assert_eq!(decode_frame(&b), Ok((Frame::Welcome(welcome(SessionMode::Mesh)), 38)));
+        // a later version's longer body decodes; an unknown mode is refused, not read as mesh
+        let mut long = w.clone();
+        long.extend_from_slice(&[0xee; 2]);
+        long[0] = 38;
+        assert_eq!(decode_frame(&long), Ok((Frame::Welcome(welcome(SessionMode::Broadcast)), 41)));
+        assert!(Frame::decode_body(T_WELCOME, &[&w[3..38], [2].as_slice()].concat()).is_err());
+        // an explicit mesh byte (a later version with more after it) is a mesh
+        let mesh = Frame::decode_body(T_WELCOME, &[&w[3..38], [0, 0xee].as_slice()].concat());
+        assert_eq!(mesh, Ok(Frame::Welcome(welcome(SessionMode::Mesh))));
         assert_eq!(
             enc(|o| Frame::AppOsc(vec![1, 2]).encode(o).unwrap()),
             [2, 0, T_APP_OSC, 1, 2]
@@ -1868,8 +1905,9 @@ pub(crate) mod tests {
                         };
                         vec![len(bare) - 1, len(no_relay)]
                     }
-                    // REKEY's evicted id is optional too
+                    // REKEY's evicted id is optional too, and WELCOME's mode
                     Frame::Rekey(r) if r.evicted.is_some() => vec![36],
+                    Frame::Welcome(w) if w.mode != SessionMode::Mesh => vec![b.len() - 4],
                     _ => vec![],
                 };
                 for n in 0..b.len() - 3 {

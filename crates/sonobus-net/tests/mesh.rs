@@ -476,6 +476,7 @@ fn handshake_overlapping_a_rotation_must_prove_the_new_key() {
             key: None,
             roster: vec![],
             formats: vec![],
+            mode: sonobus_net::wire::SessionMode::Mesh,
         };
         wf(&mut send, &Frame::Welcome(w)).await.unwrap();
         wait_async(&q, |e| matches!(e, Event::Connected { .. }).then_some(())).await;
@@ -746,4 +747,49 @@ fn password_join_overlapping_a_rotation_gets_the_current_key() {
         assert!(k == k2, "WELCOME wrapped the key from before the rotation");
         auth::key_verify(&k2, Side::Acceptor, &e, &qa.id, &me, &w.mac).unwrap();
     });
+}
+
+/// A mesh member dialing a peer that is not its key authority (a roster dial) ignores a
+/// WELCOME that says broadcast: it stays a mesh member and still accepts connections. Only the
+/// endpoint we joined through can make us a listener.
+#[test]
+fn broadcast_welcome_from_a_roster_peer_is_ignored() {
+    use sonobus_net::auth::Side;
+    use sonobus_net::wire::SessionMode;
+    let q = simple(Config {
+        host: Some([9; 32]),
+        ..cfg("q", Some(K), None)
+    });
+    block_on(async {
+        let ep = raw_endpoint(lo(2)).await;
+        let me = *ep.id().as_bytes();
+        let to = sonobus_net::PeerAddr {
+            id: me,
+            addrs: ep.bound_sockets(),
+            relay: None,
+        };
+        q.connect(to, Join::Key);
+        let conn = ep.accept().await.unwrap().accept().unwrap().await.unwrap();
+        let (mut send, _recv) = conn.accept_bi().await.unwrap();
+        let e = exporter(&conn, &auth::session_tag(SESSION));
+        let w = sonobus_net::wire::Welcome {
+            mac: auth::key_proof(&K, Side::Acceptor, &e, &me, &q.local_addr().id),
+            key: None,
+            roster: vec![],
+            formats: vec![],
+            mode: SessionMode::Broadcast,
+        };
+        wf(&mut send, &Frame::Welcome(w)).await.unwrap();
+        let mut seen = vec![];
+        wait_async(&q, |e| {
+            seen.push(kind(&e));
+            matches!(e, Event::Connected { .. }).then_some(())
+        })
+        .await;
+        assert!(!seen.iter().any(|s| s == "JoinedBroadcast"), "{seen:?}");
+        conn.close(0u32.into(), b"");
+    });
+    let p = simple(cfg("p", Some(K), None));
+    p.connect(q.local_addr(), Join::Key);
+    connected(&p);
 }

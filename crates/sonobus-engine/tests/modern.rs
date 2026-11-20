@@ -11,7 +11,8 @@ use std::net::Ipv4Addr;
 use common::*;
 use sonobus_dsp::gain::DEFAULT_CENTER_PAN_LAW as LAW;
 use sonobus_engine::modern::{
-    HostOptions, LanScope, NetOptions, RelayChoice, SessionEvent, SessionMode, SessionRole,
+    AuthKind, DiscoveredSession, HostOptions, LanScope, NetOptions, PeerAddr, RelayChoice,
+    SessionEvent, SessionMode, SessionRole,
 };
 use sonobus_core::files::{SoundSample, Soundboard, Soundboards};
 use sonobus_engine::{Connection, Event, Notification};
@@ -302,6 +303,8 @@ fn join_by_name_through_the_hosts_rendezvous() {
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     assert!(hears(&mut [&mut a, &mut b], 0, 0, 660.0, CENTRE));
     assert_eq!(b.snap().peers[0].user, "host");
+    let st = b.e.session_status().unwrap();
+    assert_eq!((st.mode, st.role), (SessionMode::Mesh, SessionRole::Member));
 }
 
 #[test]
@@ -371,6 +374,91 @@ fn broadcast_host_three_listeners_encode_once_and_isolation() {
     // the host leaves: the session is over for its listeners
     nodes[0].e.leave_session();
     assert!(wait_event(nodes, 1, 5.0, |e| matches!(e, SessionEvent::Ended { .. })).is_some());
+}
+
+/// Broadcast isolation for listeners that join by name and password (not by invite). L1 joins
+/// by name; L2 first aims a password join straight at L1 (as a LAN join, or a rendezvous
+/// listing that names L1, would): L1 is a listener and serves no joins, so that fails. L2 then
+/// joins by name the ordinary way. Each feeds its own tone: neither ever hears the other or has
+/// it as a peer, both hear the host, neither runs an encoder.
+#[test]
+fn password_joined_broadcast_listeners_stay_isolated() {
+    let _serial = serial();
+    let (mut h, mut l1, mut l2) = (Node::mono(440.0), Node::mono(550.0), Node::mono(660.0));
+    let mut o = HostOptions::new("radio pw");
+    o.mode = SessionMode::Broadcast;
+    o.password = Some("open sesame".into());
+    o.rendezvous = true;
+    let server = h.e.host_session(&net("host"), o).unwrap().rendezvous.unwrap();
+    l1.e.join_by_name(&net("l1"), server.clone(), "radio pw", "open sesame").unwrap();
+    assert!(run_until(&mut [&mut h, &mut l1], 15.0, |n| {
+        n[1].snap().peers.first().is_some_and(|p| p.recv_active)
+    }));
+    let st = l1.e.session_status().unwrap();
+    let to = DiscoveredSession {
+        session: "radio pw".into(),
+        auth: AuthKind::Password,
+        host: PeerAddr {
+            id: st.endpoint_id,
+            addrs: st.addrs.clone(),
+            relay: None,
+        },
+    };
+    l2.e.join_lan(&net("l2"), &to, "open sesame").unwrap();
+    let nodes = &mut [&mut h, &mut l1, &mut l2];
+    let isolated = |nodes: &mut [&mut Node], what: &str| {
+        run(nodes, 2.0);
+        let (l1_hears_l2, l2_hears_l1) = (nodes[1].tone(0, 660.0), nodes[2].tone(0, 550.0));
+        let users = |n: &Node| n.snap().peers.iter().map(|p| p.user.clone()).collect::<Vec<_>>();
+        let (p1, p2) = (users(nodes[1]), users(nodes[2]));
+        eprintln!("{what}: l1 hears l2 at {l1_hears_l2}, l2 hears l1 at {l2_hears_l1}; peers {p1:?} / {p2:?}");
+        assert!(l1_hears_l2 < 0.01 && l2_hears_l1 < 0.01, "{what}: audio between listeners");
+        assert_eq!(p1, ["host"], "{what}");
+        assert!(p2.iter().all(|u| u == "host"), "{what}: {p2:?}");
+        assert_eq!(nodes[1].e.modern_encode_count(), 0, "{what}: l1 has no encoder");
+    };
+    let failed = wait_event(nodes, 2, 8.0, |e| matches!(e, SessionEvent::JoinFailed { .. }));
+    isolated(nodes, "join aimed at l1");
+    assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
+    assert!(failed.is_some(), "a listener serves no password joins");
+    assert!(nodes[2].snap().peers.is_empty());
+
+    nodes[2].e.leave_session();
+    nodes[2].e.join_by_name(&net("l2"), server, "radio pw", "open sesame").unwrap();
+    assert!(run_until(nodes, 15.0, |n| n[0].snap().peers.len() == 2
+        && n[2].snap().peers.first().is_some_and(|p| p.recv_active)));
+    isolated(nodes, "join by name");
+    for k in 1..3 {
+        assert!(hears(nodes, k, 0, 440.0, CENTRE), "listener {k} hears the host");
+        assert_eq!(nodes[k].e.modern_encode_count(), 0, "listener {k} has no encoder");
+        let st = nodes[k].e.session_status().unwrap();
+        assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
+    }
+    // the host hears neither
+    assert!(nodes[0].tone(0, 550.0) < 0.01 && nodes[0].tone(0, 660.0) < 0.01);
+}
+
+/// A mesh invite for a broadcast host's key (the host hosted the same session as a mesh
+/// before, with the remembered seed): the host's WELCOME makes the joiner a listener all the
+/// same. It hears the host, sends nothing, runs no encoder.
+#[test]
+fn mesh_invite_to_a_broadcast_host_joins_as_listener() {
+    let _serial = serial();
+    let (mut h, mut l) = (Node::mono(440.0), Node::mono(550.0));
+    let mut o = HostOptions::new("radio again");
+    o.mode = SessionMode::Broadcast;
+    let link = h.e.host_session(&net("host"), o).unwrap().invite.unwrap();
+    let mut inv = sonobus_net::auth::Invite::parse(&link).unwrap();
+    assert_eq!(inv.mode, SessionMode::Broadcast);
+    inv.mode = SessionMode::Mesh;
+    l.e.join_invite(&net("l"), &inv.to_url().unwrap()).unwrap();
+    let nodes = &mut [&mut h, &mut l];
+    assert!(run_until(nodes, 15.0, |n| n[1].snap().peers.first().is_some_and(|p| p.recv_active)));
+    let st = nodes[1].e.session_status().unwrap();
+    assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
+    assert!(hears(nodes, 1, 0, 440.0, CENTRE));
+    assert_eq!(nodes[1].e.modern_encode_count(), 0);
+    assert!(nodes[0].tone(0, 550.0) < 0.01);
 }
 
 /// The lossy shim (`set_modern_receive_loss`) drops AUDIO datagrams before the receive stream.

@@ -18,7 +18,12 @@
 //! are self-declared labels; this crate grants nothing by them. A joiner that used an invite
 //! link knows the host's id from the link ([`Config::host`]): [`PeerInfo::is_invite_host`]
 //! marks that peer, and only that peer (or, after a password join, the endpoint that handed us
-//! the session key) may rotate the session key ([`Net::authority`]).
+//! the session key) may rotate the session key ([`Net::authority`]). A broadcast hub's WELCOME
+//! carries its mode ([`wire::Welcome::mode`]): a joiner (password, PIN, LAN, name, or an
+//! invite that says mesh) learns from it that it joined as a listener
+//! ([`Event::JoinedBroadcast`]), from its authority only. That only restricts the
+//! joiner; a peer that is not a hub could only cut itself off from the joiner, as it could by
+//! not answering.
 //!
 //! After every key change ([`Net::rotate_session_key`], or a REKEY from that authority) each
 //! side of every connection sends KEY_PROOF (`auth::rekey_proof` under the new key) and
@@ -217,7 +222,8 @@ pub struct Config {
     /// joins is a listener that gets no roster, is never announced to anyone, cannot publish
     /// (its FORMAT and ROSTER frames and AUDIO datagrams are dropped) and counts against
     /// `max_listeners`. With any other role we are a listener: we accept no incoming
-    /// connections and dial nobody but whom the app connects to.
+    /// connections and dial nobody but whom the app connects to. A mesh-mode joiner switches to
+    /// listener when the endpoint it joined through is a hub ([`Event::JoinedBroadcast`]).
     pub mode: SessionMode,
     /// Broadcast host: listeners beyond this many are refused with [`CLOSE_FULL`].
     pub max_listeners: Option<usize>,
@@ -345,10 +351,6 @@ pub struct PeerInfo {
     pub incoming: bool,
     /// `id` equals [`Config::host`] (the host named by our invite link): verifiably the host.
     pub is_invite_host: bool,
-    /// The peer learned the session key from us by password, on this connection or an earlier
-    /// one (we are its key authority; a reconnect with the key keeps this). Only a password
-    /// proof (PAKE) to us sets it: a peer cannot claim it.
-    pub by_password: bool,
 }
 
 pub enum Event {
@@ -381,6 +383,12 @@ pub enum Event {
     /// We have a new session key (learned by a password join, rotated by the host or by
     /// [`Net::rotate_session_key`]); it is now used for KEY proofs. Persist it if needed.
     SessionKey(Key),
+    /// The endpoint we joined through (our [`Net::authority`]: a password join's acceptor, or
+    /// our invite's host, even by a mesh invite) is a broadcast hub: we are one of its
+    /// listeners from now on, as with a broadcast invite (no incoming connections, no roster
+    /// dials, no rendezvous registration). Sent once, after a password join's
+    /// [`Event::SessionKey`] and before that connection's [`Event::Connected`].
+    JoinedBroadcast,
     /// A password join attempt on our session failed; failed (or unfinished) attempts so far.
     JoinFailed { failed_total: u32 },
     /// The rendezvous server could not be reached or dropped us; retrying after `retry_after`.
@@ -863,7 +871,9 @@ impl Net {
     /// the name, dial a listed member (oldest first) with the password, then the roster mesh
     /// (outcomes as [`Event::Connected`] / [`Event::ConnectFailed`]). The registration stays
     /// (later joiners find us), and once we hold the session key we accept password joins
-    /// with the same password. This endpoint takes the session's name. `server` as for
+    /// with the same password; unless the member we reached is a broadcast hub: then we are its
+    /// listener, leave the rendezvous and accept nothing ([`Event::JoinedBroadcast`]). This
+    /// endpoint takes the session's name. `server` as for
     /// [`register_by_name`](Self::register_by_name).
     pub fn join_by_name(
         &self,
@@ -885,6 +895,7 @@ impl Net {
             key: None,
             roster: vec![],
             formats: formats.clone(),
+            mode: SessionMode::Broadcast,
         })
         .encode(&mut Vec::new())?;
         let _ = self.cmd.send(Cmd::SetFormats(formats));
@@ -1718,7 +1729,7 @@ async fn conn_task(
         conn,
         send,
         recv,
-        mut peer,
+        peer,
         roster,
         formats,
         exporter,
@@ -1729,8 +1740,6 @@ async fn conn_task(
     // One connection per pair of endpoints: keep the one dialed by the smaller id.
     let (keep, replaced, others, entry, full, mesh) = {
         let mut s = lock(&shared);
-        // recorded by the acceptor when the password was proven, for good
-        peer.by_password = s.delegated.contains(&peer.id);
         let full = s.full(&peer.id);
         let mesh = s.mode == SessionMode::Mesh;
         let me = s.me.id;
@@ -2326,14 +2335,29 @@ async fn connector(
         }
     };
     auth::key_verify(&key, Side::Acceptor, &e, &peer, &me, &w.mac).map_err(fail)?;
+    let mut s = lock(shared);
     if pake {
-        let mut s = lock(shared);
         *lock(&s.authority) = Some(peer);
         if s.key.as_deref() != Some(&*key) {
             s.install_key(key, Duration::ZERO, None);
         }
         epoch = s.key_epoch.borrow().0;
     }
+    // a hub's word, over the connection authenticated as it: when it is the endpoint we
+    // joined through (our authority: the password join's acceptor, or our invite's host, even
+    // by a mesh invite) and we are not in yet, we join as its listener (it can only restrict
+    // us). From here on we refuse every connection (`admit`, `acceptor`), dial nobody and
+    // leave the rendezvous. A roster peer is never our authority.
+    let authority = *lock(&s.authority);
+    if joins_as_listener(w.mode, s.listener(), authority, peer, s.members.is_empty()) {
+        s.mode = SessionMode::Broadcast;
+        s.me.role = Role::Listener;
+        s.events.send(Event::JoinedBroadcast);
+        if let Some(cmd) = s.cmd.upgrade() {
+            let _ = cmd.send(Cmd::StopRendezvous);
+        }
+    }
+    drop(s);
     let info = w.roster.iter().find(|r| r.id == peer);
     let peer = PeerInfo {
         id: peer,
@@ -2346,10 +2370,21 @@ async fn connector(
         relay: info.and_then(|r| r.relay.clone()).or(dialed.relay),
         incoming: false,
         is_invite_host: host == Some(peer),
-        by_password: false,
     };
     let roster = w.roster.into_iter().filter(|r| r.id != me).collect();
     Ok((peer, roster, w.formats, e, epoch, false))
+}
+
+/// A WELCOME of `mode` from `peer` makes us a broadcast listener: only the first connection of
+/// our join (no members yet), only from our key authority, only once.
+fn joins_as_listener(
+    mode: SessionMode,
+    listener: bool,
+    authority: Option<Id>,
+    peer: Id,
+    first: bool,
+) -> bool {
+    mode == SessionMode::Broadcast && !listener && authority == Some(peer) && first
 }
 
 /// Reports a PAKE attempt that did not succeed when dropped.
@@ -2510,11 +2545,15 @@ async fn acceptor(
             (None, Some(kc))
         }
     };
-    let (k, epoch, me_entry, members, formats, host) = {
+    let (k, epoch, me_entry, members, formats, host, mode) = {
         let mut s = lock(shared);
         // again: a block during the PAKE round trip
         if lock(&refused).contains(&peer) {
             return Err(fail("blocked"));
+        }
+        // a password join that made us a listener while this handshake ran
+        if s.listener() {
+            return Err(fail("broadcast listeners accept no connections"));
         }
         if s.full(&peer) {
             return Err(Failure {
@@ -2544,7 +2583,8 @@ async fn acceptor(
             .filter(|m| !s.hub() && m.entry.id != peer)
             .map(|m| m.entry.clone())
             .collect();
-        (k, epoch, me_entry, members, s.formats.clone(), s.host)
+        let mode = if s.hub() { SessionMode::Broadcast } else { SessionMode::Mesh };
+        (k, epoch, me_entry, members, s.formats.clone(), s.host, mode)
     };
     let mut roster = vec![me_entry];
     roster.extend(members.into_iter().take(MAX_ROSTER - 1));
@@ -2554,6 +2594,7 @@ async fn acceptor(
         key: pake.as_ref().map(|kc| kc.wrap(&k)),
         roster,
         formats,
+        mode,
     });
     write_frame(send, &welcome).await.map_err(fail)?;
     let mut addrs = h.addrs;
@@ -2576,7 +2617,6 @@ async fn acceptor(
             relay: h.relay,
             incoming: true,
             is_invite_host: host == Some(peer),
-            by_password: false,
         },
         vec![],
         vec![],
@@ -2650,6 +2690,19 @@ async fn write_frame(w: &mut SendStream, f: &Frame) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn only_the_join_to_our_authority_makes_us_a_listener() {
+        let (hub, other) = ([1; 32], [2; 32]);
+        let b = SessionMode::Broadcast;
+        assert!(joins_as_listener(b, false, Some(hub), hub, true));
+        // a roster peer (not our authority), a mesh WELCOME, later connections, already one
+        assert!(!joins_as_listener(b, false, Some(hub), other, true));
+        assert!(!joins_as_listener(b, false, None, other, true));
+        assert!(!joins_as_listener(SessionMode::Mesh, false, Some(hub), hub, true));
+        assert!(!joins_as_listener(b, false, Some(hub), hub, false));
+        assert!(!joins_as_listener(b, true, Some(hub), hub, true));
+    }
 
     /// Configuration only: nothing here binds a relay-enabled endpoint, so nothing can reach
     /// n0's relays or any other host.

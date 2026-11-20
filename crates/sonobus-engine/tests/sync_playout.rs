@@ -193,9 +193,10 @@ fn error_for(n: &Node, user: &str) -> Option<f32> {
     s.peers.iter().find(|p| p.user == user)?.net.as_ref()?.playout_error_ms
 }
 
-/// A listener that joins a broadcast by session name and password (not by invite: the engine
-/// sees it as a member, the hub as a listener) follows the host's playout too; the host turned
-/// sync on when it started the session.
+/// A listener that joins a broadcast by session name and password (not by invite: the host's
+/// WELCOME makes it a listener) follows the host's playout too; the host turned sync on when it
+/// started the session. A later joiner cannot come in through it; one that joins through the
+/// host does not disturb its sync.
 #[test]
 fn password_joined_listener_syncs() {
     let _serial = serial();
@@ -210,15 +211,16 @@ fn password_joined_listener_syncs() {
     l.e.join_by_name(&net("l0"), server, "named radio", "open sesame").unwrap();
     let nodes = &mut [&mut h, &mut l];
     assert!(run_until(nodes, 15.0, |n| n[1].snap().peers.first().is_some_and(|p| p.recv_active)));
-    assert_eq!(nodes[1].e.session_status().unwrap().role, SessionRole::Member);
+    let st = nodes[1].e.session_status().unwrap();
+    assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
     assert!(synced(nodes, 90.0), "{:?}", error_ms(nodes[1]));
     run(nodes, 1.0);
     let c = clicks(nodes)[0].expect("click");
     eprintln!("password join: click after {:.2} ms", ms(c));
     assert!((ms(c) - (150.0 - ms(BLOCK))).abs() < 10.0, "{}", ms(c));
 
-    // a later name-joiner comes in through this listener (it serves password joins once it
-    // holds the key): sync carries on, no gap
+    // a later joiner aims its password join at this listener (as a LAN join or a rendezvous
+    // listing naming it would): a listener serves no joins, it is refused before any handshake
     let cfg = sonobus_net::Config {
         bind_ip: Ipv4Addr::LOCALHOST.into(),
         port: 0,
@@ -228,16 +230,26 @@ fn password_joined_listener_syncs() {
         ..sonobus_net::Config::default()
     };
     let late = Net::start(cfg, |_, _| Box::new(|_| {}) as sonobus_net::Sink).unwrap();
-    let st = nodes[1].e.session_status().unwrap();
-    let to = DiscoveredSession {
+    let at = |st: sonobus_engine::modern::SessionStatus| DiscoveredSession {
         session: "named radio".into(),
         auth: AuthKind::Password,
         host: sonobus_net::PeerAddr {
             id: st.endpoint_id,
-            addrs: st.addrs.clone(),
+            addrs: st.addrs,
             relay: None,
         },
     };
+    late.join_discovered(&at(st), "open sesame");
+    let refused = |_: &[&mut Node]| {
+        matches!(late.events().try_recv(), Ok(sonobus_net::Event::ConnectFailed { .. }))
+    };
+    let (_, refused) = watch(nodes, "a join aimed at the listener", refused);
+    assert!(refused, "the join aimed at the listener was refused");
+    assert_eq!(nodes[1].snap().peers.len(), 1);
+
+    // it joins through the host instead (as a listener, never meeting this one): sync carries
+    // on, no gap
+    let to = at(nodes[0].e.session_status().unwrap());
     // a restart would show as no target or a correction of SYNC_HARD (10 ms); what remains is
     // callback timing noise while the handshake runs (1.4 to 3.8 ms seen). A busy machine
     // moves the reading by more without any join (the host's capture times too): a join counts
@@ -246,11 +258,11 @@ fn password_joined_listener_syncs() {
     while verdict.is_none() && start.elapsed().as_secs_f64() < 120.0 {
         if let Some(c) = conn.take() {
             late.disconnect(c);
-            assert!(run_until(nodes, 10.0, |n| n[1].snap().peers.len() == 1), "the late joiner left");
+            assert!(run_until(nodes, 10.0, |n| n[0].snap().peers.len() == 1), "the late joiner left");
         }
         let before = worst_over(nodes, 2.0);
         conn = Some(late.join_discovered(&to, "open sesame"));
-        let (worst, joined) = watch(nodes, "a second peer came", |n| n[1].snap().peers.len() == 2);
+        let (worst, joined) = watch(nodes, "a second listener came", |n| n[0].snap().peers.len() == 2);
         assert!(joined, "the late joiner got in");
         let after = worst_over(nodes, 2.0);
         eprintln!("password join: playout within {worst:.2} ms (before {before:.2}, after {after:.2})");
@@ -266,15 +278,7 @@ fn password_joined_listener_syncs() {
         }
         None => panic!("no quiet measurement in 2 minutes on a machine that did not starve"),
     }
-    let conn = conn.unwrap();
-
-    // the late joiner reconnects with the key it learned (as a roster dial does): still one
-    // we admitted by password, so the host still counts and sync stays on
-    late.disconnect(conn);
-    assert!(run_until(nodes, 10.0, |n| n[1].snap().peers.len() == 1), "the late joiner left");
-    late.connect(to.host.clone(), sonobus_net::Join::Key);
-    let (_, back) = watch(nodes, "it came back by key", |n| n[1].snap().peers.len() == 2);
-    assert!(back, "it came back by key");
+    assert_eq!(nodes[1].snap().peers.len(), 1, "the listeners never meet");
 }
 
 /// The largest playout error listener `nodes[1]` reports for the host over `secs` (infinite
@@ -318,10 +322,10 @@ fn watch(nodes: &mut [&mut Node], what: &str, done: impl Fn(&[&mut Node]) -> boo
     (worst, since.is_some())
 }
 
-/// A mesh of three: a bare protocol v2 host (that sends PLAYOUT, which an engine never does in
-/// a mesh) and two engine members, one joined by invite, one by session name and password (its
-/// key came from that host). Neither acts on the PLAYOUT: neither pings the host, neither
-/// reports a playout error.
+/// A bare protocol v2 mesh host (that sends PLAYOUT, which an engine never does in a mesh) and
+/// engine members: first one joined by session name and password alone with it (its key came
+/// from that host, its only peer), then a second joined by invite. None acts on the PLAYOUT:
+/// none pings the host, none reports a playout error.
 #[test]
 fn mesh_members_ignore_playout() {
     let _serial = serial();
@@ -358,11 +362,6 @@ fn mesh_members_ignore_playout() {
     }
     .to_url()
     .unwrap();
-    let (mut a, mut b) = (quiet(), quiet());
-    a.e.join_invite(&net("a"), &link).unwrap();
-    b.e.join_by_name(&net("b"), me.clone(), "jam", "open sesame").unwrap();
-    let nodes = &mut [&mut a, &mut b];
-    let mut conns = Vec::new();
     let pump = |conns: &mut Vec<ConnId>| {
         while let Ok(e) = host.events().try_recv() {
             if let sonobus_net::Event::Connected { conn, .. } = e {
@@ -370,33 +369,55 @@ fn mesh_members_ignore_playout() {
             }
         }
     };
-    let start = Instant::now();
-    while start.elapsed().as_secs_f64() < 15.0
-        && !(conns.len() == 2 && nodes.iter().all(|n| n.snap().peers.len() == 2))
-    {
-        run(nodes, 0.1);
-        pump(&mut conns);
-    }
-    assert!(nodes.iter().all(|n| n.snap().peers.len() == 2), "a three-node mesh");
-    assert_eq!(nodes[1].e.session_status().unwrap().role, SessionRole::Member);
-    while inbox.try_recv().is_ok() {}
-    let mut pings = 0;
-    for _ in 0..12 {
-        for &c in &conns {
-            let pl = Playout {
-                stream: 0,
-                generation: 0,
-                seq: 0,
-                time_us: 0,
-                delay_ms: 150,
-            };
-            let _ = host.send_control(c, Frame::Playout(pl));
+    // until every node has `n` peers and the host `n` connections
+    let meet = |nodes: &mut [&mut Node], conns: &mut Vec<ConnId>, n: usize| {
+        let start = Instant::now();
+        while start.elapsed().as_secs_f64() < 15.0
+            && !(conns.len() == n && nodes.iter().all(|m| m.snap().peers.len() == n))
+        {
+            run(nodes, 0.1);
+            pump(conns);
         }
-        run(nodes, 0.25);
-        pump(&mut conns);
-        pings += inbox.try_iter().filter(|(_, d)| d.first() == Some(&KIND_PING)).count();
-    }
-    eprintln!("mesh: {pings} PINGs to the host after 3 s of PLAYOUT");
-    assert_eq!(pings, 0);
-    assert!(nodes.iter().all(|n| n.snap().peers.iter().all(|p| p.net.as_ref().unwrap().playout_error_ms.is_none())));
+        assert!(nodes.iter().all(|m| m.snap().peers.len() == n), "a mesh of {}", n + 1);
+    };
+    // PINGs to the host while it sends PLAYOUT to everyone for 3 s
+    let pings = |nodes: &mut [&mut Node], conns: &mut Vec<ConnId>| {
+        while inbox.try_recv().is_ok() {}
+        let mut pings = 0;
+        for _ in 0..12 {
+            for &c in conns.iter() {
+                let pl = Playout {
+                    stream: 0,
+                    generation: 0,
+                    seq: 0,
+                    time_us: 0,
+                    delay_ms: 150,
+                };
+                let _ = host.send_control(c, Frame::Playout(pl));
+            }
+            run(nodes, 0.25);
+            pump(conns);
+            pings += inbox.try_iter().filter(|(_, d)| d.first() == Some(&KIND_PING)).count();
+        }
+        assert!(nodes.iter().all(|n| n.snap().peers.iter().all(|p| p.net.as_ref().unwrap().playout_error_ms.is_none())));
+        pings
+    };
+    let (mut a, mut b) = (quiet(), quiet());
+    let mut conns = Vec::new();
+    // a two-member mesh: the name joiner's only peer is the endpoint it got the key from
+    b.e.join_by_name(&net("b"), me.clone(), "jam", "open sesame").unwrap();
+    meet(&mut [&mut b], &mut conns, 1);
+    let st = b.e.session_status().unwrap();
+    assert_eq!((st.mode, st.role), (SessionMode::Mesh, SessionRole::Member));
+    let n = pings(&mut [&mut b], &mut conns);
+    eprintln!("two-member mesh: {n} PINGs to the host after 3 s of PLAYOUT");
+    assert_eq!(n, 0);
+    // three
+    a.e.join_invite(&net("a"), &link).unwrap();
+    let nodes = &mut [&mut a, &mut b];
+    meet(nodes, &mut conns, 2);
+    assert_eq!(nodes[1].e.session_status().unwrap().role, SessionRole::Member);
+    let n = pings(nodes, &mut conns);
+    eprintln!("mesh: {n} PINGs to the host after 3 s of PLAYOUT");
+    assert_eq!(n, 0);
 }
