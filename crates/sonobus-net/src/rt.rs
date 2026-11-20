@@ -345,6 +345,10 @@ pub struct PeerInfo {
     pub incoming: bool,
     /// `id` equals [`Config::host`] (the host named by our invite link): verifiably the host.
     pub is_invite_host: bool,
+    /// The peer learned the session key from us by password, on this connection or an earlier
+    /// one (we are its key authority; a reconnect with the key keeps this). Only a password
+    /// proof (PAKE) to us sets it: a peer cannot claim it.
+    pub by_password: bool,
 }
 
 pub enum Event {
@@ -1714,7 +1718,7 @@ async fn conn_task(
         conn,
         send,
         recv,
-        peer,
+        mut peer,
         roster,
         formats,
         exporter,
@@ -1725,6 +1729,8 @@ async fn conn_task(
     // One connection per pair of endpoints: keep the one dialed by the smaller id.
     let (keep, replaced, others, entry, full, mesh) = {
         let mut s = lock(&shared);
+        // recorded by the acceptor when the password was proven, for good
+        peer.by_password = s.delegated.contains(&peer.id);
         let full = s.full(&peer.id);
         let mesh = s.mode == SessionMode::Mesh;
         let me = s.me.id;
@@ -2340,6 +2346,7 @@ async fn connector(
         relay: info.and_then(|r| r.relay.clone()).or(dialed.relay),
         incoming: false,
         is_invite_host: host == Some(peer),
+        by_password: false,
     };
     let roster = w.roster.into_iter().filter(|r| r.id != me).collect();
     Ok((peer, roster, w.formats, e, epoch, false))
@@ -2569,6 +2576,7 @@ async fn acceptor(
             relay: h.relay,
             incoming: true,
             is_invite_host: host == Some(peer),
+            by_password: false,
         },
         vec![],
         vec![],

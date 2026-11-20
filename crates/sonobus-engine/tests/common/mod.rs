@@ -175,6 +175,37 @@ pub fn run(nodes: &mut [&mut Node], secs: f64) {
     run_until(nodes, secs, |_| false);
 }
 
+/// The lockstep loop fell this far behind its schedule: the machine was busy, and what the
+/// engines measured around then (playout timing, underruns) is not the network's doing.
+const STARVED: Duration = Duration::from_millis(10);
+static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
+/// When the loop last starved: ns since `EPOCH`, plus one (0: never).
+static STARVED_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn ns(t: Instant) -> u64 {
+    t.saturating_duration_since(*EPOCH.get_or_init(Instant::now)).as_nanos() as u64
+}
+
+/// A lockstep loop that meant to run at `next` runs now: note it if that is starving.
+pub fn note_late(next: Instant) {
+    let now = Instant::now();
+    if now.saturating_duration_since(next) > STARVED {
+        STARVED_AT.store(ns(now) + 1, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// The lockstep loop starved at `t` or later (`t`: the start of the test that asks).
+pub fn starved_since(t: Instant) -> bool {
+    let at = STARVED_AT.load(std::sync::atomic::Ordering::Relaxed);
+    at > ns(t)
+}
+
+/// The lockstep loop starved within `d` before now.
+pub fn starved_within(d: Duration) -> bool {
+    let at = STARVED_AT.load(std::sync::atomic::Ordering::Relaxed);
+    at > 0 && ns(Instant::now()).saturating_sub(at - 1) < d.as_nanos() as u64
+}
+
 /// Run until `done` holds (checked every block); false on timeout.
 pub fn run_until(nodes: &mut [&mut Node], secs: f64, done: impl Fn(&[&mut Node]) -> bool) -> bool {
     let start = Instant::now();
@@ -191,7 +222,10 @@ pub fn run_until(nodes: &mut [&mut Node], secs: f64, done: impl Fn(&[&mut Node])
         match next.checked_duration_since(Instant::now()) {
             Some(d) => std::thread::sleep(d),
             // late: carry on from now instead of catching up with a burst, like a device would
-            None => next = Instant::now(),
+            None => {
+                note_late(next);
+                next = Instant::now();
+            }
         }
     }
     false

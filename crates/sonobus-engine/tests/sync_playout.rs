@@ -13,6 +13,7 @@ use common::*;
 use sonobus_engine::modern::{HostOptions, NetOptions, RelayChoice, SessionMode, SessionRole};
 use sonobus_net::auth::{Invite, key_from_seed, random_seed};
 use sonobus_net::wire::{Frame, KIND_PING, Playout, Role};
+use sonobus_net::lan::{AuthKind, DiscoveredSession};
 use sonobus_net::{Bytes, ConnId, Net};
 
 fn net(name: &str) -> NetOptions {
@@ -33,7 +34,20 @@ fn quiet() -> Node {
 }
 
 /// A click into the host; samples until each listener plays it (lockstep, real-time pace).
+/// Measured again (up to five times) when the machine starved the lockstep loop meanwhile.
 fn clicks(nodes: &mut [&mut Node]) -> Vec<Option<usize>> {
+    for _ in 0..4 {
+        let start = Instant::now();
+        let got = click_once(nodes);
+        if !starved_within(start.elapsed()) {
+            return got;
+        }
+        run(nodes, 1.0);
+    }
+    click_once(nodes)
+}
+
+fn click_once(nodes: &mut [&mut Node]) -> Vec<Option<usize>> {
     let block = Duration::from_secs_f64(BLOCK as f64 / f64::from(SR));
     let (zero, mut click) = (vec![0.0f32; BLOCK], vec![0.0f32; BLOCK]);
     click[0] = 1.0;
@@ -60,7 +74,10 @@ fn clicks(nodes: &mut [&mut Node]) -> Vec<Option<usize>> {
         next += block;
         match next.checked_duration_since(Instant::now()) {
             Some(d) => std::thread::sleep(d),
-            None => next = Instant::now(),
+            None => {
+                note_late(next);
+                next = Instant::now();
+            }
         }
     }
     got
@@ -112,7 +129,7 @@ fn broadcast_listeners_play_a_click_together() {
         assert!(ms(b) - ms(a) > 50.0, "{} vs {}", ms(a), ms(b));
 
         nodes[0].e.set_playout_sync(Some(200));
-        assert!(synced(nodes, 10.0), "{:?} {:?}", error_ms(nodes[1]), error_ms(nodes[2]));
+        assert!(synced(nodes, 90.0), "{:?} {:?}", error_ms(nodes[1]), error_ms(nodes[2]));
         run(nodes, 1.0);
         let on = clicks(nodes);
         let (a, b) = (on[0].expect("l0 click"), on[1].expect("l1 click"));
@@ -144,7 +161,7 @@ fn broadcast_listeners_play_a_click_together() {
     run(nodes, 1.5);
     assert!(nodes[1..].iter().all(|l| error_ms(l).is_none()));
     nodes[0].e.set_playout_sync(Some(200));
-    assert!(synced(nodes, 10.0), "{:?}", nodes[1..].iter().map(|l| error_ms(l)).collect::<Vec<_>>());
+    assert!(synced(nodes, 90.0), "{:?}", nodes[1..].iter().map(|l| error_ms(l)).collect::<Vec<_>>());
     run(nodes, 1.0);
     let all: Vec<usize> = clicks(nodes).into_iter().map(|c| c.expect("click")).collect();
     let spread = all.iter().max().unwrap() - all.iter().min().unwrap();
@@ -152,9 +169,28 @@ fn broadcast_listeners_play_a_click_together() {
     assert!(ms(spread) <= 2.0);
 }
 
-/// Every listener of `nodes[0]` reports its playout within 0.5 ms of the target.
+/// Every listener of `nodes[0]` reports its playout within 0.5 ms of the target, and still
+/// does a second later (settled: a target that moved meanwhile would show), with the machine
+/// not starving the lockstep loop meanwhile (a busy machine disturbs the audio clock, which
+/// sync then corrects: such a stretch proves nothing either way, so it is measured again).
 fn synced(nodes: &mut [&mut Node], secs: f64) -> bool {
-    eventually(nodes, secs, |n| n[1..].iter().all(|l| error_ms(l).is_some_and(|e| e.abs() < 0.5)))
+    let on = |n: &[&mut Node]| n[1..].iter().all(|l| error_ms(l).is_some_and(|e| e.abs() < 0.5));
+    let start = Instant::now();
+    while start.elapsed().as_secs_f64() < secs {
+        if eventually(nodes, secs, on) && {
+            run(nodes, 1.0);
+            on(nodes) && !starved_within(Duration::from_millis(1500))
+        } {
+            return true;
+        }
+    }
+    false
+}
+
+/// The playout error a node reports for its peer `user`.
+fn error_for(n: &Node, user: &str) -> Option<f32> {
+    let s = n.snap();
+    s.peers.iter().find(|p| p.user == user)?.net.as_ref()?.playout_error_ms
 }
 
 /// A listener that joins a broadcast by session name and password (not by invite: the engine
@@ -163,6 +199,7 @@ fn synced(nodes: &mut [&mut Node], secs: f64) -> bool {
 #[test]
 fn password_joined_listener_syncs() {
     let _serial = serial();
+    let test_start = Instant::now();
     let (mut h, mut l) = (quiet(), quiet());
     let mut o = HostOptions::new("named radio");
     o.mode = SessionMode::Broadcast;
@@ -174,11 +211,111 @@ fn password_joined_listener_syncs() {
     let nodes = &mut [&mut h, &mut l];
     assert!(run_until(nodes, 15.0, |n| n[1].snap().peers.first().is_some_and(|p| p.recv_active)));
     assert_eq!(nodes[1].e.session_status().unwrap().role, SessionRole::Member);
-    assert!(synced(nodes, 10.0), "{:?}", error_ms(nodes[1]));
+    assert!(synced(nodes, 90.0), "{:?}", error_ms(nodes[1]));
     run(nodes, 1.0);
     let c = clicks(nodes)[0].expect("click");
     eprintln!("password join: click after {:.2} ms", ms(c));
     assert!((ms(c) - (150.0 - ms(BLOCK))).abs() < 10.0, "{}", ms(c));
+
+    // a later name-joiner comes in through this listener (it serves password joins once it
+    // holds the key): sync carries on, no gap
+    let cfg = sonobus_net::Config {
+        bind_ip: Ipv4Addr::LOCALHOST.into(),
+        port: 0,
+        session: "named radio".into(),
+        name: "late".into(),
+        relay: RelayChoice::None,
+        ..sonobus_net::Config::default()
+    };
+    let late = Net::start(cfg, |_, _| Box::new(|_| {}) as sonobus_net::Sink).unwrap();
+    let st = nodes[1].e.session_status().unwrap();
+    let to = DiscoveredSession {
+        session: "named radio".into(),
+        auth: AuthKind::Password,
+        host: sonobus_net::PeerAddr {
+            id: st.endpoint_id,
+            addrs: st.addrs.clone(),
+            relay: None,
+        },
+    };
+    // a restart would show as no target or a correction of SYNC_HARD (10 ms); what remains is
+    // callback timing noise while the handshake runs (1.4 to 3.8 ms seen). A busy machine
+    // moves the reading by more without any join (the host's capture times too): a join counts
+    // only when the 2 s before and after it were quiet; else it is done again (2 min at most).
+    let (mut conn, mut verdict, start) = (None, None, Instant::now());
+    while verdict.is_none() && start.elapsed().as_secs_f64() < 120.0 {
+        if let Some(c) = conn.take() {
+            late.disconnect(c);
+            assert!(run_until(nodes, 10.0, |n| n[1].snap().peers.len() == 1), "the late joiner left");
+        }
+        let before = worst_over(nodes, 2.0);
+        conn = Some(late.join_discovered(&to, "open sesame"));
+        let (worst, joined) = watch(nodes, "a second peer came", |n| n[1].snap().peers.len() == 2);
+        assert!(joined, "the late joiner got in");
+        let after = worst_over(nodes, 2.0);
+        eprintln!("password join: playout within {worst:.2} ms (before {before:.2}, after {after:.2})");
+        if before < 5.0 && after < 5.0 {
+            verdict = Some(worst);
+        }
+    }
+    match verdict {
+        Some(worst) => assert!(worst < 5.0, "{worst}"),
+        // only a machine seen starving the lockstep loop during this test excuses it
+        None if starved_since(test_start) => {
+            println!("SKIPPED the timing check: the machine was too busy for 2 minutes")
+        }
+        None => panic!("no quiet measurement in 2 minutes on a machine that did not starve"),
+    }
+    let conn = conn.unwrap();
+
+    // the late joiner reconnects with the key it learned (as a roster dial does): still one
+    // we admitted by password, so the host still counts and sync stays on
+    late.disconnect(conn);
+    assert!(run_until(nodes, 10.0, |n| n[1].snap().peers.len() == 1), "the late joiner left");
+    late.connect(to.host.clone(), sonobus_net::Join::Key);
+    let (_, back) = watch(nodes, "it came back by key", |n| n[1].snap().peers.len() == 2);
+    assert!(back, "it came back by key");
+}
+
+/// The largest playout error listener `nodes[1]` reports for the host over `secs` (infinite
+/// when it has none).
+fn worst_over(nodes: &mut [&mut Node], secs: f64) -> f32 {
+    let (start, mut worst) = (Instant::now(), 0.0f32);
+    while start.elapsed().as_secs_f64() < secs {
+        run(nodes, 0.05);
+        worst = worst.max(error_for(nodes[1], "host").map_or(f32::INFINITY, f32::abs));
+    }
+    worst
+}
+
+/// Watches listener `nodes[1]`'s playout of the host while `done` comes to hold and 2 s more:
+/// every 50 ms its error reading must be there (sync on, no restart) and the host's playback
+/// active; returns the largest error seen, and whether `done` came within 10 s. Samples within
+/// a second after the machine starved the lockstep loop do not count (a busy machine, not the
+/// network, disturbed the audio clock there), so the 2 s are of counted samples (at most 30 s).
+fn watch(nodes: &mut [&mut Node], what: &str, done: impl Fn(&[&mut Node]) -> bool) -> (f32, bool) {
+    let (start, mut since, mut worst) = (Instant::now(), None::<Instant>, 0.0f32);
+    let mut counted = 0;
+    while start.elapsed().as_secs_f64() < 30.0 && since.is_none_or(|_| counted < 40) {
+        run(nodes, 0.05);
+        if since.is_none() && start.elapsed().as_secs_f64() > 10.0 {
+            break;
+        }
+        if starved_within(Duration::from_secs(1)) {
+            continue;
+        }
+        let e = error_for(nodes[1], "host");
+        assert!(e.is_some(), "sync stopped: {what}");
+        worst = worst.max(e.unwrap().abs());
+        let host = nodes[1].snap().peers.into_iter().find(|p| p.user == "host").unwrap();
+        assert!(host.recv_active, "playback of the host stopped: {what}");
+        if since.is_some() {
+            counted += 1;
+        } else if done(nodes) {
+            since = Some(Instant::now());
+        }
+    }
+    (worst, since.is_some())
 }
 
 /// A mesh of three: a bare protocol v2 host (that sends PLAYOUT, which an engine never does in

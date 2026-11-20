@@ -76,13 +76,18 @@
 //! late, as without sync; one without PLAYOUT (an older host, sync off) is unchanged.
 //! Latency Match / Receive Sync still set the listener's jitter buffer: a buffer above what the
 //! delay leaves makes it late, below it changes nothing audible.
-//! Whose PLAYOUT counts (`Session::playout_source`): only our one peer's, and only when it
-//! declares itself host and is the invite's host (we joined a broadcast invite as listener) or
-//! the endpoint a password/PIN/LAN/name join learned the key from. Limit: such joins carry
-//! nothing that says "broadcast" (no wire field; the joiner keeps mode mesh), so a mesh joiner
-//! accepts PLAYOUT from its key source while that is its only peer: in a two-member mesh, or
-//! before its dials to the other members complete. A modified peer there can delay how we play
-//! its own stream (at most [`MAX_PLAYOUT_MS`]; nobody else's audio) and make us ping it.
+//! Whose PLAYOUT counts (`Session::playout_source`): a peer that declares itself host and is
+//! verified as the session's (the invite's host, when we joined a broadcast invite as listener;
+//! for password/PIN/LAN/name joins the endpoint our join learned the key from), while it is our
+//! only peer apart from those we admitted by password ourselves (a name-joined listener also
+//! admits later joiners). Re-checked every tick; when it stops counting, sync is off and the
+//! clock samples are dropped. The offset is used once [`CLOCK_SAMPLES`] samples at most
+//! [`CLOCK_MAX_AGE_MS`] old are in. Limit: password/PIN/LAN/name joins carry nothing that says
+//! "broadcast" (no wire field; the joiner keeps mode mesh), so such a joiner also accepts
+//! PLAYOUT from its key source in a mesh whenever every other peer joined through it (a
+//! two-member mesh, before its dials to the others complete, or when it admitted all the
+//! others). Whatever the case, a PLAYOUT only changes how we play its sender's own stream, by
+//! at most [`MAX_PLAYOUT_MS`], and makes us ping that sender; nobody else's audio.
 //!
 //! Not in modern sessions: the measured latency test (`Engine::start_latency_test` returns
 //! false; the latency estimate from RTT, buffers and codec is shown instead), legacy IP block
@@ -165,7 +170,8 @@ const SYNC_PING_FIRST_MS: f64 = 200.0;
 const SYNC_PINGS_FAST: u32 = 16;
 const PINGS_OUTSTANDING: usize = 16;
 const CLOCK_SAMPLES: usize = 8;
-const CLOCK_MIN_SAMPLES: usize = 4;
+/// Clock samples older than this (ms) no longer count (pinging paused, sync was off).
+const CLOCK_MAX_AGE_MS: f64 = 15_000.0;
 /// PONGs with a longer round trip, or held longer by the host, are not clock samples (µs).
 const MAX_PING_RTT_US: i128 = 2_000_000;
 const MAX_PONG_HOLD_US: i128 = 1_000_000;
@@ -545,8 +551,8 @@ impl Sub {
 /// the smallest round trip of the last [`CLOCK_SAMPLES`].
 #[derive(Debug, Default)]
 struct Clock {
-    /// `(round trip, offset)`, µs.
-    samples: [(u64, i64); CLOCK_SAMPLES],
+    /// `(round trip µs, offset µs, when: the engine's ms)`.
+    samples: [(u64, i64, f64); CLOCK_SAMPLES],
     n: usize,
     ping_id: u16,
     last_ping_ms: f64,
@@ -554,18 +560,38 @@ struct Clock {
     sent: [Option<(u16, u64)>; PINGS_OUTSTANDING],
     /// PINGs sent so far.
     pings: u32,
+    /// When the last refill burst of fast PINGs began (the engine's ms).
+    burst_ms: Option<f64>,
 }
 
 impl Clock {
-    /// Time (`ms`, the engine's clock) for the next PING: fast until we have the samples or
-    /// the fast ones are spent (no answers: back to the slow rate).
+    /// PINGs go fast while the window is short of samples: the first [`SYNC_PINGS_FAST`], and
+    /// later (lost PONGs let samples age out) a refill burst as long as those take, at most one
+    /// per [`CLOCK_MAX_AGE_MS`] and only while answers come (an answer within the burst's
+    /// length). So a host that does not answer, or answers too little to fill the window, is
+    /// pinged at most about twice a second on average.
+    fn fast(&self, ms: f64) -> bool {
+        let burst = f64::from(SYNC_PINGS_FAST) * SYNC_PING_FIRST_MS;
+        self.fresh(ms).count() < CLOCK_SAMPLES
+            && (self.pings < SYNC_PINGS_FAST
+                || self.fresh(ms).any(|x| ms - x.2 < burst)
+                    && self
+                        .burst_ms
+                        .is_none_or(|b| ms - b < burst || ms - b >= CLOCK_MAX_AGE_MS))
+    }
+
+    /// Time (`ms`, the engine's clock) for the next PING ([`Self::fast`] or one a second).
     fn ping_due(&self, ms: f64) -> bool {
-        let fast = self.n < CLOCK_SAMPLES && self.pings < SYNC_PINGS_FAST;
-        ms - self.last_ping_ms >= if fast { SYNC_PING_FIRST_MS } else { SYNC_PING_MS }
+        let every = if self.fast(ms) { SYNC_PING_FIRST_MS } else { SYNC_PING_MS };
+        ms - self.last_ping_ms >= every
     }
 
     /// The next PING, sent at `t1` (our clock) and `ms` (the engine's).
     fn ping(&mut self, t1: u64, ms: f64) -> Ping {
+        let new_burst = self.burst_ms.is_none_or(|b| ms - b >= CLOCK_MAX_AGE_MS);
+        if self.pings >= SYNC_PINGS_FAST && new_burst && self.fast(ms) {
+            self.burst_ms = Some(ms);
+        }
         self.last_ping_ms = ms;
         self.pings = self.pings.saturating_add(1);
         self.ping_id = self.ping_id.wrapping_add(1);
@@ -576,9 +602,9 @@ impl Clock {
         }
     }
 
-    /// A PONG received at `t4` (our clock). Only the answer to an outstanding PING of ours
-    /// (once), with a plausible round trip and hold time, counts.
-    fn on_pong(&mut self, p: &Pong, t4: u64) {
+    /// A PONG received at `t4` (our clock), `ms` (the engine's). Only the answer to an
+    /// outstanding PING of ours (once), with a plausible round trip and hold time, counts.
+    fn on_pong(&mut self, p: &Pong, t4: u64, ms: f64) {
         let Some(slot) = self.sent.iter_mut().find(|s| **s == Some((p.id, p.t1))) else {
             return;
         };
@@ -591,17 +617,23 @@ impl Clock {
         }
         let off = ((t2 - t1) + (t3 - t4)) / 2;
         let off = off.clamp(i64::MIN.into(), i64::MAX.into()) as i64;
-        self.samples[self.n % CLOCK_SAMPLES] = (rtt as u64, off);
+        self.samples[self.n % CLOCK_SAMPLES] = (rtt as u64, off, ms);
         self.n += 1;
     }
 
-    /// Once there are [`CLOCK_MIN_SAMPLES`] (one may have queued both ways).
-    fn offset(&self) -> Option<i64> {
-        if self.n < CLOCK_MIN_SAMPLES {
+    /// Samples at most [`CLOCK_MAX_AGE_MS`] old at `ms`.
+    fn fresh(&self, ms: f64) -> impl Iterator<Item = &(u64, i64, f64)> {
+        let s = &self.samples[..self.n.min(CLOCK_SAMPLES)];
+        s.iter().filter(move |x| ms - x.2 <= CLOCK_MAX_AGE_MS)
+    }
+
+    /// The offset once a whole window of [`CLOCK_SAMPLES`] fresh samples is in: acting on the
+    /// first few (one may have queued both ways) and correcting later would be heard.
+    fn offset(&self, ms: f64) -> Option<i64> {
+        if self.fresh(ms).count() < CLOCK_SAMPLES {
             return None;
         }
-        let s = &self.samples[..self.n.min(CLOCK_SAMPLES)];
-        s.iter().min_by_key(|x| x.0).map(|x| x.1)
+        self.fresh(ms).min_by_key(|x| x.0).map(|x| x.1)
     }
 }
 
@@ -969,16 +1001,19 @@ impl Session {
         }
     }
 
-    /// Peer `i` is our broadcast host, so its PLAYOUT counts. A broadcast listener's only peer
-    /// is the hub, so: it is our one peer, declares itself host, and is verified as the
-    /// session's: invite joins know the mode from the invite (we are a listener, it is the
-    /// host the invite named); password, PIN and name joins do not (they cannot tell a hub from
-    /// a mesh member), so for them it is the endpoint our join learned the key from
-    /// (`Net::authority`), still our only peer. Re-checked every tick: a mesh member stops
-    /// counting once a second peer connects. It steers only how we play its own stream.
+    /// Peer `i` is our broadcast host, so its PLAYOUT counts: it declares itself host, it is
+    /// verified as the session's (we joined a broadcast invite as listener and it is the host
+    /// the invite named; or, for password, PIN, LAN and name joins, which cannot tell a hub
+    /// from a mesh member, it is the endpoint our join learned the key from), and it is our only
+    /// peer apart from those we admitted by password ourselves. A broadcast listener's peers
+    /// are the hub plus, after a name join, later joiners that came in through it; a mesh
+    /// member also has the members it met through the roster. Re-checked every tick. It steers
+    /// only how we play its own stream.
     fn playout_source(&self, i: usize) -> bool {
         let p = &self.peers[i].info;
-        self.peers.len() == 1
+        let others = self.peers.iter().enumerate();
+        let alone = others.filter(|&(k, q)| k != i && !q.info.by_password).count() == 0;
+        alone
             && p.role == Role::Host
             && match self.role {
                 SessionRole::Listener => p.is_invite_host,
@@ -996,8 +1031,10 @@ impl Session {
         let (epoch, skew) = (self.epoch, self.clock_skew_us);
         let source = self.playout_source(i);
         let p = &mut self.peers[i];
-        if !source {
+        if !source && p.playout.is_some() {
+            // no longer our host's: as if it turned sync off
             p.playout = None;
+            p.clock = Clock::default();
         }
         let Some(pl) = p.playout else {
             if let Some(r) = &mut p.rx {
@@ -1011,7 +1048,7 @@ impl Session {
             p.c.bytes_sent += b.len() as u64;
             let _ = p.tx.send(b.into());
         }
-        let (Some(off), Some(r)) = (p.clock.offset(), &mut p.rx) else {
+        let (Some(off), Some(r)) = (p.clock.offset(ms), &mut p.rx) else {
             return;
         };
         if r.stream != pl.stream {
@@ -1796,7 +1833,8 @@ impl Session {
             }
             Ok(Datagram::Pong(pong)) => {
                 let t4 = self.us(now);
-                self.peers[i].clock.on_pong(&pong, t4);
+                let ms = h.now_ms();
+                self.peers[i].clock.on_pong(&pong, t4, ms);
             }
             _ => {}
         }
@@ -2240,52 +2278,58 @@ mod tests {
     }
 
     /// NTP offset from PONGs: the least-delayed sample of the window wins, a queued (slow,
-    /// asymmetric) one does not skew it; only answers to our own outstanding PINGs count, once,
-    /// with plausible times.
+    /// asymmetric) one does not skew it; used only once a whole window of fresh samples is in;
+    /// only answers to our own outstanding PINGs count, once, with plausible times; samples
+    /// age out.
     #[test]
     fn clock_offset_takes_the_fastest_round_trip() {
         let mut c = Clock::default();
-        assert_eq!(c.offset(), None);
-        // host clock = ours + 5000 µs; `up`/`down` one-way delays
+        // host clock = ours + 5000 µs; `up`/`down` one-way delays; `ms` the engine's clock
         let exchange = |c: &mut Clock, t1: u64, up: u64, down: u64| {
             let id = c.ping(t1, 0.0).id;
             let t2 = t1 + up + 5000;
             let p = Pong { id, t1, t2, t3: t2 + 10 };
-            c.on_pong(&p, t2 + 10 - 5000 + down);
+            c.on_pong(&p, t2 + 10 - 5000 + down, t1 as f64 / 1000.0);
             p
         };
+        let ms = |c: &Clock| c.samples[(c.n - 1) % CLOCK_SAMPLES].2;
         // 9 ms stuck on the way back: offset off by 4.5 ms, but a longer round trip
         exchange(&mut c, 100, 1000, 9000);
-        assert_eq!(c.offset(), None, "not from one sample");
         let first = exchange(&mut c, 100_000, 1000, 1000);
-        exchange(&mut c, 200_000, 1000, 9000);
-        assert_eq!(c.offset(), None);
-        exchange(&mut c, 300_000, 3000, 9000);
-        assert_eq!((c.n, c.offset()), (4, Some(5000)));
+        for k in 2..CLOCK_SAMPLES as u64 - 1 {
+            exchange(&mut c, k * 100_000, 3000, 9000);
+            assert_eq!(c.offset(ms(&c)), None, "not before a whole window");
+        }
+        exchange(&mut c, 800_000, 3000, 9000);
+        assert_eq!((c.n, c.offset(ms(&c))), (CLOCK_SAMPLES, Some(5000)));
         // the window forgets: eight slow samples later the fast one is gone
         for k in 0..CLOCK_SAMPLES as u64 {
             exchange(&mut c, 1_000_000 * (k + 1), 1000, 3000);
         }
-        assert_eq!(c.offset(), Some(4000));
+        assert_eq!(c.offset(ms(&c)), Some(4000));
         exchange(&mut c, 9_000_000, 1000, 5000);
-        assert_eq!(c.offset(), Some(4000), "a slower sample does not win");
+        assert_eq!(c.offset(ms(&c)), Some(4000), "a slower sample does not win");
         let n = c.n;
+        // and by time: 15 s without answers (sync off, pinging paused) and none counts
+        assert_eq!(c.offset(ms(&c) + 1000.0), Some(4000));
+        assert_eq!(c.offset(ms(&c) + CLOCK_MAX_AGE_MS + 1.0), None);
 
         // forged or broken PONGs change nothing:
         // a replay of an answered one, one for a PING never sent, one with the wrong echo
-        c.on_pong(&first, 10_000_000);
-        c.on_pong(&Pong { id: 999, t1: 1, t2: u64::MAX / 2, t3: u64::MAX / 2 }, 1);
+        let at = ms(&c);
+        c.on_pong(&first, 10_000_000, at);
+        c.on_pong(&Pong { id: 999, t1: 1, t2: u64::MAX / 2, t3: u64::MAX / 2 }, 1, at);
         let id = c.ping(20_000_000, 0.0).id;
-        c.on_pong(&Pong { id, t1: 20_000_001, t2: 1, t3: 1 }, 20_000_001);
+        c.on_pong(&Pong { id, t1: 20_000_001, t2: 1, t3: 1 }, 20_000_001, at);
         // zero round trip, but a hold time beyond reason; a round trip beyond reason
         let id = c.ping(30_000_000, 0.0).id;
-        c.on_pong(&Pong { id, t1: 30_000_000, t2: 1, t3: 3_000_001 }, 33_000_000);
+        c.on_pong(&Pong { id, t1: 30_000_000, t2: 1, t3: 3_000_001 }, 33_000_000, at);
         let id = c.ping(40_000_000, 0.0).id;
-        c.on_pong(&Pong { id, t1: 40_000_000, t2: 7, t3: 7 }, 45_000_000);
+        c.on_pong(&Pong { id, t1: 40_000_000, t2: 7, t3: 7 }, 45_000_000, at);
         // nonsense order
         let id = c.ping(50, 0.0).id;
-        c.on_pong(&Pong { id, t1: 50, t2: 20, t3: 15 }, 60);
-        assert_eq!((c.n, c.offset()), (n, Some(4000)));
+        c.on_pong(&Pong { id, t1: 50, t2: 20, t3: 15 }, 60, at);
+        assert_eq!((c.n, c.offset(at)), (n, Some(4000)));
     }
 
     /// A 1.5 s round trip (within [`MAX_PING_RTT_US`]) still gives samples at the fast rate:
@@ -2307,14 +2351,15 @@ mod tests {
             }
             while flight.front().is_some_and(|f| f.0 <= us) {
                 let (t4, pong) = flight.pop_front().unwrap();
-                c.on_pong(&pong, t4);
+                c.on_pong(&pong, t4, ms);
             }
-            if synced_at.is_none() && c.offset().is_some() {
+            if synced_at.is_none() && c.offset(ms).is_some() {
                 synced_at = Some(ms);
             }
         }
-        assert_eq!(c.offset(), Some(7_000));
-        assert!(synced_at.is_some_and(|t| t < 2500.0), "{synced_at:?}");
+        assert_eq!(c.offset(20_000.0), Some(7_000));
+        // eight answers to PINGs 200 ms apart, the first after 1.5 s
+        assert!(synced_at.is_some_and(|t| t < 3500.0), "{synced_at:?}");
         assert!(c.pings < 16 + 20, "{}", c.pings);
 
         let mut silent = Clock::default();
@@ -2326,6 +2371,69 @@ mod tests {
         }
         // 16 fast ones (3.2 s), then one a second for the rest of the minute
         assert_eq!(silent.pings, 16 + 56, "{}", silent.pings);
+    }
+
+    /// PINGs every 10 ms steps of the engine clock for `secs`, `loss` (of 10) PONGs lost
+    /// (50 ms round trip), answers stopping at `quiet` s: the share of the time from 10 s to
+    /// `quiet` without an offset, the PINGs sent until `quiet` and after.
+    fn pinging(loss: u64, secs: u64, quiet: f64) -> (f64, u32, u32) {
+        let mut c = Clock::default();
+        let mut flight = std::collections::VecDeque::new();
+        let mut rng = 0x9e37_79b9_7f4a_7c15u64;
+        let (mut short, mut steps, mut at_quiet) = (0, 0, None);
+        for step in 0..secs * 100 {
+            let ms = step as f64 * 10.0;
+            let us = step * 10_000;
+            let answers = ms < quiet * 1e3;
+            if !answers && at_quiet.is_none() {
+                at_quiet = Some(c.pings);
+            }
+            if c.ping_due(ms) {
+                let p = c.ping(us, ms);
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                if answers && rng % 10 >= loss {
+                    let t2 = us + 25_000 + 7_000;
+                    flight.push_back((us + 50_000, Pong { id: p.id, t1: p.t1, t2, t3: t2 }));
+                }
+            }
+            while flight.front().is_some_and(|f| f.0 <= us) {
+                let (t4, pong) = flight.pop_front().unwrap();
+                c.on_pong(&pong, t4, ms);
+            }
+            if ms >= 10_000.0 && answers {
+                steps += 1;
+                short += usize::from(c.offset(ms).is_none());
+            }
+        }
+        let q = at_quiet.unwrap_or(c.pings);
+        (short as f64 / f64::from(steps.max(1)), q, c.pings - q)
+    }
+
+    /// 30 % of the PONGs lost (50 ms round trip): samples age out faster than one PING a
+    /// second refills them, so whenever the window falls short a burst of fast PINGs refills
+    /// it. The offset is there all but a sliver of the time (at one PING a second it was
+    /// missing 3.9 % of the time), at about the slow rate's PINGs. A host that answered and
+    /// then stopped gets fast PINGs for at most 3.2 s more.
+    #[test]
+    fn lost_pongs_bring_the_fast_rate_back() {
+        let (missing, pings, after) = pinging(3, 600, 590.0);
+        eprintln!("30 % lost: offset missing {:.3} % of the time, {pings} PINGs in 590 s", missing * 100.0);
+        assert!(missing < 0.005, "{missing}");
+        assert!(pings < 2 * 590, "{pings}");
+        assert!(after <= 16 + 10, "{after}");
+    }
+
+    /// Most PONGs lost (70 %, 90 %): the window rarely fills, and the fast bursts come at most
+    /// one per 15 s: about two PINGs a second on average, not five.
+    #[test]
+    fn mostly_lost_pongs_do_not_keep_the_fast_rate() {
+        for loss in [7, 9] {
+            let (missing, pings, _) = pinging(loss, 600, 600.0);
+            eprintln!("{loss}0 % lost: offset missing {:.1} % of the time, {pings} PINGs in 600 s", missing * 100.0);
+            assert!(pings <= 600 + 16 * (600 / 15 + 1), "{pings}");
+        }
     }
 
     /// The due time from a host PLAYOUT time: our clock is the host's minus the offset (a sign
