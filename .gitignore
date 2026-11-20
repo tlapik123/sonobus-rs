@@ -8,3 +8,7 @@ android/local.properties
 
 # devenv cache
 .devenv/
+
+.devenv*
+devenv.local.nix
+devenv.local.yaml

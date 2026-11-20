@@ -1,8 +1,10 @@
 # yaml-language-server: $schema=https://devenv.sh/devenv.schema.json
 inputs:
-  # Stable release branch; the exact commit is in devenv.lock (`devenv update` moves it).
+  # Named explicitly: devenv's default differs between machines (nixpkgs-weekly on the
+  # workstation, devenv-nixpkgs/rolling in a locki sandbox), and each would re-lock
+  # devenv.lock its own way. Matches the official binary cache; moved by `devenv update`.
   nixpkgs:
-    url: github:NixOS/nixpkgs/nixos-26.05
+    url: https://flakehub.com/f/DeterminateSystems/nixpkgs-weekly/0.1
   rust-overlay:
     url: github:oxalica/rust-overlay
     inputs:

@@ -1,5 +1,4 @@
 # Dev shell: `devenv shell`, then cargo / ./gradlew as in the READMEs.
-# Android versions must match android/app/build.gradle.kts and android/setup-toolchain.sh.
 { pkgs, lib, ... }:
 let
   # Loaded with dlopen by winit/glutin (app) and baseview (plugin editor), so not found by the linker.
@@ -20,28 +19,29 @@ in
     pkg-config
     libopus # aoo links the system libopus (opusic-sys)
     alsa-lib # cpal's default Linux backend
+    pipewire # cpal's PipeWire backend (sonobus-audio feature `pipewire`): libpipewire-0.3
     cmake # opus-bundled (Android) builds libopus from source
     cargo-ndk
-    xvfb-run # headless UI: `xvfb-run cargo run`, plugin validators with the editor
   ] ++ guiLibs;
 
   env.LD_LIBRARY_PATH = lib.makeLibraryPath guiLibs;
+  # bindgen in libspa-sys / pipewire-sys (feature `pipewire`)
+  env.LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
   languages.rust = {
     enable = true;
     channel = "stable";
-    targets = [ "aarch64-linux-android" "x86_64-linux-android" ];
+    targets = [ "aarch64-linux-android" ];
   };
 
   android = {
     enable = true;
-    platforms.version = [ "36" ];
-    buildTools.version = [ "36.1.0" ];
-    ndk.enable = true;
-    cmake.version = [ "4.1.2" ];
+    # The only two versions Gradle insists on; the SDK is read-only, so it cannot fetch them itself.
+    buildTools.version = [ "36.1.0" ]; # the one the Android Gradle plugin asks for
+    ndk.version = [ "30.0.16248370" ]; # ndkVer in android/app/build.gradle.kts
+    # Not needed for a build, and large.
     emulator.enable = false;
     systemImages.enable = false;
-    sources.enable = false;
     googleAPIs.enable = false;
     googleTVAddOns.enable = false;
     extras = [ ];
