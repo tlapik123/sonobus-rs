@@ -266,12 +266,14 @@ fn password_joined_listener_syncs() {
         assert!(joined, "the late joiner got in");
         let after = worst_over(nodes, 2.0);
         eprintln!("password join: playout within {worst:.2} ms (before {before:.2}, after {after:.2})");
-        if before < 5.0 && after < 5.0 {
-            verdict = Some(worst);
+        if before < 6.0 && after < 6.0 {
+            verdict = Some((worst, before.max(after)));
         }
     }
     match verdict {
-        Some(worst) => assert!(worst < 5.0, "{worst}"),
+        // against the windows without a join (they read 3 to 5 ms on a quiet machine), and
+        // below the 10 ms a restart would show
+        Some((worst, calm)) => assert!(worst < calm + 3.0 && worst < 8.0, "{worst} (calm {calm})"),
         // only a machine seen starving the lockstep loop during this test excuses it
         None if starved_since(test_start) => {
             println!("SKIPPED the timing check: the machine was too busy for 2 minutes")

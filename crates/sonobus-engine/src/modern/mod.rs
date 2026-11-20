@@ -1887,6 +1887,7 @@ impl Session {
                         | RxEvent::BlocksGap { .. } => {}
                     }
                 }
+                p.c.jitter.lift_ms = r.rx.lift_ms();
                 if let Some(f) = r.rx.buffer_fill_ratio() {
                     for _ in 0..new_blocks {
                         p.c.jitter.push_fill(f);
