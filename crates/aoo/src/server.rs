@@ -918,13 +918,40 @@ impl Drop for ServerHandle {
 fn bind_pair(bind: SocketAddr) -> io::Result<(UdpSocket, TcpListener)> {
     let mut tries = if bind.port() == 0 { 10 } else { 1 };
     loop {
-        let udp = UdpSocket::bind(bind)?;
-        match TcpListener::bind(udp.local_addr()?) {
+        let udp = match bind {
+            SocketAddr::V4(_) => UdpSocket::bind(bind)?,
+            SocketAddr::V6(_) => bind_dual_stack(bind, socket2::Type::DGRAM)?.into(),
+        };
+        let at = udp.local_addr()?;
+        let tcp = match at {
+            SocketAddr::V4(_) => TcpListener::bind(at),
+            SocketAddr::V6(_) => bind_dual_stack(at, socket2::Type::STREAM).map(Into::into),
+        };
+        match tcp {
             Ok(tcp) => return Ok((udp, tcp)),
             Err(e) if tries > 1 && e.kind() == io::ErrorKind::AddrInUse => tries -= 1,
             Err(e) => return Err(e),
         }
     }
+}
+
+/// An IPv6 socket bound with IPV6_V6ONLY off, so IPv4 clients reach it as `::ffff:a.b.c.d`.
+/// Linux defaults to that (`net.ipv6.bindv6only=0`), Windows to v6-only; std cannot set it.
+/// A stream socket is also put in the listening state, as `TcpListener::bind` does.
+fn bind_dual_stack(addr: SocketAddr, ty: socket2::Type) -> io::Result<socket2::Socket> {
+    let s = socket2::Socket::new(socket2::Domain::IPV6, ty, None)?;
+    s.set_only_v6(false)?;
+    let stream = ty == socket2::Type::STREAM;
+    // what std's TcpListener::bind does on Unix (rebinding while old connections linger)
+    #[cfg(unix)]
+    if stream {
+        s.set_reuse_address(true)?;
+    }
+    s.bind(&addr.into())?;
+    if stream {
+        s.listen(128)?;
+    }
+    Ok(s)
 }
 
 fn spawn(name: &str, f: impl FnOnce() + Send + 'static) -> io::Result<JoinHandle<()>> {
@@ -941,7 +968,7 @@ pub fn run(bind: SocketAddr) -> io::Result<ServerHandle> {
 }
 
 /// Start a server on `bind` (SonoBus' built-in server uses port 10999, the public one 10998).
-/// Bind IPv4 (`0.0.0.0:port`): an IPv6 socket is not dual-stack on Windows (see `to_family`).
+/// An IPv6 `bind` (`[::]:port`) is dual-stack on every OS: IPv4 clients reach it too.
 pub fn run_with(bind: SocketAddr, limits: Limits) -> io::Result<ServerHandle> {
     let (udp, listener) = bind_pair(bind)?;
     udp.set_read_timeout(Some(Duration::from_millis(100)))?;

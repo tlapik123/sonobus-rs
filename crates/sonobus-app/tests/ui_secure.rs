@@ -103,6 +103,11 @@ fn every_secure_page_and_dialog_at_both_sizes() {
         check(&mut h);
         assert!(h.query_by_label_contains("720 guesses a day").is_some());
         assert!(h.query_by_label_contains("Weak:").is_some());
+        // broadcast only: "Sync listeners", remembered
+        let was = h.state().ctrl.vm().secure_prefs.playout_sync;
+        h.get_by_label("Sync listeners").click();
+        h.run_steps(1);
+        assert_ne!(h.state().ctrl.vm().secure_prefs.playout_sync, was);
         // a pasted link shows what it names before joining
         h.state_mut().secure_tab = SecureTab::Join;
         h.state_mut().join.invite = invite("Preview me");

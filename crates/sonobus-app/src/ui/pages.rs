@@ -125,12 +125,34 @@ pub fn audio_setup(app: &mut SonobusApp, ui: &mut Ui) {
         let sys_name = s.system_sound.as_ref().map_or(tr("Off").to_owned(), |id| {
             loopbacks.iter().find(|d| d.0 == *id).map_or(id.clone(), |d| d.1.clone())
         });
+        let (old_sys, old_app) = (s.system_sound.clone(), s.app_sound.clone());
         egui::ComboBox::from_label(tr("System sound")).selected_text(sys_name).show_ui(ui, |ui| {
             ui.selectable_value(&mut s.system_sound, None, tr("Off"));
             for (id, n) in &loopbacks {
                 ui.selectable_value(&mut s.system_sound, Some(id.clone()), n);
             }
         });
+        // or one application's sound (PipeWire), on the same channels
+        if st.app_capture || s.app_sound.is_some() {
+            let app_name = s.app_sound.as_ref().map_or(tr("Off").to_owned(), |id| {
+                st.apps.iter().find(|a| a.id == *id).map_or(id.clone(), |a| a.name.clone())
+            });
+            egui::ComboBox::from_label(tr("App sound")).selected_text(app_name).show_ui(ui, |ui| {
+                ui.selectable_value(&mut s.app_sound, None, tr("Off"));
+                for a in &st.apps {
+                    ui.selectable_value(&mut s.app_sound, Some(a.id.clone()), &a.name);
+                }
+            });
+            if s.app_sound != old_app && s.app_sound.is_some() {
+                s.system_sound = None;
+            } else if s.system_sound != old_sys && s.system_sound.is_some() {
+                s.app_sound = None;
+            }
+            ui.label(
+                RichText::new(tr("Sends what one application plays instead of system sound. Lists the applications playing now (Rescan devices to refresh); a chosen one is picked up again whenever it plays."))
+                    .weak(),
+            );
+        }
         ui.label(
             RichText::new(if loopbacks.is_empty() && !st.scanning {
                 tr("This audio system cannot capture system sound (use PipeWire/PulseAudio on Linux, WASAPI on Windows, CoreAudio on macOS 14.2+).")

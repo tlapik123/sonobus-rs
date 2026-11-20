@@ -318,6 +318,7 @@ dependencies = [
  "md-5 0.11.0",
  "opusic-sys",
  "rtrb",
+ "socket2",
 ]
 
 [[package]]

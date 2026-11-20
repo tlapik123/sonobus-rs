@@ -4,14 +4,14 @@
 //!
 //! What is persisted, and where: only in our own settings file (`SonoBus.settings`, 0600), as
 //! properties outside the engine state (so never in setup files, share links, plugin projects
-//! or the OSC state): the device identity key, the relay choice, the last rendezvous address
-//! and the remembered sessions. A remembered session keeps its invite link (a secret: whoever
+//! or the OSC state): the device identity key, the relay choice, the last rendezvous address,
+//! the broadcast listener sync (on/off, delay) and the remembered sessions. A remembered session keeps its invite link (a secret: whoever
 //! has it can join) only when the user ticked "Remember this session".
 
 use std::net::{IpAddr, Ipv4Addr};
 
 use sonobus_core::files::PropertiesFile;
-use sonobus_engine::modern::{DiscoveredSession, LanScope, PeerAddr, RelayChoice, SessionMode};
+use sonobus_engine::modern::{DEFAULT_PLAYOUT_MS, DiscoveredSession, LanScope, MAX_PLAYOUT_MS, PeerAddr, RelayChoice, SessionMode};
 use sonobus_net::RdvAddr;
 use sonobus_net::auth::Invite;
 
@@ -19,6 +19,10 @@ pub const IDENTITY_KEY: &str = "sonobusRsIdentityKey";
 const RELAY_KEY: &str = "sonobusRsSecureRelay";
 const RENDEZVOUS_KEY: &str = "sonobusRsSecureRendezvous";
 const RECENTS_KEY: &str = "sonobusRsSecureRecents";
+const PLAYOUT_SYNC_KEY: &str = "sonobusRsSecurePlayoutSync";
+const PLAYOUT_MS_KEY: &str = "sonobusRsSecurePlayoutMs";
+/// Shortest listener sync delay offered: below this hardly any link's jitter buffer fits.
+pub const MIN_PLAYOUT_MS: u16 = 20;
 const MAX_RECENTS: usize = 12;
 
 /// The online-guessing budget a password join faces, from the transport review: the
@@ -69,12 +73,16 @@ pub struct SecurePrefs {
     /// Last rendezvous server address (`sonobus2://rdv/...`).
     pub rendezvous: String,
     pub recents: Vec<SecureRecent>,
+    /// Hosting "Share sound": listeners play in sync, `playout_ms` after the host captured it.
+    pub playout_sync: bool,
+    /// [`MIN_PLAYOUT_MS`]..=[`MAX_PLAYOUT_MS`].
+    pub playout_ms: u16,
 }
 
 impl Default for SecurePrefs {
     fn default() -> Self {
         // the shipped app's default: n0's public relays
-        SecurePrefs { relay: RelayChoice::N0Default, rendezvous: String::new(), recents: Vec::new() }
+        SecurePrefs { relay: RelayChoice::N0Default, rendezvous: String::new(), recents: Vec::new(), playout_sync: false, playout_ms: DEFAULT_PLAYOUT_MS }
     }
 }
 
@@ -105,7 +113,18 @@ impl SecurePrefs {
                 })
             })
             .collect();
-        SecurePrefs { relay, rendezvous: p.get(RENDEZVOUS_KEY).unwrap_or_default().to_owned(), recents }
+        SecurePrefs {
+            relay,
+            rendezvous: p.get(RENDEZVOUS_KEY).unwrap_or_default().to_owned(),
+            recents,
+            playout_sync: p.get(PLAYOUT_SYNC_KEY) == Some("1"),
+            playout_ms: p.get(PLAYOUT_MS_KEY).and_then(|v| v.parse().ok()).map_or(DEFAULT_PLAYOUT_MS, clamp_playout_ms),
+        }
+    }
+
+    /// The listener sync delay to host with, if sync is on.
+    pub fn playout(&self) -> Option<u16> {
+        self.playout_sync.then_some(self.playout_ms)
     }
 
     pub fn store(&self, p: &mut PropertiesFile) {
@@ -126,6 +145,8 @@ impl SecurePrefs {
             })
             .collect();
         p.set(RECENTS_KEY, lines.join("\n"));
+        p.set(PLAYOUT_SYNC_KEY, if self.playout_sync { "1" } else { "0" });
+        p.set(PLAYOUT_MS_KEY, self.playout_ms.to_string());
     }
 
     /// Adds `r` first (replacing an entry for the same session and way of joining).
@@ -134,6 +155,10 @@ impl SecurePrefs {
         self.recents.insert(0, r);
         self.recents.truncate(MAX_RECENTS);
     }
+}
+
+pub fn clamp_playout_ms(ms: u16) -> u16 {
+    ms.clamp(MIN_PLAYOUT_MS, MAX_PLAYOUT_MS)
 }
 
 /// The device identity key from our settings.
@@ -364,7 +389,7 @@ mod tests {
 
     #[test]
     fn prefs_round_trip_and_cap() {
-        let mut p = SecurePrefs { relay: RelayChoice::Custom(vec!["https://relay.example/".into()]), rendezvous: "sonobus2://rdv/x".into(), recents: vec![] };
+        let mut p = SecurePrefs { relay: RelayChoice::Custom(vec!["https://relay.example/".into()]), rendezvous: "sonobus2://rdv/x".into(), ..SecurePrefs::default() };
         for i in 0..15 {
             p.remember(SecureRecent { name: format!("s{i}"), broadcast: i % 2 == 0, how: How::Invite, invite: None, server: None });
         }
@@ -384,6 +409,25 @@ mod tests {
         let mut f = PropertiesFile::default();
         SecurePrefs { relay: RelayChoice::None, ..SecurePrefs::default() }.store(&mut f);
         assert_eq!(SecurePrefs::load(&f).relay, RelayChoice::None);
+    }
+
+    #[test]
+    fn playout_sync_round_trip_and_clamp() {
+        let d = SecurePrefs::load(&PropertiesFile::default());
+        assert_eq!((d.playout_sync, d.playout_ms, d.playout()), (false, DEFAULT_PLAYOUT_MS, None));
+        let mut f = PropertiesFile::default();
+        let p = SecurePrefs { playout_sync: true, playout_ms: 320, ..SecurePrefs::default() };
+        p.store(&mut f);
+        assert_eq!(SecurePrefs::load(&f), p);
+        assert_eq!(p.playout(), Some(320));
+        // off keeps the delay for next time
+        SecurePrefs { playout_sync: false, ..p.clone() }.store(&mut f);
+        assert_eq!((SecurePrefs::load(&f).playout_sync, SecurePrefs::load(&f).playout_ms), (false, 320));
+        // a hand-edited file is clamped
+        for (text, want) in [("5", MIN_PLAYOUT_MS), ("60000", MAX_PLAYOUT_MS), ("junk", DEFAULT_PLAYOUT_MS)] {
+            f.set(PLAYOUT_MS_KEY, text);
+            assert_eq!(SecurePrefs::load(&f).playout_ms, want, "{text}");
+        }
     }
 
     #[test]

@@ -23,3 +23,7 @@ tokio = { version = "1.54.1", optional = true, default-features = false, feature
 [target.'cfg(unix)'.dependencies]
 # sigwait for SIGINT/SIGTERM/SIGUSR1 (already in the tree through iroh/tokio)
 libc = "0.2"
+
+[target.'cfg(not(unix))'.dependencies]
+# Ctrl-C on Windows (tokio is already in the tree through sonobus-net/iroh)
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "signal"] }

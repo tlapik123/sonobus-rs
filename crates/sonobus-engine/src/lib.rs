@@ -329,6 +329,9 @@ pub struct PeerNet {
     /// datagram, as the adaptation decided from its reports; `None` while it does not
     /// subscribe.
     pub send_level: Option<(usize, u8)>,
+    /// Broadcast listener with playout sync on: how early (positive) or late its output is
+    /// against the host's target, ms; `None` while sync is off or not yet measured.
+    pub playout_error_ms: Option<f32>,
 }
 
 /// A protocol v2 peer's self-declared role.
@@ -2232,6 +2235,38 @@ impl Engine {
         self.with_core(|c| {
             if let Some(m) = &mut c.modern {
                 m.unblock(&id);
+            }
+        });
+    }
+
+    /// Broadcast host: play out in sync across all listeners, `ms` after capture (see
+    /// [`modern::HostOptions::playout_ms`]); `None` turns it off. Ignored unless we host a
+    /// broadcast session.
+    pub fn set_playout_sync(&self, ms: Option<u16>) {
+        self.with_core(|c| {
+            if let Some(m) = &mut c.modern {
+                m.set_playout_ms(ms);
+            }
+        });
+    }
+
+    /// Test hook: hold every AUDIO datagram the modern session receives `ms` longer.
+    #[doc(hidden)]
+    pub fn set_modern_receive_delay(&self, ms: u32) {
+        self.with_core(|c| {
+            if let Some(m) = &mut c.modern {
+                m.rx_delay = Duration::from_millis(ms.into());
+            }
+        });
+    }
+
+    /// Test hook: the modern session's PING/PONG/PLAYOUT clock reads `ms` ahead (as another
+    /// device's clock would).
+    #[doc(hidden)]
+    pub fn set_modern_clock_skew(&self, ms: u32) {
+        self.with_core(|c| {
+            if let Some(m) = &mut c.modern {
+                m.clock_skew_us = u64::from(ms) * 1000;
             }
         });
     }

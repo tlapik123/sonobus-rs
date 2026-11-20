@@ -599,3 +599,29 @@ fn cpp_client_against_rust_server() {
         assert!(lines.contains(&l), "C++ client output lacks {l:?}:\n{out}");
     }
 }
+
+/// A server bound to `[::]` is dual-stack on every OS (Windows defaults IPv6 sockets to
+/// v6-only): IPv4 clients reach both its TCP listener and its UDP socket.
+#[test]
+fn ipv6_any_server_serves_ipv4_clients() {
+    let srv = server::run("[::]:0".parse().unwrap()).unwrap();
+    let v4: SocketAddr = ([127, 0, 0, 1], srv.local_addr().port()).into();
+    let mut raw = Vec::new();
+    Message::ServerPing.encode(&mut raw);
+    let mut ping = Vec::new();
+    aoo::slip::encode(&raw, &mut ping);
+    let mut tcp = TcpStream::connect(v4).unwrap();
+    tcp.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    tcp.write_all(&ping).unwrap();
+    assert!(tcp.read(&mut [0u8; 64]).unwrap() > 0, "TCP pong");
+
+    let u = UdpSocket::bind("127.0.0.1:0").unwrap();
+    u.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    let mut req = Vec::new();
+    Message::ServerRequest.encode(&mut req);
+    u.send_to(&req, v4).unwrap();
+    let mut buf = [0u8; 256];
+    let (n, from) = u.recv_from(&mut buf).expect("UDP reply");
+    assert_eq!(from, v4);
+    assert!(matches!(message::parse(&buf[..n]), Ok(Message::ClientReply { .. })));
+}

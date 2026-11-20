@@ -105,9 +105,10 @@ fn alsa_null_device_duplex_input_only_and_reopen() {
     assert!(count.load(Relaxed) > 0, "input-only engine never ran");
     drop(s.close().expect("engine back"));
 
-    // App capture is reserved, not implemented.
+    // App capture: no PipeWire (unsupported), or no such application playing.
     let mut cfg = base;
-    cfg.inputs = vec![InputConfig { source: InputSource::App("firefox".into()), channels: None }];
+    cfg.inputs = vec![InputConfig { source: InputSource::App("sonobus-test-no-such-app".into()), channels: None }];
     let err = Session::open(cfg, counting_engine(count)).err().expect("app capture");
-    assert_eq!(err.kind(), sonobus_audio::ErrorKind::UnsupportedOperation);
+    use sonobus_audio::ErrorKind::{DeviceNotAvailable, UnsupportedOperation};
+    assert!(matches!(err.kind(), UnsupportedOperation | DeviceNotAvailable), "{err}");
 }

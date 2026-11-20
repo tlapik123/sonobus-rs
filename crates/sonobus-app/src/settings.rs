@@ -76,29 +76,10 @@ pub fn file_url(path: &Path) -> String {
     s
 }
 
-/// The local path of a `file://` URL (`None` for anything else).
+/// The local path of a `file://` URL (`None` for anything else; Windows: `file:///C:/x` is
+/// `C:/x`).
 pub fn url_path(url: &str) -> Option<PathBuf> {
-    let rest = url.strip_prefix("file://")?;
-    let b = rest.as_bytes();
-    let mut out = Vec::with_capacity(b.len());
-    let mut i = 0;
-    while i < b.len() {
-        let hex = |c: u8| (c as char).to_digit(16);
-        match (b[i], b.get(i + 1).copied().and_then(hex), b.get(i + 2).copied().and_then(hex)) {
-            (b'%', Some(h), Some(l)) => {
-                out.push((h * 16 + l) as u8);
-                i += 3;
-            }
-            (c, _, _) => {
-                out.push(c);
-                i += 1;
-            }
-        }
-    }
-    let p = String::from_utf8_lossy(&out).into_owned();
-    // "file:///C:/x" on Windows
-    let p = if cfg!(windows) { p.trim_start_matches('/').to_owned() } else { p };
-    Some(PathBuf::from(p))
+    sonobus_engine::playback::file_url_path(url)
 }
 
 pub const SOUNDBOARDS_FILE: &str = "soundboards.xml";
@@ -230,6 +211,9 @@ pub fn device_setup_xml(s: &DeviceSetup) -> String {
     if let Some(l) = &s.system_sound {
         e.set_attribute("sonobusRsSystemSound", l.clone());
     }
+    if let Some(a) = &s.app_sound {
+        e.set_attribute("sonobusRsAppSound", a.clone());
+    }
     if let Some(b) = s.buffer_frames {
         e.set_attribute("sonobusRsBufferFrames", b.to_string());
     }
@@ -254,6 +238,7 @@ pub fn apply_device_setup_xml(xml: &str, s: &mut DeviceSetup) {
     s.input = DeviceChoice::from_setting(e.attribute("sonobusRsInput").unwrap_or_default());
     s.input_channels = num("sonobusRsInputChannels").map(|c| c.min(64) as u16);
     s.system_sound = e.attribute("sonobusRsSystemSound").filter(|v| !v.is_empty()).map(str::to_owned);
+    s.app_sound = e.attribute("sonobusRsAppSound").filter(|v| !v.is_empty()).map(str::to_owned);
     s.buffer_frames = num("sonobusRsBufferFrames");
 }
 
@@ -417,6 +402,7 @@ mod tests {
             input: DeviceChoice::None,
             input_channels: Some(4),
             system_sound: Some("alsa:hw:2,0".into()),
+            app_sound: Some("Firefox".into()),
             external: None, // not persisted
             sample_rate: 44100,
             block_size: 128,
@@ -480,6 +466,11 @@ mod tests {
         assert_eq!(u, "file:///home/zo%C3%AB/Music/Sono%20Bus/a%25b.wav");
         assert_eq!(url_path(&u).unwrap(), p);
         assert_eq!(url_path("https://x"), None);
+        // a drive letter path: the URL's leading slash goes on Windows only
+        let u = file_url(Path::new(r"C:\Music\a.wav"));
+        assert_eq!(u, "file:///C:/Music/a.wav");
+        assert_eq!(url_path(&u).unwrap(), Path::new(if cfg!(windows) { "C:/Music/a.wav" } else { "/C:/Music/a.wav" }));
+        let u = file_url(p);
         let dir = temp_dir("boards");
         let mut b = files::Soundboards::default();
         b.boards.push(files::Soundboard { name: "Jingles".into(), samples: vec![files::SoundSample { name: "a".into(), file_url: u, ..Default::default() }] });

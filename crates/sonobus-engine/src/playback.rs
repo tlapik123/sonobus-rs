@@ -185,8 +185,25 @@ fn sample_path(s: &SoundSample) -> Option<PathBuf> {
     if let Some(p) = s.file_path.as_deref().filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(p));
     }
-    let u = s.file_url.strip_prefix("file://")?;
-    Some(PathBuf::from(percent_decode(u)))
+    file_url_path(&s.file_url)
+}
+
+/// The local path of a `file://` URL (`None` for anything else); on Windows `file:///C:/x`
+/// is `C:/x`.
+pub fn file_url_path(url: &str) -> Option<PathBuf> {
+    let p = percent_decode(url.strip_prefix("file://")?);
+    if cfg!(windows) {
+        return Some(PathBuf::from(without_drive_slash(&p)));
+    }
+    Some(PathBuf::from(p))
+}
+
+/// `/C:/x` -> `C:/x` (a drive letter's URL path); anything else as is (`/home/x`, UNC `//host/x`).
+fn without_drive_slash(p: &str) -> &str {
+    match p.as_bytes() {
+        [b'/', d, b':', ..] if d.is_ascii_alphabetic() => &p[1..],
+        _ => p,
+    }
 }
 
 /// `%XX` escapes of a `file://` URL path.
@@ -739,5 +756,24 @@ mod tests {
             ..SoundSample::default()
         };
         assert_eq!(sample_path(&s), Some(PathBuf::from("/tmp/a b.wav")));
+        assert_eq!(file_url_path("https://x/a.wav"), None);
+        let drive = file_url_path("file:///C:/My%20Music/a.wav").unwrap();
+        let want = if cfg!(windows) {
+            "C:/My Music/a.wav"
+        } else {
+            "/C:/My Music/a.wav"
+        };
+        assert_eq!(drive, PathBuf::from(want));
+        for (p, want) in [
+            ("/C:/x", "C:/x"),
+            ("/z:", "z:"),
+            ("/home/x", "/home/x"),
+            ("//host/share/x", "//host/share/x"),
+            ("/1:/x", "/1:/x"),
+            ("C:/x", "C:/x"),
+            ("", ""),
+        ] {
+            assert_eq!(without_drive_slash(p), want, "{p}");
+        }
     }
 }

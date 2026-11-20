@@ -733,7 +733,7 @@ impl Net {
     }
 
     /// Queue a control frame to an authenticated connection. Only ROSTER, FORMAT, SUBSCRIBE,
-    /// QUALITY_REQ and APP_OSC are allowed. Frames are validated here: one that does not
+    /// QUALITY_REQ, APP_OSC and PLAYOUT are allowed. Frames are validated here: one that does not
     /// encode is refused without touching the connection. A roster longer than
     /// [`wire::MAX_ROSTER`] goes out as several consecutive ROSTER frames (receivers must treat
     /// ROSTER as additive).
@@ -751,7 +751,8 @@ impl Net {
             | Frame::Format(_)
             | Frame::Subscribe(_)
             | Frame::QualityReq(_)
-            | Frame::AppOsc(_) => frame.encode(&mut bytes).map_err(ControlError::Invalid)?,
+            | Frame::AppOsc(_)
+            | Frame::Playout(_) => frame.encode(&mut bytes).map_err(ControlError::Invalid)?,
             _ => return Err(ControlError::NotAllowed),
         }
         let links = lock(&self.links);
@@ -1963,7 +1964,7 @@ async fn session(
                 | Frame::Pake3 { .. }
                 | Frame::Welcome(_)
                 | Frame::Unknown(_) => {}
-                Frame::Format(_) | Frame::Roster(_) if hub => {}
+                Frame::Format(_) | Frame::Roster(_) | Frame::Playout(_) if hub => {}
                 frame => {
                     if let Frame::Roster(r) = &frame {
                         schedule_dials(shared, r);

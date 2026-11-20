@@ -681,6 +681,7 @@ fn legacy_and_modern_sessions_alternate_without_leaks() {
     run(&mut [&mut a, &mut b], 0.5);
     let after = threads_and_fds();
     eprintln!("threads, fds before {before:?} after {after:?}");
+    #[cfg(target_os = "linux")] // counted from /proc: zero elsewhere
     assert_eq!(after, before, "threads and fds");
 }
 

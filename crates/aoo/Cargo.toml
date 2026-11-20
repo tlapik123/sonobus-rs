@@ -10,6 +10,8 @@ md-5 = "0.11.0"
 # libopus multistream FFI; links the system libopus unless `opus-bundled` is on.
 opusic-sys = { version = "0.7.7", default-features = false }
 rtrb = "0.4.1"
+# IPV6_V6ONLY off for a server bound to `[::]` (std cannot set it; already in the tree via tokio)
+socket2 = "0.6.5"
 
 [features]
 # Build libopus 1.6.1 from source (needs cmake; for Android/Windows cross builds).

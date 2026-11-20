@@ -55,10 +55,25 @@ fn signals() -> Receiver<Signal> {
     rx
 }
 
-/// No signal handling: Ctrl-C ends the process without the shutdown log lines.
+/// Ctrl-C -> Stop (Windows has no SIGTERM/SIGUSR1), through tokio on a thread of its own.
 #[cfg(not(unix))]
 fn signals() -> Receiver<Signal> {
     let (tx, rx) = channel();
-    std::mem::forget(tx);
+    std::thread::spawn(move || {
+        if let Ok(rt) = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+        {
+            rt.block_on(async {
+                while tokio::signal::ctrl_c().await.is_ok() {
+                    if tx.send(Signal::Stop).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+        // No handler: keep the sender, or `serve` would take the closed channel for Stop.
+        std::mem::forget(tx);
+    });
     rx
 }

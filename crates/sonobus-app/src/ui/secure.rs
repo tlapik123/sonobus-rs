@@ -109,12 +109,14 @@ fn host_tab(app: &mut SonobusApp, ui: &mut Ui) {
         ui.radio_value(&mut f.broadcast, false, tr("Jam: everyone plays"));
         ui.radio_value(&mut f.broadcast, true, tr("Share sound: the others listen"));
     });
-    if f.broadcast {
+    if app.host_form.broadcast {
         row(ui, |ui| {
             let l = ui.label(tr("Most listeners (0: no limit)"));
-            ui.add(egui::DragValue::new(&mut f.max_listeners).range(0..=64)).labelled_by(l.id);
+            ui.add(egui::DragValue::new(&mut app.host_form.max_listeners).range(0..=64)).labelled_by(l.id);
         });
+        sync_listeners(app, ui);
     }
+    let f = &mut app.host_form;
     ui.add_space(4.0);
     ui.label(RichText::new(tr("How others join")).strong());
     ui.label(tr("Anyone with the invite link (or its QR code) can join."));
@@ -144,6 +146,22 @@ fn host_tab(app: &mut SonobusApp, ui: &mut Ui) {
     let starting = app.ctrl.vm().secure_starting;
     if ui.add_enabled(problem.is_none() && !starting, egui::Button::new(RichText::new(tr("Host Secure Session")).strong())).clicked() {
         app.ctrl.host_secure(&app.form.user, &app.host_form.clone());
+    }
+}
+
+/// Broadcast host: "Sync listeners" and its delay (remembered; applies at once while hosting).
+fn sync_listeners(app: &mut SonobusApp, ui: &mut Ui) {
+    let p = &app.ctrl.vm().secure_prefs;
+    let (was_on, was_ms) = (p.playout_sync, p.playout_ms);
+    let (mut on, mut ms) = (was_on, was_ms);
+    row(ui, |ui| {
+        ui.checkbox(&mut on, tr("Sync listeners"))
+            .on_hover_text(tr("Every listener plays the sound at the same moment, this long after you play it. A listener whose connection needs longer plays late."));
+        let l = ui.label(tr("Delay (ms)"));
+        ui.add_enabled(on, egui::DragValue::new(&mut ms).range(secure::MIN_PLAYOUT_MS..=sonobus_engine::modern::MAX_PLAYOUT_MS)).labelled_by(l.id);
+    });
+    if (on, ms) != (was_on, was_ms) {
+        app.ctrl.set_playout_sync(on, ms);
     }
 }
 
@@ -433,6 +451,9 @@ pub fn session_panel(app: &mut SonobusApp, ui: &mut Ui, title: bool) {
         if s.failed_joins > 0 {
             ui.label(RichText::new(format!("{} {}", tr("Failed join attempts:"), s.failed_joins)).color(CALM));
         }
+        if s.mode == SessionMode::Broadcast {
+            sync_listeners(app, ui);
+        }
     }
     if let Some(r) = &s.relay {
         ui.label(RichText::new(format!("{} {}", tr("Relay:"), secure::relay_host(r))).weak());
@@ -490,6 +511,10 @@ pub fn peer_net(ui: &mut Ui, n: &sonobus_engine::PeerNet) {
         (false, None) => tr("relayed").to_owned(),
     };
     ui.label(format!("{path}, {:.0} ms", n.rtt_ms));
+    if let Some(e) = n.playout_error_ms {
+        ui.label(format!("{} {e:+.1} ms", tr("sync")))
+            .on_hover_text(tr("How early (+) or late (-) this device plays against the host's sync target"));
+    }
     ui.label(RichText::new(format!("ID {}", secure::short_id(&n.endpoint_id))).monospace().weak())
         .on_hover_text(tr("This device's proven identity: names can be chosen freely, this cannot."));
 }
