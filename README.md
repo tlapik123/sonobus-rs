@@ -1,8 +1,8 @@
 # sonobus-rs
 
-SonoBus (1.7.2) rewritten in Rust: low-latency peer-to-peer audio between musicians, as a
-desktop app, a CLAP/VST3 plugin, an Android app and a self-hostable rendezvous server.
-GPL-3.0-or-later.
+SonoBus (1.7.2) rewritten in Rust: low-latency peer-to-peer audio, for musicians playing
+together and for silent discos (one host, many listeners in sync). A desktop app, a CLAP/VST3
+plugin, an Android app and a self-hostable rendezvous server. GPL-3.0-or-later.
 
 A session is either **Compatible** (the stock AOO protocol of SonoBus 1.7.x, unencrypted, talks
 to existing SonoBus users) or **Secure** (this project's own encrypted protocol on iroh/QUIC,
