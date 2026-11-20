@@ -32,7 +32,6 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 - One timing gap in joining (a key change between WELCOME being written and the connection being registered) is closed by reasoning only; it has no test.
 - `legacy_and_modern_sessions_alternate_without_leaks` (`crates/sonobus-engine/tests/modern.rs`) failed once in four full workspace runs with two file descriptors still open half a second after teardown. It passes alone, also under CPU load. Cause unknown.
 - A member that learns of a removal only through the key change does not list that device under "Blocked devices".
-- The four session-ended messages are English only.
 - Three fixes are tested at unit level only, not through a live session: the shared-stream loss estimate, the subscription rebuilt after a format change, and the baseline reset on a path change.
 - `congested_uplink_lowers_the_send_rate` (`crates/sonobus-engine/tests/modern_hardening.rs`) failed once in a full workspace run and passes alone; `nack_repairs_bursts_bit_exact` (`crates/sonobus-net/tests/e2e.rs`) did the same once. Both are wall-clock tests that fail under load.
 - The last round of synchronised-playout fixes (slack capped at ring fill, 16 outstanding pings with back-off, PLAYOUT accepted only from a sole peer, ring size reset on sync off) has not been independently reviewed. The two rounds before it each had a hole found by the next review.
@@ -47,6 +46,5 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 
 ## Housekeeping
 
-- No README at the repository root.
 - CI exists but has never run (see above).
 - Building the desktop app on Linux now needs libpipewire and libclang; `devenv.nix` has them, the dev shell must be re-entered.

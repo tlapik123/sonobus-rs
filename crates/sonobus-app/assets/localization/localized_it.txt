@@ -690,3 +690,8 @@ countries: it
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Determina se i campioni sonori possono essere riprodotti utilizzando i tasti di scelta rapida numerici predefiniti."
 "Soundboard volume" = "Volume della tavola armonica"
 "Send Soundboard Playback to All" = "Invia la riproduzione della tavola armonica a tutti"
+"You were removed from the session" = "Sei stato rimosso dalla sessione"
+"A member blocked you" = "Un membro ti ha bloccato"
+"The host ended the session" = "L\'host ha terminato la sessione"
+"The session is full" = "La sessione è piena"
+"The session ended" = "La sessione è terminata"

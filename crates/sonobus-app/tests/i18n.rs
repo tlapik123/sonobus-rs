@@ -65,6 +65,25 @@ fn coverage_report() {
     eprintln!("{summary}");
 }
 
+/// The texts shown when a Secure session ends are translated in every shipped language.
+#[test]
+fn session_ended_texts_are_translated() {
+    use sonobus_app::secure::ended_text;
+    use sonobus_engine::modern::{END_BLOCKED, END_FULL, END_HOST_LEFT, END_REMOVED};
+    let reasons = [END_REMOVED, END_BLOCKED, END_HOST_LEFT, END_FULL, "some other reason"];
+    let english: Vec<String> = {
+        let _g = i18n::scope(None);
+        reasons.map(ended_text).into()
+    };
+    for (code, _, _) in i18n::LANGUAGES.iter().skip(2) {
+        let _g = i18n::scope(Some(code));
+        for (r, en) in reasons.iter().zip(&english) {
+            let t = ended_text(r);
+            assert!(!t.is_empty() && t != *en, "{code}: {en:?} is not translated");
+        }
+    }
+}
+
 #[test]
 fn renders_in_japanese_without_missing_glyphs() {
     assert_eq!(i18n::init("ja"), Some("ja"));

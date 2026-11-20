@@ -680,3 +680,8 @@ countries: fr
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Indique si les échantillons sonores peuvent être lus à l\'aide des touches de raccourci numériques par défaut."
 "Soundboard volume" = "Volume de la table d\'harmonie"
 "Send Soundboard Playback to All" = "Envoyer la lecture de la table d\'harmonie à tous"
+"You were removed from the session" = "Vous avez été retiré de la session"
+"A member blocked you" = "Un membre vous a bloqué"
+"The host ended the session" = "L\'hôte a mis fin à la session"
+"The session is full" = "La session est complète"
+"The session ended" = "La session est terminée"

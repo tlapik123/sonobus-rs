@@ -678,3 +678,8 @@ countries: es
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Alterna si las muestras de sonido se pueden reproducir usando teclas de acceso rápido numéricas predeterminadas."
 "Soundboard volume" = "Volumen de la caja de resonancia"
 "Send Soundboard Playback to All" = "Enviar reproducción de caja de resonancia a todos"
+"You were removed from the session" = "Ha sido eliminado de la sesión"
+"A member blocked you" = "Un miembro le ha bloqueado"
+"The host ended the session" = "El host ha finalizado la sesión"
+"The session is full" = "La sesión está llena"
+"The session ended" = "La sesión ha finalizado"

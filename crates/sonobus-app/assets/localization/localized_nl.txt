@@ -665,3 +665,8 @@ countries: nl
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Schakelt in of geluidsfragmenten kunnen worden afgespeeld met standaard numerieke sneltoetsen."
 "Soundboard volume" = "Volume van het klankbord"
 "Send Soundboard Playback to All" = "Soundboard-weergave naar iedereen verzenden"
+"You were removed from the session" = "Je bent uit de sessie verwijderd"
+"A member blocked you" = "Een lid heeft je geblokkeerd"
+"The host ended the session" = "De host heeft de sessie beëindigd"
+"The session is full" = "De sessie is vol"
+"The session ended" = "De sessie is beëindigd"

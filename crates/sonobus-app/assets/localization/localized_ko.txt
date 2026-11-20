@@ -671,3 +671,8 @@ countries: ko
 "Toggles whether sound samples can be played using default numeric hotkeys." = "기본 숫자 핫키를 사용하여 사운드 샘플을 재생할 수 있는지 여부를 전환합니다."
 "Soundboard volume" = "사운드보드 볼륨"
 "Send Soundboard Playback to All" = "모두에게 사운드보드 재생 보내기"
+"You were removed from the session" = "세션에서 제거되었습니다"
+"A member blocked you" = "멤버에 의해 차단되었습니다"
+"The host ended the session" = "호스트가 세션을 종료했습니다"
+"The session is full" = "세션이 가득 찼습니다"
+"The session ended" = "세션이 종료되었습니다"

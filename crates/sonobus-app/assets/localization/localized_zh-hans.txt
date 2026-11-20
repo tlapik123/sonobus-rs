@@ -668,3 +668,8 @@ countries: zh
 "Toggles whether sound samples can be played using default numeric hotkeys." = "切换是否可以使用默认数字快捷键播放声音样本."
 "Soundboard volume" = "音板音量"
 "Send Soundboard Playback to All" = "将音板播放发送给所有人"
+"You were removed from the session" = "您已被移出会话"
+"A member blocked you" = "一名成员屏蔽了您"
+"The host ended the session" = "主机已结束会话"
+"The session is full" = "会话已满"
+"The session ended" = "会话已结束"
