@@ -9,7 +9,7 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 - A real stock SonoBus client talking to ours. Interop is tested against the upstream AOO C++ code only.
 - Any real network: all tests run on one machine; n0 relays were never contacted.
 - The plugin in a real DAW (it passes clap-validator, pluginval and Steinberg's validator).
-- Windows and macOS: CI built and tested both for the first time (run 44840906229): both built and linked. After fixes the second run (44847867690) passed on Linux and Windows; macOS had two DSP reference tests left, since loosened and not yet rerun. The Windows file-URL handling and Ctrl-C shutdown of the server are still untested.
+- Windows and macOS: CI builds and runs the tests on both (first green run on all three systems: PR 1, commit 951cd51). That covers compiling, linking and the simulated-device tests only: nothing was run on a real Windows or macOS machine with real audio devices, the app window was never opened there, and the plugin was not loaded in a host. The Windows file-URL handling and Ctrl-C shutdown of the server have no test.
 - On macOS only 127.0.0.1 is a loopback address, so seven network tests that need distinct source addresses (per-address caps, back-off, PIN lockout) run only on Linux and Windows.
 - On the macOS CI runner `thread::sleep` lasts several times longer than asked; the engine test loop that stands in for the audio device spins there instead. Why the runner oversleeps is not known.
 - `password_joined_listener_syncs` checks its timing bound on Linux only: the Windows runner reads 5.5-8.4 ms without any join, too close to the 10 ms a restart would show.
@@ -23,7 +23,7 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 
 - Synchronised playout in a Secure mesh session (it exists for broadcast sessions only).
 - Per-application sound capture on Windows and macOS (Linux has it through PipeWire).
-- Signed Windows and macOS builds, installers and app bundles; the standalone macOS app has no microphone usage description (ADR 0006).
+- Signed Windows and macOS builds, installers and app bundles (CI builds and tests only); the standalone macOS app has no microphone usage description (ADR 0006).
 
 ## Not planned
 
@@ -67,5 +67,5 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 
 ## Housekeeping
 
-- CI ran once on all three systems; see "Never verified" for the open results.
+- CI passes on Linux, Windows and macOS; some timing and per-address tests run on Linux only (see "Never verified").
 - Building the desktop app on Linux now needs libpipewire and libclang; `devenv.nix` has them, the dev shell must be re-entered.

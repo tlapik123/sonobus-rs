@@ -26,5 +26,6 @@ Without the dev shell: stable Rust and, on Debian/Ubuntu,
 
 ## Status
 
-Work in progress. Linux and Android are built and tested; the Windows and macOS CI jobs have
-never passed. What is unverified, not built and known to be broken: `docs/open-issues.md`.
+Work in progress. Linux and Android are built and tested; Windows and macOS build and pass the
+tests in CI but were never run on a real machine. What is unverified, not built and known to be
+broken: `docs/open-issues.md`.
