@@ -206,6 +206,19 @@ pub fn starved_within(d: Duration) -> bool {
     at > 0 && ns(Instant::now()).saturating_sub(at - 1) < d.as_nanos() as u64
 }
 
+/// Wait until `t`, the lockstep's next block. macOS CI runners oversleep `thread::sleep`
+/// several-fold (20 ms took about 125 ms), which ran the audio clock at a fraction of real
+/// time there; on macOS this yields until `t` instead.
+pub fn sleep_until(t: Instant) {
+    if cfg!(target_os = "macos") {
+        while Instant::now() < t {
+            std::thread::yield_now();
+        }
+    } else if let Some(d) = t.checked_duration_since(Instant::now()) {
+        std::thread::sleep(d);
+    }
+}
+
 /// Run until `done` holds (checked every block); false on timeout.
 pub fn run_until(nodes: &mut [&mut Node], secs: f64, done: impl Fn(&[&mut Node]) -> bool) -> bool {
     let start = Instant::now();
@@ -220,7 +233,7 @@ pub fn run_until(nodes: &mut [&mut Node], secs: f64, done: impl Fn(&[&mut Node])
         }
         next += block;
         match next.checked_duration_since(Instant::now()) {
-            Some(d) => std::thread::sleep(d),
+            Some(_) => sleep_until(next),
             // late: carry on from now instead of catching up with a burst, like a device would
             None => {
                 note_late(next);

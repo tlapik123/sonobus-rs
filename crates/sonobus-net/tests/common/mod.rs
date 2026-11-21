@@ -20,8 +20,14 @@ use sonobus_net::{Config, ConnId, Event, Net, PeerAddr, PeerInfo, PeerTx, RelayC
 pub const SESSION: &str = "test session";
 pub const WAIT: Duration = Duration::from_secs(15);
 
+/// Every 127.0.0.n is a local address (Linux, Windows). macOS only configures 127.0.0.1: binding
+/// another one fails (EADDRNOTAVAIL), so there [`lo`] is always 127.0.0.1 and the few tests
+/// that need distinct source addresses are ignored.
+pub const MANY_LOOPBACKS: bool = cfg!(any(target_os = "linux", windows));
+
+/// Loopback address `n` (127.0.0.n where [`MANY_LOOPBACKS`], else 127.0.0.1).
 pub fn lo(n: u8) -> Ipv4Addr {
-    Ipv4Addr::new(127, 0, 0, n)
+    Ipv4Addr::new(127, 0, 0, if MANY_LOOPBACKS { n } else { 1 })
 }
 
 pub fn cfg(name: &str, key: Option<Key>, password: Option<&str>) -> Config {

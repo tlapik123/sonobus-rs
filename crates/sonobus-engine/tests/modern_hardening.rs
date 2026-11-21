@@ -693,6 +693,11 @@ impl Drop for Bottleneck {
 /// level exhausted and moves B to a private Opus stream at most half the rate (with its own
 /// bit-rate ladder); the bytes A sends per second drop below the cap and B keeps hearing A.
 #[test]
+#[cfg_attr(
+    not(target_os = "linux"),
+    ignore = "on the Windows and macOS CI runners the connection took the direct loopback \
+              path around the bottleneck from the start: nothing went through it"
+)]
 fn congested_uplink_lowers_the_send_rate() {
     let _serial = serial();
     let mut st = state(groups(&[(0, 1)]));
@@ -728,6 +733,7 @@ fn congested_uplink_lowers_the_send_rate() {
         neck.dropped.load(Ordering::Relaxed),
         s.peers[0].recv_format
     );
+    assert!(free > 0.0, "nothing went through the bottleneck: iroh took the direct path");
     assert!(capped < 0.6 * free, "{free} -> {capped}");
     assert!(capped * 8.0 < 500_000.0 * 0.9, "under the cap with room: {capped}");
     assert_ne!(s.peers[0].recv_format.as_deref(), Some("PCM 16 bit"), "{:?}", s.peers[0]);

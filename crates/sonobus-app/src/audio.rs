@@ -896,7 +896,8 @@ mod tests {
     fn app_sound_takes_the_system_sound_input_while_playing() {
         let app = |id: &str| AppSource { id: id.into(), name: id.into() };
         let both = DeviceSetup {
-            system_sound: Some("alsa:hw:2,0".into()),
+            // a device id of this platform's host ("alsa:hw:2,0" on Linux)
+            system_sound: Some(cpal::DeviceId::new(sonobus_audio::default_host(), "hw:2,0").to_string()),
             app_sound: Some("Firefox".into()),
             ..DeviceSetup::default()
         };

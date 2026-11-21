@@ -269,8 +269,10 @@ fn login_frame(user: &str) -> Vec<u8> {
 
 /// Reads whatever is pending; true once the server has closed the connection.
 fn is_closed(s: &mut TcpStream) -> bool {
-    s.set_read_timeout(Some(Duration::from_millis(300)))
-        .unwrap();
+    // macOS refuses socket options (EINVAL) once the peer has reset the connection
+    if s.set_read_timeout(Some(Duration::from_millis(300))).is_err() {
+        return true;
+    }
     let mut buf = [0u8; 4096];
     loop {
         match s.read(&mut buf) {

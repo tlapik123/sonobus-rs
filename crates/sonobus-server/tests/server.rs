@@ -72,6 +72,14 @@ fn legacy_client_logs_in_and_joins_a_group() {
     );
 }
 
+/// Every 127.0.0.n is local on Linux and Windows; macOS only configures 127.0.0.1.
+const MANY_LOOPBACKS: bool = cfg!(any(target_os = "linux", windows));
+
+/// 127.0.0.n where [`MANY_LOOPBACKS`], else 127.0.0.1.
+fn lo(n: u8) -> [u8; 4] {
+    [127, 0, 0, if MANY_LOOPBACKS { n } else { 1 }]
+}
+
 fn net(ip: [u8; 4], name: &str, host: bool) -> Net {
     Net::start(
         Config {
@@ -121,15 +129,17 @@ fn two_nets_meet_by_name_and_password() {
     assert!(text.starts_with("sonobus2://rdv/"), "{text}");
     let srv: RdvAddr = text.parse().unwrap();
     assert_eq!(srv.resolve(), Ok(d.rendezvous_endpoint().unwrap()));
-    let h = net([127, 0, 0, 2], "host", true);
+    let h = net(lo(2), "host", true);
     h.register_by_name(srv.clone());
-    let j = net([127, 0, 0, 3], "joiner", false);
+    let j = net(lo(3), "joiner", false);
     j.join_by_name(srv, "Friday jam", "open sesame").unwrap();
     connected(&j);
     connected(&h);
     let line = d.stats_line();
+    // sources: distinct addresses
+    let sources = if MANY_LOOPBACKS { 2 } else { 1 };
     assert!(
-        line.contains(" modern_conns=2 modern_sources=2 modern_tags=1 modern_regs=2")
+        line.contains(&format!(" modern_conns=2 modern_sources={sources} modern_tags=1 modern_regs=2"))
             && line.ends_with(" modern_refused=none")
             && !line.contains("legacy"),
         "{line}"
@@ -313,7 +323,7 @@ fn relay_http_serves_a_home_relay() {
     let url = format!("http://{}", d.relay_addr().unwrap());
     let n = Net::start(
         Config {
-            bind_ip: [127, 0, 0, 4].into(),
+            bind_ip: lo(4).into(),
             port: 0,
             relay: RelayChoice::Custom(vec![url]),
             ..Config::default()

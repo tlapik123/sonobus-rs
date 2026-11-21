@@ -914,7 +914,9 @@ impl Drop for ServerHandle {
     }
 }
 
-/// Bind UDP, then TCP on the same port (retrying a few OS-chosen ports if `bind` has port 0).
+/// Bind UDP, then TCP on the same port (retrying a few OS-chosen ports if `bind` has port 0:
+/// the port may be taken for TCP, or on Windows inside a TCP-only excluded port range, which
+/// refuses with WSAEACCES).
 fn bind_pair(bind: SocketAddr) -> io::Result<(UdpSocket, TcpListener)> {
     let mut tries = if bind.port() == 0 { 10 } else { 1 };
     loop {
@@ -929,7 +931,15 @@ fn bind_pair(bind: SocketAddr) -> io::Result<(UdpSocket, TcpListener)> {
         };
         match tcp {
             Ok(tcp) => return Ok((udp, tcp)),
-            Err(e) if tries > 1 && e.kind() == io::ErrorKind::AddrInUse => tries -= 1,
+            Err(e)
+                if tries > 1
+                    && matches!(
+                        e.kind(),
+                        io::ErrorKind::AddrInUse | io::ErrorKind::PermissionDenied
+                    ) =>
+            {
+                tries -= 1
+            }
             Err(e) => return Err(e),
         }
     }

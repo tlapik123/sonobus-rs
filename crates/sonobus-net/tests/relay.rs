@@ -194,14 +194,18 @@ fn relayed_connection_upgrades_to_direct() {
     let (conn, jtx, _) = connected(&join);
     let first = jtx.path().unwrap();
     println!("connected after {:?} over {first:?}", t.elapsed());
-    // Only the relay URL was known when dialing.
-    assert!(!first.direct && first.relay == haddr.relay, "{first:?}");
-    let ev = wait(&join, |e| match e {
-        Event::PathChanged { conn: c, path } if path.direct => Some((c, path)),
-        _ => None,
-    });
-    println!("direct after {:?}: {:?}", t.elapsed(), ev.1);
-    let ev = {
+    // Only the relay URL was known when dialing: relayed, unless hole punching already won
+    // before the handshake finished (seen on the Windows CI runner after 46 ms), then no
+    // PathChanged follows.
+    let ev = if first.direct {
+        first
+    } else {
+        assert_eq!(first.relay, haddr.relay, "{first:?}");
+        let ev = wait(&join, |e| match e {
+            Event::PathChanged { conn: c, path } if path.direct => Some((c, path)),
+            _ => None,
+        });
+        println!("direct after {:?}: {:?}", t.elapsed(), ev.1);
         assert_eq!(ev.0, conn);
         ev.1
     };

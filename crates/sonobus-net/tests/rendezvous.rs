@@ -189,6 +189,7 @@ fn me(ep: &Endpoint) -> PeerAddr {
 }
 
 #[test]
+#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
 fn server_limits_against_raw_clients() {
     let limits = Limits {
         per_ip: 4,

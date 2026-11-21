@@ -765,10 +765,16 @@ mod tests {
         use std::sync::mpsc::channel;
         let (tx, rx) = channel();
         let spam = std::thread::spawn(move || {
-            let end = Instant::now() + Duration::from_millis(500);
-            while Instant::now() < end {
+            let mut next = Instant::now();
+            let end = next + Duration::from_millis(500);
+            while next < end {
                 tx.send(Signal::Stats).unwrap();
-                std::thread::sleep(Duration::from_millis(20));
+                next += Duration::from_millis(20);
+                // not thread::sleep: macOS CI runners oversleep it several-fold (4 of these
+                // 20 ms sleeps took 500 ms), slower than the interval, which proves nothing
+                while Instant::now() < next {
+                    std::thread::yield_now();
+                }
             }
             tx.send(Signal::Stop).unwrap();
         });

@@ -793,9 +793,7 @@ fn click_latency(a: &mut Node, b: &mut Node) -> Option<usize> {
             return Some((k - k0) * BLOCK + i);
         }
         next += block;
-        if let Some(d) = next.checked_duration_since(std::time::Instant::now()) {
-            std::thread::sleep(d);
-        }
+        sleep_until(next);
     }
     None
 }
