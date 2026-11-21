@@ -9,11 +9,11 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 - A real stock SonoBus client talking to ours. Interop is tested against the upstream AOO C++ code only.
 - Any real network: all tests run on one machine; n0 relays were never contacted.
 - The plugin in a real DAW (it passes clap-validator, pluginval and Steinberg's validator).
-- Windows and macOS: CI built and tested both for the first time (run 44840906229): both built and linked; 5 tests failed on Windows and 59 on macOS. The fixes for those failures are untested until the next run. The Windows file-URL handling and Ctrl-C shutdown of the server are still untested.
+- Windows and macOS: CI built and tested both for the first time (run 44840906229): both built and linked. After fixes the second run (44847867690) passed on Linux and Windows; macOS had two DSP reference tests left, since loosened and not yet rerun. The Windows file-URL handling and Ctrl-C shutdown of the server are still untested.
 - On macOS only 127.0.0.1 is a loopback address, so seven network tests that need distinct source addresses (per-address caps, back-off, PIN lockout) run only on Linux and Windows.
 - On the macOS CI runner `thread::sleep` lasts several times longer than asked; the engine test loop that stands in for the audio device spins there instead. Why the runner oversleeps is not known.
 - `password_joined_listener_syncs` checks its timing bound on Linux only: the Windows runner reads 5.5-8.4 ms without any join, too close to the 10 ms a restart would show.
-- The DSP reference tests allow 2e-5 instead of 1e-5: macOS arm64 was 1.13e-5 off the reference vectors.
+- The DSP reference tests allow 1e-5 on Linux x86_64, where the reference vectors were made, and 2e-4 elsewhere: macOS arm64 was up to 5.2e-5 off (compressor meter, extreme EQ).
 - Synchronised playout ("Sync listeners") on real devices: tests run host and listeners in one process, and output latency is assumed to be one block, so phones with different output latency will be off by that difference.
 - Per-application capture with real desktop applications (browsers, Flatpak, pipewire-pulse clients). It was run against a headless PipeWire with `pw-play` only. An application that keeps its stream but stops delivering audio is covered by a unit test only.
 - The translations of the session-ended messages (11 languages) were written without a native speaker.
