@@ -1107,9 +1107,15 @@ impl Session {
     }
 
     /// Host: remove `evict` (if any) everywhere, then rotate the session key so that it cannot
-    /// come back with the old one. Returns the new invite link.
+    /// come back with the old one. Returns the new invite link; `None`, with nothing changed,
+    /// when `evict` is not a current peer.
     pub fn rotate_key(&mut self, h: &mut Host, evict: Option<PeerId>) -> Option<String> {
         if self.role != SessionRole::Host {
+            return None;
+        }
+        // A member that is gone under this id (left, or reconnected under a new one) is not
+        // turned into a plain key change: that would hand it the new key and block nobody.
+        if evict.is_some_and(|id| self.peer_index(id).is_none()) {
             return None;
         }
         let mut evict_id = None;

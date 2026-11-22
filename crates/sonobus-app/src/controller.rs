@@ -1383,7 +1383,12 @@ impl AppController {
     /// first if given. Returns the new link.
     pub fn rotate_invite(&mut self, remove: Option<PeerId>) -> Option<String> {
         let who = remove.and_then(|id| self.vm.snapshot.peers.iter().find(|p| p.id == id)).map(|p| p.user.clone());
-        let link = self.engine().rotate_session_key(remove)?;
+        let Some(link) = self.engine().rotate_session_key(remove) else {
+            if remove.is_some() {
+                self.set_status(tr("Nobody was removed: that connection is gone. Try again from the current list.").to_owned(), true);
+            }
+            return None;
+        };
         let msg = match who {
             Some(u) => format!("{u}: {}", tr("removed from the session. The invite link changed: earlier links no longer work. If the session has a password or PIN, change it too: they still know it.")),
             None => tr("New invite link: earlier links no longer work.").to_owned(),
