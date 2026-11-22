@@ -541,6 +541,10 @@ fn key_rotation_evicts_a_member_and_outsiders_get_nothing() {
     d.e.join_invite(&net("user3"), &new).unwrap();
     assert!(run_until(&mut [&mut a, &mut b, &mut d], 15.0, |n| all_receiving(n, 2)));
     assert!(hears(&mut [&mut a, &mut b, &mut d], 2, 0, 660.0, CENTRE));
+    // removing someone who is no longer a peer under that id changes nothing: it must not
+    // become a plain key change that the "removed" device would receive too
+    assert!(a.e.rotate_session_key(Some(pc)).is_none());
+    assert_eq!(a.e.invite_link().as_deref(), Some(new.as_str()));
 }
 
 fn notes(n: &Node) -> Vec<Notification> {
@@ -771,9 +775,15 @@ fn legacy_and_modern_sessions_alternate_without_leaks() {
     assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)));
     a.e.disconnect();
     b.e.disconnect();
-    run(&mut [&mut a, &mut b], 0.5);
+    // the server closes its side of the two connections on its own threads: give it time
+    run_until(&mut [&mut a, &mut b], 5.0, |_| threads_and_fds() == before);
     let after = threads_and_fds();
-    eprintln!("threads, fds before {before:?} after {after:?}");
+    let open: Vec<_> = std::fs::read_dir("/proc/self/fd")
+        .into_iter()
+        .flatten()
+        .filter_map(|e| std::fs::read_link(e.ok()?.path()).ok())
+        .collect();
+    eprintln!("threads, fds before {before:?} after {after:?}; open now: {open:?}");
     #[cfg(target_os = "linux")] // counted from /proc: zero elsewhere
     assert_eq!(after, before, "threads and fds");
 }

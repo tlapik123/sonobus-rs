@@ -1,6 +1,6 @@
 # Open issues
 
-State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`.
+State on 2026-11-22. Decisions behind the "not planned" items are in `docs/adr/`.
 
 ## Never verified outside the development sandbox
 
@@ -34,12 +34,17 @@ State on 2026-11-20. Decisions behind the "not planned" items are in `docs/adr/`
 
 ## Known defects and gaps
 
-- The last change to key rotation and member removal (REKEY carrying the removed device, `Net::evict`) has not been independently reviewed. The two rounds before it each had a hole found by the next review.
-- One timing gap in joining (a key change between WELCOME being written and the connection being registered) is closed by reasoning only; it has no test.
-- `legacy_and_modern_sessions_alternate_without_leaks` (`crates/sonobus-engine/tests/modern.rs`) failed once in four full workspace runs with two file descriptors still open half a second after teardown. It passes alone, also under CPU load. Cause unknown.
+- Key rotation and member removal (REKEY carrying the removed device, `Net::evict`) were reviewed once more, by reading only. The transport held on every path traced. The review found that removing a member whose connection had just been replaced became a plain key change which that device received too; this is fixed (nothing changes and the app says nobody was removed). Left open from that review:
+  - A member that joined with the key or an invite while the host changes the key (its WELCOME written before the change) gets no REKEY: the host drops it after 5 s and it is told it was removed. Members that joined by password through it go with it. Password joins in the same window do get the new key. The host side of this window has no test.
+  - REKEY carries no counter. With two overlapping connections between a member and its key authority, an older REKEY read after a newer one would roll that member back; it then fails the key proof and is dropped.
+  - A removed device that joined by name stays registered at the rendezvous. Until the host changes the password it can answer new name joiners with its own old key, and they land in its group, not in the session.
+  - How soon audio stops going to a device blocked at the transport only was not measured (expected under 1 s).
+- `legacy_and_modern_sessions_alternate_without_leaks` (`crates/sonobus-engine/tests/modern.rs`) failed once in four full workspace runs with two file descriptors still open half a second after teardown. It did not fail again in 50 runs under CPU load, so the cause is not known. The test now waits up to 5 s for the counts to return and prints the open descriptors when they do not.
 - A member that learns of a removal only through the key change does not list that device under "Blocked devices".
 - Three fixes are tested at unit level only, not through a live session: the shared-stream loss estimate, the subscription rebuilt after a format change, and the baseline reset on a path change.
-- `congested_uplink_lowers_the_send_rate` runs only on Linux: on the Windows and macOS runners the connection went around the test's bottleneck. On Linux it failed once in a full workspace run and passes alone; it now reports when the bottleneck was bypassed. `nack_repairs_bursts_bit_exact` (`crates/sonobus-net/tests/e2e.rs`) also failed once under load.
+- `congested_uplink_lowers_the_send_rate` went around its bottleneck whenever the test's relay thread was slow: iroh moved the connection to the direct loopback path (4 of 8 runs with 64 busy processes). Host and joiner now listen on different address families, so the bottleneck is the only path. It is still skipped on Windows and macOS: the new setup was not tried there.
+- `nack_repairs_bursts_bit_exact` (`crates/sonobus-net/tests/e2e.rs`) failed once under load and not again in 110 runs alone and 16 runs of its whole test binary, with up to 64 busy processes. Cause unknown.
+- With 48 busy processes two more wall-clock tests in `crates/sonobus-engine/tests/modern.rs` fail (`induced_loss_is_repaired_and_adaptation_reacts` 3 of 10, `patchbay_and_peer_cache_in_a_modern_session` 2 of 10). Not looked into.
 - A joiner learns that a session is a broadcast from one trailing byte in the host's WELCOME and then behaves like an invite listener. The byte is protected by the connection's TLS, not by the WELCOME MAC; only the endpoint we dialed can leave it out or add it, and adding it only restricts the joiner. Limits: an older joiner ignores the byte and stays a mesh member that serves password joins (the leak between listeners remains for it), and an older host sends none; in such a mixed session a second password connect to an old listener can replace a new listener's key authority. PIN joins and a LAN join aimed at the host have no engine-level test, and real LAN discovery was not run.
 - A join refused by a broadcast listener shows iroh's "the server refused to accept a new connection" text. A joiner that loses the race for the last free slot sees "the host left", not "session full".
 - Synchronised playout only ever adds latency (timed start, silence when early, slowing down, going late when arriving blocks get less headroom than the jitter buffer needs); it never skips or speeds up. Consequences:

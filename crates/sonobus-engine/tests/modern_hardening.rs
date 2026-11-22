@@ -607,7 +607,8 @@ const QUEUE: Duration = Duration::from_millis(300);
 impl Bottleneck {
     fn new(sender: SocketAddr) -> Self {
         let front = UdpSocket::bind("127.0.0.1:0").unwrap();
-        let back = UdpSocket::bind("127.0.0.1:0").unwrap();
+        // towards the sender on its own address family (see the test: no way around us)
+        let back = UdpSocket::bind(if sender.is_ipv6() { "[::1]:0" } else { "127.0.0.1:0" }).unwrap();
         front.set_nonblocking(true).unwrap();
         back.set_nonblocking(true).unwrap();
         let addr = front.local_addr().unwrap();
@@ -704,8 +705,12 @@ fn congested_uplink_lowers_the_send_rate() {
     st.params.def_send_qual = 8;
     let mut a = Node::new(&[440.0], 2, st);
     let mut b = Node::mono(660.0);
-    let st = a.e.host_session(&net("host"), HostOptions::new("cap")).unwrap();
-    let quic = st.addrs.iter().copied().find(SocketAddr::is_ipv4).expect("loopback address");
+    // The host listens on IPv6 loopback only and the joiner on IPv4 only, so the bottleneck is
+    // the one path between them. With both on 127.0.0.1 iroh moved the connection to the
+    // direct path whenever the relay thread was slow (machine under load).
+    let host = NetOptions { bind_ip: std::net::Ipv6Addr::LOCALHOST.into(), ..net("host") };
+    let st = a.e.host_session(&host, HostOptions::new("cap")).unwrap();
+    let quic = st.addrs.iter().copied().find(SocketAddr::is_ipv6).expect("loopback address");
     let neck = Bottleneck::new(quic);
     let mut inv = Invite::parse(&st.invite.unwrap()).unwrap();
     inv.addrs = vec![neck.addr];
