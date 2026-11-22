@@ -68,7 +68,10 @@ pub const FRAMES_PER_SEC: u32 = 10;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Msg {
-    Register { tag: [u8; 16], addr: PeerAddr },
+    Register {
+        tag: [u8; 16],
+        addr: PeerAddr,
+    },
     Peers(Vec<PeerAddr>),
     Ping,
     /// A type this version does not know (body skipped).
@@ -349,7 +352,11 @@ impl Core {
             .min(burst as u128) as u32;
         if n > 0 {
             *tokens = (*tokens + n).min(burst);
-            *at = if *tokens == burst { now } else { *at + refill * n };
+            *at = if *tokens == burst {
+                now
+            } else {
+                *at + refill * n
+            };
         }
         if *tokens == 0 {
             self.refused.rate_limited += 1;
@@ -887,7 +894,10 @@ mod tests {
         let f = c.admit(ip(6)).unwrap();
         assert_eq!(c.register(f, t, [1; 16], peer(6)), Err(Refused::TagFull));
         let s = c.stats();
-        assert_eq!((s.connections, s.sources, s.tags, s.registrations), (6, 6, 2, 5));
+        assert_eq!(
+            (s.connections, s.sources, s.tags, s.registrations),
+            (6, 6, 2, 5)
+        );
         assert_eq!(
             s.refused,
             Refusals {
@@ -936,7 +946,10 @@ mod tests {
             c.register(k, t + Duration::from_secs(3), [5; 16], peer(1)),
             Err(Refused::RateLimited(Duration::from_secs(7)))
         );
-        assert!(c.register(k, t + Duration::from_secs(10), [5; 16], peer(1)).is_ok());
+        assert!(
+            c.register(k, t + Duration::from_secs(10), [5; 16], peer(1))
+                .is_ok()
+        );
         assert_eq!(
             c.stats().refused,
             Refusals {

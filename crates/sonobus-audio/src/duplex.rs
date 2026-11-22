@@ -80,7 +80,8 @@ impl<F: FnMut(&mut AudioBlock<'_>)> Duplex<F> {
     /// [`MAX_CHANNELS`] inputs channels.
     pub fn add_input(&mut self, channels: usize, sample_rate: u32, margin: usize) -> ExternalInput {
         assert!(self.in_channels + channels <= MAX_CHANNELS);
-        let (port, input) = InputPort::new(channels, sample_rate, self.sample_rate, self.block, margin);
+        let (port, input) =
+            InputPort::new(channels, sample_rate, self.sample_rate, self.block, margin);
         self.ports.push(port);
         self.in_channels += channels;
         self.in_buf = vec![0.0; self.in_channels * self.block];

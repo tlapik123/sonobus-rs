@@ -50,7 +50,11 @@ impl Smoothed {
             return self.target;
         }
         self.countdown -= 1;
-        self.current = if self.countdown > 0 { self.current + self.step } else { self.target };
+        self.current = if self.countdown > 0 {
+            self.current + self.step
+        } else {
+            self.target
+        };
         self.current
     }
 }
@@ -64,7 +68,11 @@ struct Comb {
 
 impl Comb {
     fn new(size: i32) -> Self {
-        Self { buf: vec![0.0; size as usize].into_boxed_slice(), idx: 0, last: 0.0 }
+        Self {
+            buf: vec![0.0; size as usize].into_boxed_slice(),
+            idx: 0,
+            last: 0.0,
+        }
     }
     /// JUCE `clear()` keeps the index.
     fn clear(&mut self) {
@@ -89,7 +97,10 @@ struct AllPass {
 
 impl AllPass {
     fn new(size: i32) -> Self {
-        Self { buf: vec![0.0; size as usize].into_boxed_slice(), idx: 0 }
+        Self {
+            buf: vec![0.0; size as usize].into_boxed_slice(),
+            idx: 0,
+        }
     }
     #[inline(always)]
     fn process(&mut self, input: f32) -> f32 {
@@ -116,8 +127,14 @@ impl Freeverb {
     /// buffers cleared and all parameters already at their targets.
     pub fn new(sample_rate: u32, room_size: f32, damping: f32, wet_level: f32) -> Self {
         let sr = sample_rate as i32;
-        let comb = |ch: i32| std::array::from_fn(|i| Comb::new(sr * (COMB_TUNINGS[i] + ch * STEREO_SPREAD) / 44100));
-        let ap = |ch: i32| std::array::from_fn(|i| AllPass::new(sr * (ALLPASS_TUNINGS[i] + ch * STEREO_SPREAD) / 44100));
+        let comb = |ch: i32| {
+            std::array::from_fn(|i| Comb::new(sr * (COMB_TUNINGS[i] + ch * STEREO_SPREAD) / 44100))
+        };
+        let ap = |ch: i32| {
+            std::array::from_fn(|i| {
+                AllPass::new(sr * (ALLPASS_TUNINGS[i] + ch * STEREO_SPREAD) / 44100)
+            })
+        };
         let mut r = Self {
             comb: [comb(0), comb(1)],
             allpass: [ap(0), ap(1)],
@@ -143,7 +160,10 @@ impl Freeverb {
     /// JUCE `reset()`: clears the delay lines (not the read positions, not the ramps).
     pub fn reset(&mut self) {
         self.comb.iter_mut().flatten().for_each(Comb::clear);
-        self.allpass.iter_mut().flatten().for_each(|a| a.buf.fill(0.0));
+        self.allpass
+            .iter_mut()
+            .flatten()
+            .for_each(|a| a.buf.fill(0.0));
     }
 
     /// JUCE `processStereo`, in place, wet only.

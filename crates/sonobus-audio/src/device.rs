@@ -44,8 +44,9 @@ use cpal::{
 
 use crate::{AudioBlock, Duplex, ExternalInput, InputMonitor, default_margin};
 
-const STANDARD_RATES: [u32; 11] =
-    [8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000];
+const STANDARD_RATES: [u32; 11] = [
+    8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000,
+];
 
 /// Audio backends compiled in and usable on this system.
 pub fn hosts() -> Vec<HostId> {
@@ -97,8 +98,14 @@ pub fn devices(host: HostId) -> Result<Vec<DeviceInfo>, Error> {
         if is_app_stream(host.id(), &dev) {
             continue; // an application's playback, not a device: see `app_sources`
         }
-        let ins: Vec<_> = dev.supported_input_configs().map(Iterator::collect).unwrap_or_default();
-        let outs: Vec<_> = dev.supported_output_configs().map(Iterator::collect).unwrap_or_default();
+        let ins: Vec<_> = dev
+            .supported_input_configs()
+            .map(Iterator::collect)
+            .unwrap_or_default();
+        let outs: Vec<_> = dev
+            .supported_output_configs()
+            .map(Iterator::collect)
+            .unwrap_or_default();
         let all = || ins.iter().chain(&outs);
         let buffer_size = all()
             .filter_map(|c| match *c.buffer_size() {
@@ -107,9 +114,20 @@ pub fn devices(host: HostId) -> Result<Vec<DeviceInfo>, Error> {
             })
             .reduce(|a, b| (a.0.min(b.0), a.1.max(b.1)));
         out.push(DeviceInfo {
-            name: dev.description().map(|d| d.name().to_owned()).unwrap_or_else(|_| dev.to_string()),
-            input_channels: ins.iter().map(SupportedStreamConfigRange::channels).max().unwrap_or(0),
-            output_channels: outs.iter().map(SupportedStreamConfigRange::channels).max().unwrap_or(0),
+            name: dev
+                .description()
+                .map(|d| d.name().to_owned())
+                .unwrap_or_else(|_| dev.to_string()),
+            input_channels: ins
+                .iter()
+                .map(SupportedStreamConfigRange::channels)
+                .max()
+                .unwrap_or(0),
+            output_channels: outs
+                .iter()
+                .map(SupportedStreamConfigRange::channels)
+                .max()
+                .unwrap_or(0),
             sample_rates: STANDARD_RATES
                 .into_iter()
                 .filter(|&r| all().any(|c| c.contains_rate(r)))
@@ -142,7 +160,9 @@ pub struct AppSource {
 
 /// The PipeWire host, if compiled in (cargo feature `pipewire`) and a daemon is running.
 fn pipewire_host() -> Option<HostId> {
-    cpal::available_hosts().into_iter().find(|h| h.name() == "PipeWire")
+    cpal::available_hosts()
+        .into_iter()
+        .find(|h| h.name() == "PipeWire")
 }
 
 /// Whether single applications can be captured here (PipeWire). Cheap: no daemon round trip.
@@ -159,7 +179,10 @@ pub fn app_sources() -> Vec<AppSource> {
     let streams = list_app_streams();
     let nodes = streams.iter().filter_map(|d| {
         let id = d.id().ok()?.id().to_owned();
-        let desc = d.description().map(|x| x.name().to_owned()).unwrap_or_default();
+        let desc = d
+            .description()
+            .map(|x| x.name().to_owned())
+            .unwrap_or_default();
         Some((id, desc))
     });
     let out = app_list(nodes, &own_names());
@@ -176,8 +199,12 @@ thread_local! {
 }
 
 fn list_app_streams() -> Vec<Device> {
-    let Some(host) = pipewire_host().and_then(|h| cpal::host_from_id(h).ok()) else { return Vec::new() };
-    let Ok(devs) = host.devices() else { return Vec::new() };
+    let Some(host) = pipewire_host().and_then(|h| cpal::host_from_id(h).ok()) else {
+        return Vec::new();
+    };
+    let Ok(devs) = host.devices() else {
+        return Vec::new();
+    };
     devs.filter(|d| is_app_stream(host.id(), d)).collect()
 }
 
@@ -211,7 +238,10 @@ fn is_app_stream(host: HostId, dev: &Device) -> bool {
 fn own_names() -> Vec<String> {
     let base = |p: std::path::PathBuf| p.file_name().map(|n| n.to_string_lossy().into_owned());
     let exe = std::env::current_exe().ok().and_then(base);
-    let arg0 = std::env::args_os().next().map(std::path::PathBuf::from).and_then(base);
+    let arg0 = std::env::args_os()
+        .next()
+        .map(std::path::PathBuf::from)
+        .and_then(base);
     exe.into_iter()
         .chain(arg0)
         .flat_map(|n| [format!("alsa_playback.{n}"), format!("alsa_capture.{n}"), n])
@@ -367,7 +397,10 @@ pub struct Session<F> {
 }
 
 fn not_found(id: &DeviceId) -> Error {
-    Error::with_message(ErrorKind::DeviceNotAvailable, format!("device {id} not found"))
+    Error::with_message(
+        ErrorKind::DeviceNotAvailable,
+        format!("device {id} not found"),
+    )
 }
 
 fn find(host: &Host, id: &DeviceId) -> Result<Device, Error> {
@@ -396,13 +429,28 @@ fn pick(
     let def_fmt = default.map(|d| d.sample_format());
     let best = configs
         .iter()
-        .filter(|c| channels.is_none_or(|n| c.channels() == n) && rate.is_none_or(|r| c.contains_rate(r)))
-        .max_by_key(|c| (c.sample_format() == SampleFormat::F32, Some(c.sample_format()) == def_fmt));
+        .filter(|c| {
+            channels.is_none_or(|n| c.channels() == n) && rate.is_none_or(|r| c.contains_rate(r))
+        })
+        .max_by_key(|c| {
+            (
+                c.sample_format() == SampleFormat::F32,
+                Some(c.sample_format()) == def_fmt,
+            )
+        });
     let (ch, rate, fmt, range) = match (best, default) {
-        (Some(c), _) => (c.channels(), rate.unwrap_or(c.max_sample_rate()), c.sample_format(), *c.buffer_size()),
-        (None, Some(d)) if configs.is_empty() => {
-            (channels.unwrap_or(d.channels()), rate.unwrap_or(d.sample_rate()), d.sample_format(), *d.buffer_size())
-        }
+        (Some(c), _) => (
+            c.channels(),
+            rate.unwrap_or(c.max_sample_rate()),
+            c.sample_format(),
+            *c.buffer_size(),
+        ),
+        (None, Some(d)) if configs.is_empty() => (
+            channels.unwrap_or(d.channels()),
+            rate.unwrap_or(d.sample_rate()),
+            d.sample_format(),
+            *d.buffer_size(),
+        ),
         _ => {
             return Err(Error::with_message(
                 ErrorKind::UnsupportedConfig,
@@ -414,7 +462,14 @@ fn pick(
         (Some(b), SupportedBufferSize::Range { min, max }) => BufferSize::Fixed(b.clamp(min, max)),
         _ => BufferSize::Default,
     };
-    Ok((StreamConfig { channels: ch, sample_rate: rate, buffer_size }, fmt))
+    Ok((
+        StreamConfig {
+            channels: ch,
+            sample_rate: rate,
+            buffer_size,
+        },
+        fmt,
+    ))
 }
 
 fn resolve(
@@ -426,17 +481,29 @@ fn resolve(
     rate_required: bool,
 ) -> Result<Resolved, Error> {
     let (configs, default): (Vec<_>, _) = if input {
-        let c = device.supported_input_configs().map(Iterator::collect).unwrap_or_default();
+        let c = device
+            .supported_input_configs()
+            .map(Iterator::collect)
+            .unwrap_or_default();
         (c, device.default_input_config().ok())
     } else {
-        let c = device.supported_output_configs().map(Iterator::collect).unwrap_or_default();
+        let c = device
+            .supported_output_configs()
+            .map(Iterator::collect)
+            .unwrap_or_default();
         (c, device.default_output_config().ok())
     };
     let (config, format) = match pick(&configs, default, rate, channels, buffer) {
-        Err(_) if !rate_required && rate.is_some() => pick(&configs, default, None, channels, buffer)?,
+        Err(_) if !rate_required && rate.is_some() => {
+            pick(&configs, default, None, channels, buffer)?
+        }
         r => r?,
     };
-    Ok(Resolved { device, config, format })
+    Ok(Resolved {
+        device,
+        config,
+        format,
+    })
 }
 
 fn resolve_input(
@@ -455,7 +522,10 @@ fn resolve_input(
                 ));
             }
             let dev = find_app_stream(app).ok_or_else(|| {
-                Error::with_message(ErrorKind::DeviceNotAvailable, format!("application {app} is not playing"))
+                Error::with_message(
+                    ErrorKind::DeviceNotAvailable,
+                    format!("application {app} is not playing"),
+                )
             })?;
             // Its output side tells the rate; PipeWire converts channels for the capture stream,
             // so the requested count stands even when the application plays mono or 5.1.
@@ -463,11 +533,20 @@ fn resolve_input(
             r.config.channels = ic.channels.unwrap_or(r.config.channels);
             r
         }
-        InputSource::Device(id) => resolve(find(host, id)?, true, rate, ic.channels, buffer, false)?,
+        InputSource::Device(id) => {
+            resolve(find(host, id)?, true, rate, ic.channels, buffer, false)?
+        }
         InputSource::Loopback(id) => match host.id().name() {
             "PulseAudio" => {
                 let monitor = DeviceId::new(id.host(), format!("{}.monitor", id.id()));
-                resolve(find(host, &monitor)?, true, rate, ic.channels, buffer, false)?
+                resolve(
+                    find(host, &monitor)?,
+                    true,
+                    rate,
+                    ic.channels,
+                    buffer,
+                    false,
+                )?
             }
             // These hosts open the output device itself for capture; its output side tells
             // the format (WASAPI and CoreAudio list no input configs for it).
@@ -574,7 +653,9 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
     pub fn open(config: SessionConfig, engine: F) -> Result<Self, Error> {
         let host = cpal::host_from_id(config.host)?;
         let out = Self::resolve_output(&host, &config, config.sample_rate)?;
-        let mut rate = config.sample_rate.or(out.as_ref().map(|o| o.config.sample_rate));
+        let mut rate = config
+            .sample_rate
+            .or(out.as_ref().map(|o| o.config.sample_rate));
         let mut ins = Vec::new();
         for ic in &config.inputs {
             let r = resolve_input(&host, ic, rate, config.buffer_frames)?;
@@ -604,8 +685,12 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
                 _ => 0,
             })
             .sum();
-        if config.block_size == 0 || out_ch > crate::MAX_CHANNELS || total_in > crate::MAX_CHANNELS {
-            return Err(Error::with_message(ErrorKind::InvalidInput, "bad block size or too many channels"));
+        if config.block_size == 0 || out_ch > crate::MAX_CHANNELS || total_in > crate::MAX_CHANNELS
+        {
+            return Err(Error::with_message(
+                ErrorKind::InvalidInput,
+                "bad block size or too many channels",
+            ));
         }
         let mut duplex = Duplex::new(engine, driver_rate, config.block_size, out_ch);
         let mut producers = Vec::new();
@@ -615,7 +700,13 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
         for (r, ic) in ins.iter().zip(&config.inputs) {
             let (ch, rate) = match (r, &ic.source) {
                 (Some(r), _) => (r.config.channels, r.config.sample_rate),
-                (None, InputSource::External { channels, sample_rate }) => (*channels, *sample_rate),
+                (
+                    None,
+                    InputSource::External {
+                        channels,
+                        sample_rate,
+                    },
+                ) => (*channels, *sample_rate),
                 _ => unreachable!("resolve_input yields None only for External"),
             };
             let p = duplex.add_input(ch as usize, rate, default_margin(rate));
@@ -646,16 +737,33 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
         Ok(s)
     }
 
-    fn resolve_output(host: &Host, config: &SessionConfig, rate: Option<u32>) -> Result<Option<Resolved>, Error> {
+    fn resolve_output(
+        host: &Host,
+        config: &SessionConfig,
+        rate: Option<u32>,
+    ) -> Result<Option<Resolved>, Error> {
         config
             .output
             .as_ref()
-            .map(|id| resolve(find(host, id)?, false, rate, config.output_channels, config.buffer_frames, true))
+            .map(|id| {
+                resolve(
+                    find(host, id)?,
+                    false,
+                    rate,
+                    config.output_channels,
+                    config.buffer_frames,
+                    true,
+                )
+            })
             .transpose()
     }
 
     /// In input-only mode the driving input must run at the engine rate.
-    fn check_driver(out: &Option<Resolved>, ins: &[Option<Resolved>], rate: u32) -> Result<(), Error> {
+    fn check_driver(
+        out: &Option<Resolved>,
+        ins: &[Option<Resolved>],
+        rate: u32,
+    ) -> Result<(), Error> {
         match (out, ins.iter().flatten().next()) {
             (None, Some(d)) if d.config.sample_rate != rate => Err(Error::with_message(
                 ErrorKind::UnsupportedConfig,
@@ -673,7 +781,10 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
         duplex: Duplex<F>,
         producers: Vec<Option<ExternalInput>>,
     ) -> Result<(), Error> {
-        let mut holder = Some(Holder { duplex: Some(duplex), slot: self.slot.clone() });
+        let mut holder = Some(Holder {
+            duplex: Some(duplex),
+            slot: self.slot.clone(),
+        });
         let res = (|| {
             if let Some(o) = &out {
                 let count = Arc::new(AtomicU64::new(0));
@@ -710,7 +821,10 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
                 return Ok(d);
             }
             if Instant::now() > deadline {
-                return Err(Error::with_message(ErrorKind::Other, "backend did not release the engine"));
+                return Err(Error::with_message(
+                    ErrorKind::Other,
+                    "backend did not release the engine",
+                ));
             }
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -798,7 +912,12 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
             let out = Self::resolve_output(&host, &self.config, Some(self.sample_rate))?;
             let mut ins = Vec::new();
             for ic in &self.config.inputs {
-                ins.push(resolve_input(&host, ic, Some(self.sample_rate), self.config.buffer_frames)?);
+                ins.push(resolve_input(
+                    &host,
+                    ic,
+                    Some(self.sample_rate),
+                    self.config.buffer_frames,
+                )?);
             }
             Self::check_driver(&out, &ins, self.sample_rate)?;
             Ok((out, ins))
@@ -839,7 +958,13 @@ mod tests {
         let id = |s: &str| DeviceId::new(h, s);
         let mut known: HashSet<_> = [id("a"), id("b")].into();
         let change = diff(&mut known, [id("b"), id("c")].into()).unwrap();
-        assert_eq!(change, DeviceChange { added: vec![id("c")], removed: vec![id("a")] });
+        assert_eq!(
+            change,
+            DeviceChange {
+                added: vec![id("c")],
+                removed: vec![id("a")]
+            }
+        );
         assert_eq!(diff(&mut known, [id("b"), id("c")].into()), None);
     }
 
@@ -855,13 +980,31 @@ mod tests {
         ]
         .map(|(a, b)| (a.to_owned(), b.to_owned()));
         let got = app_list(nodes.into_iter(), &["sonobus".to_owned()]);
-        let ids: Vec<_> = got.iter().map(|a| (a.id.as_str(), a.name.as_str())).collect();
-        assert_eq!(ids, [("Firefox", "Firefox"), ("mpv", "mpv"), ("spotify", "spotify: Spotify Premium")]);
+        let ids: Vec<_> = got
+            .iter()
+            .map(|a| (a.id.as_str(), a.name.as_str()))
+            .collect();
+        assert_eq!(
+            ids,
+            [
+                ("Firefox", "Firefox"),
+                ("mpv", "mpv"),
+                ("spotify", "spotify: Spotify Premium")
+            ]
+        );
         // whatever this binary is called, its own streams are excluded
         assert!(!own_names().is_empty());
         let own = own_names();
-        let exe = own.iter().find(|n| !n.starts_with("alsa_")).unwrap().clone();
-        let ours = [exe.clone(), format!("alsa_playback.{exe}"), format!("alsa_capture.{exe}")];
+        let exe = own
+            .iter()
+            .find(|n| !n.starts_with("alsa_"))
+            .unwrap()
+            .clone();
+        let ours = [
+            exe.clone(),
+            format!("alsa_playback.{exe}"),
+            format!("alsa_capture.{exe}"),
+        ];
         assert!(app_list(ours.map(|n| (n, String::new())).into_iter(), &own).is_empty());
     }
 
@@ -880,21 +1023,44 @@ mod tests {
         }
         assert!(app_sources().is_empty());
         let host = cpal::default_host();
-        let ic = InputConfig { source: InputSource::App("Firefox".into()), channels: Some(2) };
-        let err = resolve_input(&host, &ic, None, None).err().expect("no PipeWire: error");
+        let ic = InputConfig {
+            source: InputSource::App("Firefox".into()),
+            channels: Some(2),
+        };
+        let err = resolve_input(&host, &ic, None, None)
+            .err()
+            .expect("no PipeWire: error");
         assert_eq!(err.kind(), ErrorKind::UnsupportedOperation);
     }
 
     #[test]
     fn pick_prefers_f32_and_requested_rate_and_clamps_buffer() {
-        let range = |ch, fmt| SupportedStreamConfigRange::new(ch, 44100, 48000, SupportedBufferSize::Range { min: 64, max: 1024 }, fmt);
-        let cfgs = [range(2, SampleFormat::I16), range(2, SampleFormat::F32), range(1, SampleFormat::F32)];
+        let range = |ch, fmt| {
+            SupportedStreamConfigRange::new(
+                ch,
+                44100,
+                48000,
+                SupportedBufferSize::Range { min: 64, max: 1024 },
+                fmt,
+            )
+        };
+        let cfgs = [
+            range(2, SampleFormat::I16),
+            range(2, SampleFormat::F32),
+            range(1, SampleFormat::F32),
+        ];
         let (c, f) = pick(&cfgs, None, Some(48000), Some(2), Some(32)).unwrap();
-        assert_eq!((c.channels, c.sample_rate, c.buffer_size, f), (2, 48000, BufferSize::Fixed(64), SampleFormat::F32));
+        assert_eq!(
+            (c.channels, c.sample_rate, c.buffer_size, f),
+            (2, 48000, BufferSize::Fixed(64), SampleFormat::F32)
+        );
         assert!(pick(&cfgs, None, Some(96000), Some(2), None).is_err());
         // A backend listing nothing falls back to its default config.
         let def = range(2, SampleFormat::I16).with_sample_rate(44100);
         let (c, f) = pick(&[], Some(def), None, None, None).unwrap();
-        assert_eq!((c.channels, c.sample_rate, f), (2, 44100, SampleFormat::I16));
+        assert_eq!(
+            (c.channels, c.sample_rate, f),
+            (2, 44100, SampleFormat::I16)
+        );
     }
 }

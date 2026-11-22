@@ -37,7 +37,10 @@ pub fn relay_arg(a: Option<String>) -> RelayChoice {
 
 fn main() -> std::io::Result<()> {
     let mut args = std::env::args().skip(1);
-    let port = args.next().and_then(|a| a.parse().ok()).unwrap_or(DEFAULT_PORT);
+    let port = args
+        .next()
+        .and_then(|a| a.parse().ok())
+        .unwrap_or(DEFAULT_PORT);
     let bind_ip: IpAddr = args
         .next()
         .and_then(|a| a.parse().ok())
@@ -107,7 +110,10 @@ fn main() -> std::io::Result<()> {
                     src.add(&net, conn, tx, now);
                 }
                 Event::Closed { conn, reason } => {
-                    println!("- {} ({conn}): {reason}", names.remove(&conn).unwrap_or_default());
+                    println!(
+                        "- {} ({conn}): {reason}",
+                        names.remove(&conn).unwrap_or_default()
+                    );
                     src.remove(conn);
                 }
                 Event::PathChanged { conn, path } => println!("  path ({conn}) {path:?}"),

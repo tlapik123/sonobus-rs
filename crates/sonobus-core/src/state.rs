@@ -582,7 +582,10 @@ impl ChannelGroup {
     /// Input group `index` as the processor constructor sets it up (P.cpp:810-817):
     /// one channel at `index`, then `setToDefaults(isplugin)` (ChannelGroup.cpp:67-90).
     pub fn input_default(index: usize, is_plugin: bool) -> Self {
-        let mut g = ChannelGroup { chan_start: index as i32, ..Default::default() };
+        let mut g = ChannelGroup {
+            chan_start: index as i32,
+            ..Default::default()
+        };
         g.expander.threshold_db = -60.0;
         g.expander.release_ms = 200.0;
         g.expander.attack_ms = 1.0;
@@ -604,7 +607,12 @@ impl ChannelGroup {
     /// SoundboardChannelProcessor.cpp:184-185).
     fn extra_default(name: &str, num_channels: i32) -> Self {
         let n = num_channels as usize;
-        ChannelGroup { name: name.into(), num_channels, pans: vec![0.0; n], ..Default::default() }
+        ChannelGroup {
+            name: name.into(),
+            num_channels,
+            pans: vec![0.0; n],
+            ..Default::default()
+        }
     }
 
     /// `ChannelGroupParams::getValueTree` (ChannelGroup.cpp:626-672).
@@ -707,7 +715,10 @@ fn apply_groups(
     let n = groups.len();
     groups.extend((n..MAX_CHANGROUPS).map(&pad));
     if let Some(tree) = tree {
-        for (g, c) in groups.iter_mut().zip(tree.children.iter().filter(|c| c.is_valid())) {
+        for (g, c) in groups
+            .iter_mut()
+            .zip(tree.children.iter().filter(|c| c.is_valid()))
+        {
             g.apply(c);
         }
     }
@@ -716,7 +727,11 @@ fn apply_groups(
 
 fn groups_tree(name: &str, groups: &[ChannelGroup]) -> ValueTree {
     let mut t = ValueTree::new(name);
-    t.children = groups.iter().take(MAX_CHANGROUPS).map(ChannelGroup::to_tree).collect();
+    t.children = groups
+        .iter()
+        .take(MAX_CHANGROUPS)
+        .map(ChannelGroup::to_tree)
+        .collect();
     t
 }
 
@@ -978,7 +993,12 @@ impl ExtraState {
         if let Some(v) = t.get("DefaultRecordDir") {
             self.default_record_dir = Some(String::from_var(v));
         }
-        self.unknown = t.properties.iter().filter(|(k, _)| !Self::KEYS.contains(&k.as_str())).cloned().collect();
+        self.unknown = t
+            .properties
+            .iter()
+            .filter(|(k, _)| !Self::KEYS.contains(&k.as_str()))
+            .cloned()
+            .collect();
         if let Some(vt) = t.child_with_name("VideoLinkInfo") {
             let v = &mut self.video_link;
             rd(vt, "roomMode", &mut v.room_mode);
@@ -1055,7 +1075,10 @@ impl PeerStateCache {
 
     /// Normal group `i` of a fresh cache entry (P.cpp:8867-8874).
     fn group_default(i: usize) -> ChannelGroup {
-        ChannelGroup { chan_start: i as i32, ..Default::default() }
+        ChannelGroup {
+            chan_start: i as i32,
+            ..Default::default()
+        }
     }
 
     fn to_tree(&self) -> ValueTree {
@@ -1067,10 +1090,18 @@ impl PeerStateCache {
         wr(&mut t, "numChanGroups", &(self.channel_groups.len() as i32));
         wr(&mut t, "level", &self.level);
         wr(&mut t, "orderpriority", &self.order_priority);
-        t.children.push(groups_tree("ChannelGroups", &self.channel_groups));
-        wr(&mut t, "numMultiChanGroups", &(self.multi_channel_groups.len() as i32));
+        t.children
+            .push(groups_tree("ChannelGroups", &self.channel_groups));
+        wr(
+            &mut t,
+            "numMultiChanGroups",
+            &(self.multi_channel_groups.len() as i32),
+        );
         wr(&mut t, "modifiedChanGroups", &self.modified_chan_groups);
-        t.children.push(groups_tree("MultiChannelGroups", &self.multi_channel_groups));
+        t.children.push(groups_tree(
+            "MultiChannelGroups",
+            &self.multi_channel_groups,
+        ));
         t
     }
 
@@ -1095,7 +1126,12 @@ impl PeerStateCache {
         if let Some(c) = t.child_with_name("CompressorState") {
             g0.compressor.apply(c);
         }
-        apply_groups(&mut s.channel_groups, t.child_with_name("ChannelGroups"), count, Self::group_default);
+        apply_groups(
+            &mut s.channel_groups,
+            t.child_with_name("ChannelGroups"),
+            count,
+            Self::group_default,
+        );
         apply_groups(
             &mut s.multi_channel_groups,
             t.child_with_name("MultiChannelGroups"),
@@ -1120,11 +1156,20 @@ pub struct Scope {
 
 impl Scope {
     /// Host plugin state and `SonoBus.settings` (P.cpp:8604, SonoStandaloneFilterWindow.h:466).
-    pub const FULL: Scope = Scope { cache: true, input_groups: true };
+    pub const FULL: Scope = Scope {
+        cache: true,
+        input_groups: true,
+    };
     /// `.sonobus` setup files (SonobusPluginEditor.cpp:2660, 2764).
-    pub const SETUP_FILE: Scope = Scope { cache: false, input_groups: true };
+    pub const SETUP_FILE: Scope = Scope {
+        cache: false,
+        input_groups: true,
+    };
     /// `PluginDefault.xml` (P.cpp:8809, 8821).
-    pub const PLUGIN_DEFAULT: Scope = Scope { cache: false, input_groups: false };
+    pub const PLUGIN_DEFAULT: Scope = Scope {
+        cache: false,
+        input_groups: false,
+    };
 }
 
 /// The complete persisted processor state: the `SonoBusAoO` tree.
@@ -1174,15 +1219,24 @@ fn peer_map_order(entries: &[PeerStateCache]) -> Vec<&PeerStateCache> {
     v
 }
 
-const KNOWN_CHILDREN: &[&str] =
-    &["RecentConnections", "ExtraState", "InputChannelGroups", "ExtraChannelGroups", "PeerStateCacheMap"];
+const KNOWN_CHILDREN: &[&str] = &[
+    "RecentConnections",
+    "ExtraState",
+    "InputChannelGroups",
+    "ExtraChannelGroups",
+    "PeerStateCacheMap",
+];
 
 impl AppState {
     /// A freshly constructed processor's state (upstream defaults).
     pub fn new(is_plugin: bool) -> Self {
         AppState {
             is_plugin,
-            params: if is_plugin { Params::plugin() } else { Params::standalone() },
+            params: if is_plugin {
+                Params::plugin()
+            } else {
+                Params::standalone()
+            },
             recents: Vec::new(),
             extra: ExtraState::default(),
             input_groups: Vec::new(),
@@ -1214,15 +1268,26 @@ impl AppState {
         if !tree.is_valid() {
             return;
         }
-        let defaults = if self.is_plugin { Params::plugin() } else { Params::standalone() };
+        let defaults = if self.is_plugin {
+            Params::plugin()
+        } else {
+            Params::standalone()
+        };
         let default_values = defaults.values();
         let mut params = defaults;
         let mut unknown = Vec::new();
         for c in &tree.children {
             if c.type_name == "PARAM" {
                 let id = c.get("id").map(var_to_string).unwrap_or_default();
-                let default = default_values.iter().find(|(i, _)| *i == id).map(|&(_, v)| v);
-                let value = c.get("value").map(|v| v.to_f64() as f32).or(default).unwrap_or(0.0);
+                let default = default_values
+                    .iter()
+                    .find(|(i, _)| *i == id)
+                    .map(|&(_, v)| v);
+                let value = c
+                    .get("value")
+                    .map(|v| v.to_f64() as f32)
+                    .or(default)
+                    .unwrap_or(0.0);
                 if !params.set_by_id(&id, value) {
                     unknown.push(c.clone());
                 }
@@ -1233,18 +1298,30 @@ impl AppState {
         self.params = params;
         self.unknown_children = unknown;
 
-        if let Some(r) = tree.child_with_name("RecentConnections").filter(|_| scope.cache) {
-            self.recents = r.children.iter().map(ServerConnectionInfo::from_tree).collect();
+        if let Some(r) = tree
+            .child_with_name("RecentConnections")
+            .filter(|_| scope.cache)
+        {
+            self.recents = r
+                .children
+                .iter()
+                .map(ServerConnectionInfo::from_tree)
+                .collect();
         }
         match tree.child_with_name("ExtraState") {
             Some(e) => self.extra.apply(e),
             None => self.extra.unknown.clear(),
         }
-        if let Some(g) = tree.child_with_name("InputChannelGroups").filter(|_| scope.input_groups) {
+        if let Some(g) = tree
+            .child_with_name("InputChannelGroups")
+            .filter(|_| scope.input_groups)
+        {
             let mut count = self.input_groups.len() as i32;
             rd(g, "numChanGroups", &mut count);
             let plugin = self.is_plugin;
-            apply_groups(&mut self.input_groups, Some(g), count, |i| ChannelGroup::input_default(i, plugin));
+            apply_groups(&mut self.input_groups, Some(g), count, |i| {
+                ChannelGroup::input_default(i, plugin)
+            });
         }
         if let Some(x) = tree.child_with_name("ExtraChannelGroups") {
             for c in x.children.iter().filter(|c| c.is_valid()) {
@@ -1258,7 +1335,10 @@ impl AppState {
                 }
             }
         }
-        if let Some(m) = tree.child_with_name("PeerStateCacheMap").filter(|_| scope.cache) {
+        if let Some(m) = tree
+            .child_with_name("PeerStateCacheMap")
+            .filter(|_| scope.cache)
+        {
             let entries: Vec<_> = m.children.iter().map(PeerStateCache::from_tree).collect();
             self.peer_cache = peer_map_order(&entries).into_iter().cloned().collect();
         }
@@ -1285,7 +1365,11 @@ impl AppState {
         }
         if scope.cache {
             let mut r = ValueTree::new("RecentConnections");
-            r.children = self.recents.iter().map(ServerConnectionInfo::to_tree).collect();
+            r.children = self
+                .recents
+                .iter()
+                .map(ServerConnectionInfo::to_tree)
+                .collect();
             root.children.push(r);
         }
         root.children.push(self.extra.to_tree());
@@ -1308,7 +1392,10 @@ impl AppState {
         root.children.push(x);
         if scope.cache {
             let mut m = ValueTree::new("PeerStateCacheMap");
-            m.children = peer_map_order(&self.peer_cache).into_iter().map(PeerStateCache::to_tree).collect();
+            m.children = peer_map_order(&self.peer_cache)
+                .into_iter()
+                .map(PeerStateCache::to_tree)
+                .collect();
             root.children.push(m);
         }
         root.children.extend(self.unknown_children.iter().cloned());
@@ -1325,13 +1412,41 @@ mod tests {
     fn defaults_match_upstream() {
         let s = Params::standalone();
         // SonobusPluginProcessor.h:964-1001 Atomic initialisers, P.cpp:595-710 layout
-        assert_eq!((s.in_gain, s.in_mon_mono_pan, s.in_mon_pan1, s.in_mon_pan2), (1.0, 0.0, -1.0, 1.0));
-        assert_eq!((s.dry, s.wet, s.def_net_buf, s.send_channels), (0.0, 1.0, 0.001, 1));
-        assert_eq!((s.met_gain, s.met_tempo, s.met_is_recorded), (0.5, 100.0, true));
-        assert_eq!((s.main_reverb_level, s.main_reverb_size, s.main_reverb_damp), (1.0, 0.15, 0.5));
+        assert_eq!(
+            (s.in_gain, s.in_mon_mono_pan, s.in_mon_pan1, s.in_mon_pan2),
+            (1.0, 0.0, -1.0, 1.0)
+        );
+        assert_eq!(
+            (s.dry, s.wet, s.def_net_buf, s.send_channels),
+            (0.0, 1.0, 0.001, 1)
+        );
+        assert_eq!(
+            (s.met_gain, s.met_tempo, s.met_is_recorded),
+            (0.5, 100.0, true)
+        );
+        assert_eq!(
+            (s.main_reverb_level, s.main_reverb_size, s.main_reverb_damp),
+            (1.0, 0.15, 0.5)
+        );
         assert_eq!((s.main_reverb_predelay, s.main_reverb_model), (20.0, 1));
-        assert_eq!((s.def_net_auto, s.def_send_qual, s.def_peer_level, s.sync_met_host), (2, 4, 1.0, false));
-        assert_eq!((s.in_reverb_level, s.in_reverb_size, s.in_reverb_damp, s.in_reverb_predelay), (1.0, 0.15, 0.5, 20.0));
+        assert_eq!(
+            (
+                s.def_net_auto,
+                s.def_send_qual,
+                s.def_peer_level,
+                s.sync_met_host
+            ),
+            (2, 4, 1.0, false)
+        );
+        assert_eq!(
+            (
+                s.in_reverb_level,
+                s.in_reverb_size,
+                s.in_reverb_damp,
+                s.in_reverb_predelay
+            ),
+            (1.0, 0.15, 0.5, 20.0)
+        );
         assert!(!s.met_enabled && !s.main_reverb_enabled && !s.sync_met_file && !s.reconnect_last);
         let p = Params::plugin();
         assert_eq!((p.dry, p.send_channels, p.sync_met_host), (1.0, 0, true));
@@ -1339,23 +1454,76 @@ mod tests {
 
         // EffectParams.h:16-42, ChannelGroup.h:36-83, ChannelGroup.cpp:67-90
         let g = ChannelGroup::input_default(3, false);
-        assert_eq!((g.chan_start, g.num_channels, g.gain, g.monitor), (3, 1, 1.0, 1.0));
+        assert_eq!(
+            (g.chan_start, g.num_channels, g.gain, g.monitor),
+            (3, 1, 1.0, 1.0)
+        );
         assert_eq!(g.compressor.makeup_gain_db, 4.0);
-        assert_eq!((g.expander.threshold_db, g.expander.ratio, g.expander.attack_ms, g.expander.release_ms), (-60.0, 2.0, 1.0, 200.0));
-        assert_eq!((g.limiter.enabled, g.limiter.threshold_db, g.limiter.ratio, g.limiter.attack_ms, g.limiter.release_ms), (true, -1.0, 4.0, 0.01, 100.0));
+        assert_eq!(
+            (
+                g.expander.threshold_db,
+                g.expander.ratio,
+                g.expander.attack_ms,
+                g.expander.release_ms
+            ),
+            (-60.0, 2.0, 1.0, 200.0)
+        );
+        assert_eq!(
+            (
+                g.limiter.enabled,
+                g.limiter.threshold_db,
+                g.limiter.ratio,
+                g.limiter.attack_ms,
+                g.limiter.release_ms
+            ),
+            (true, -1.0, 4.0, 0.01, 100.0)
+        );
         assert!(!ChannelGroup::input_default(0, true).limiter.enabled);
         let e = ParametricEq::default();
-        assert_eq!((e.low_shelf_freq, e.para1_freq, e.para1_q, e.para2_freq, e.para2_q, e.high_shelf_freq), (60.0, 90.0, 1.5, 360.0, 4.0, 10000.0));
+        assert_eq!(
+            (
+                e.low_shelf_freq,
+                e.para1_freq,
+                e.para1_q,
+                e.para2_freq,
+                e.para2_q,
+                e.high_shelf_freq
+            ),
+            (60.0, 90.0, 1.5, 360.0, 4.0, 10000.0)
+        );
 
         // SonobusPluginProcessor.h:1021-1069, 1213-1265
         let x = ExtraState::default();
-        assert_eq!((x.default_recording_options, x.default_recording_format, x.default_recording_bits_per_sample), (1, 2, 16));
-        assert_eq!((x.last_chat_width, x.last_soundboard_width, x.last_window_width, x.last_window_height), (250, 250, 800, 600));
-        assert!(x.slider_snap_to_mouse && x.link_mon_delay_times && x.reconnect_after_server_loss && x.record_finish_open);
+        assert_eq!(
+            (
+                x.default_recording_options,
+                x.default_recording_format,
+                x.default_recording_bits_per_sample
+            ),
+            (1, 2, 16)
+        );
+        assert_eq!(
+            (
+                x.last_chat_width,
+                x.last_soundboard_width,
+                x.last_window_width,
+                x.last_window_height
+            ),
+            (250, 250, 800, 600)
+        );
+        assert!(
+            x.slider_snap_to_mouse
+                && x.link_mon_delay_times
+                && x.reconnect_after_server_loss
+                && x.record_finish_open
+        );
         assert_eq!(x.auto_drop_rate_thresh, 0.5);
         assert_eq!(VideoLinkInfo::default().push_view_mode, 0);
         let c = PeerStateCache::default();
-        assert_eq!((c.netbuf, c.send_format, c.level, c.order_priority), (10.0, 4, 1.0, -1));
+        assert_eq!(
+            (c.netbuf, c.send_format, c.level, c.order_priority),
+            (10.0, 4, 1.0, -1)
+        );
     }
 
     #[test]
@@ -1391,8 +1559,18 @@ mod tests {
             let mut t = ValueTree::new("SonoBusAoO");
             t.children.push(param("mettempo", "150"));
             s.apply_tree(&t, Scope::PLUGIN_DEFAULT);
-            let defaults = if plugin { Params::plugin() } else { Params::standalone() };
-            assert_eq!(s.params, Params { met_tempo: 150.0, ..defaults });
+            let defaults = if plugin {
+                Params::plugin()
+            } else {
+                Params::standalone()
+            };
+            assert_eq!(
+                s.params,
+                Params {
+                    met_tempo: 150.0,
+                    ..defaults
+                }
+            );
             assert_eq!(s.extra.last_chat_width, 123);
         }
     }
@@ -1420,9 +1598,23 @@ mod tests {
         }
         let s = AppState::from_tree(&t);
         let p = &s.params;
-        assert_eq!((p.def_send_qual, p.main_reverb_model, p.send_channels, p.def_net_auto), (14, 2, 2, 0));
-        assert_eq!((p.met_tempo, p.def_net_buf, p.main_reverb_predelay), (120.0, 0.02, 100.0));
-        assert_eq!((p.dry, p.wet, p.in_gain, p.met_enabled, p.main_send_mute), (0.0, 0.0, 4.0, true, false));
+        assert_eq!(
+            (
+                p.def_send_qual,
+                p.main_reverb_model,
+                p.send_channels,
+                p.def_net_auto
+            ),
+            (14, 2, 2, 0)
+        );
+        assert_eq!(
+            (p.met_tempo, p.def_net_buf, p.main_reverb_predelay),
+            (120.0, 0.02, 100.0)
+        );
+        assert_eq!(
+            (p.dry, p.wet, p.in_gain, p.met_enabled, p.main_send_mute),
+            (0.0, 0.0, 4.0, true, false)
+        );
         assert_eq!(p.main_reverb_model_checked(), Some(ReverbModel::Zita));
         assert_eq!(p.send_channels_checked(), Some(SendChannels::Stereo));
         assert_eq!(p.def_net_auto_checked(), Some(NetBufAuto::Off));
@@ -1441,15 +1633,30 @@ mod tests {
         let x = ExtraState {
             default_recording_format: 9,
             peer_display_mode: 1,
-            video_link: VideoLinkInfo { push_view_mode: 2, ..Default::default() },
+            video_link: VideoLinkInfo {
+                push_view_mode: 2,
+                ..Default::default()
+            },
             ..Default::default()
         };
         assert_eq!(x.default_recording_format_checked(), None);
-        assert_eq!(x.peer_display_mode_checked(), Some(PeerDisplayMode::Minimal));
-        assert_eq!(x.video_link.push_view_mode_checked(), Some(PushViewMode::ViewOnly));
-        let c = PeerStateCache { netbufauto: 7, ..Default::default() };
+        assert_eq!(
+            x.peer_display_mode_checked(),
+            Some(PeerDisplayMode::Minimal)
+        );
+        assert_eq!(
+            x.video_link.push_view_mode_checked(),
+            Some(PushViewMode::ViewOnly)
+        );
+        let c = PeerStateCache {
+            netbufauto: 7,
+            ..Default::default()
+        };
         assert_eq!(c.netbufauto_checked(), None);
-        let s = AppState { extra: x.clone(), ..Default::default() };
+        let s = AppState {
+            extra: x.clone(),
+            ..Default::default()
+        };
         assert_eq!(AppState::from_tree(&s.to_tree()).extra, x);
     }
 
@@ -1457,22 +1664,49 @@ mod tests {
     // name, iteration (and so the next save) is sorted by name (P.cpp:8965-8987).
     #[test]
     fn peer_cache_is_a_sorted_map() {
-        let entry = |name: &str, level: f32| PeerStateCache { name: name.into(), level, ..Default::default() };
-        let peer_cache = vec![entry("zed", 0.1), entry("amy", 0.2), entry("zed", 0.3), entry("Émile", 0.4), entry("Bob", 0.5)];
-        let s = AppState { peer_cache, ..Default::default() };
+        let entry = |name: &str, level: f32| PeerStateCache {
+            name: name.into(),
+            level,
+            ..Default::default()
+        };
+        let peer_cache = vec![
+            entry("zed", 0.1),
+            entry("amy", 0.2),
+            entry("zed", 0.3),
+            entry("Émile", 0.4),
+            entry("Bob", 0.5),
+        ];
+        let s = AppState {
+            peer_cache,
+            ..Default::default()
+        };
         let names = |t: &ValueTree| -> Vec<String> {
             let m = t.child_with_name("PeerStateCacheMap").unwrap();
-            m.children.iter().map(|c| var_to_string(c.get("name").unwrap())).collect()
+            m.children
+                .iter()
+                .map(|c| var_to_string(c.get("name").unwrap()))
+                .collect()
         };
         let tree = s.to_tree();
         assert_eq!(names(&tree), ["Bob", "amy", "zed", "Émile"]);
         // a file with duplicates in any order loads as the map would hold it
         let mut unsorted = tree.clone();
-        let m = unsorted.children.iter_mut().find(|c| c.type_name == "PeerStateCacheMap").unwrap();
+        let m = unsorted
+            .children
+            .iter_mut()
+            .find(|c| c.type_name == "PeerStateCacheMap")
+            .unwrap();
         m.children = s.peer_cache.iter().map(PeerStateCache::to_tree).collect();
         let back = AppState::from_tree(&unsorted);
-        let got: Vec<_> = back.peer_cache.iter().map(|c| (c.name.as_str(), c.level)).collect();
-        assert_eq!(got, [("Bob", 0.5), ("amy", 0.2), ("zed", 0.1), ("Émile", 0.4)]);
+        let got: Vec<_> = back
+            .peer_cache
+            .iter()
+            .map(|c| (c.name.as_str(), c.level))
+            .collect();
+        assert_eq!(
+            got,
+            [("Bob", 0.5), ("amy", 0.2), ("zed", 0.1), ("Émile", 0.4)]
+        );
     }
 
     #[test]
@@ -1512,6 +1746,9 @@ mod tests {
         let c = PeerStateCache::from_tree(&t);
         assert_eq!(c.channel_groups.len(), 1);
         let g = &c.channel_groups[0];
-        assert_eq!((g.pans[0], g.pan_stereo, g.compressor.enabled), (-0.5, [-0.25, 1.0], true));
+        assert_eq!(
+            (g.pans[0], g.pan_stereo, g.compressor.enabled),
+            (-0.5, [-0.25, 1.0], true)
+        );
     }
 }

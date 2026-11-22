@@ -13,7 +13,11 @@ const SR: u32 = 48000;
 /// Relative tolerance (absolute below 1.0). The reference was made on Linux with glibc's libm.
 /// Other platforms' math libraries differ in the last bits of the coefficient math, and the
 /// recursive filters and the dB meter amplify that: macOS arm64 was up to 5.2e-5 off.
-const TOL: f32 = if cfg!(all(target_os = "linux", target_arch = "x86_64")) { 1e-5 } else { 2e-4 };
+const TOL: f32 = if cfg!(all(target_os = "linux", target_arch = "x86_64")) {
+    1e-5
+} else {
+    2e-4
+};
 
 struct Lcg(u32);
 impl Lcg {
@@ -43,7 +47,8 @@ fn input() -> (Vec<f32>, Vec<f32>) {
         } else {
             let t = (i - 1024) as f64 / 48000.0;
             let tt = 1024.0 / 48000.0;
-            let phase = 2.0 * std::f64::consts::PI * (50.0 * t + (8000.0 - 50.0) * t * t / (2.0 * tt));
+            let phase =
+                2.0 * std::f64::consts::PI * (50.0 * t + (8000.0 - 50.0) * t * t / (2.0 * tt));
             l[i] = phase.sin() as f32 * slev[(i - 1024) / 256];
         }
         r[i] = nb * rlev[(i - 128) / 256];
@@ -55,7 +60,12 @@ fn load(name: &str) -> Vec<f32> {
     let path = format!("{}/tests/data/{name}.f32", env!("CARGO_MANIFEST_DIR"));
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
     assert_eq!(bytes.len(), (2 * N + NB) * 4);
-    bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect()
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
+        .collect()
 }
 
 /// Runs `block(b, left, right)` over 256-sample blocks and checks against the reference.
@@ -86,7 +96,10 @@ fn check(
             continue;
         }
         let err = (g - w).abs();
-        assert!(err <= TOL * w.abs().max(1.0), "{name}[{i}]: got {g}, want {w}");
+        assert!(
+            err <= TOL * w.abs().max(1.0),
+            "{name}[{i}]: got {g}, want {w}"
+        );
         max_err = max_err.max(err);
     }
     eprintln!("{name}: max abs error {max_err:e}, {nans} upstream NaNs");
@@ -192,7 +205,12 @@ fn parametric_eq() {
 
     let mut q = ParametricEq::new(SR);
     q.set_enabled(true);
-    eq_set(&mut q, [24.0, 2000.0, -24.0, 40.0, 0.4, 24.0, 10000.0, 100.0, -24.0, 500.0]);
+    eq_set(
+        &mut q,
+        [
+            24.0, 2000.0, -24.0, 40.0, 0.4, 24.0, 10000.0, 100.0, -24.0, 500.0,
+        ],
+    );
     check("eq_extreme", false, |_, l, r| {
         q.process(l, r);
         0.0
@@ -202,7 +220,12 @@ fn parametric_eq() {
     q.set_enabled(true);
     check("eq_change_mono", true, |b, l, r| {
         if b == 2 {
-            eq_set(&mut q, [-12.0, 120.0, 9.0, 2500.0, 8.0, -6.0, 700.0, 0.7, 6.0, 6000.0]);
+            eq_set(
+                &mut q,
+                [
+                    -12.0, 120.0, 9.0, 2500.0, 8.0, -6.0, 700.0, 0.7, 6.0, 6000.0,
+                ],
+            );
         }
         q.process(l, r);
         0.0

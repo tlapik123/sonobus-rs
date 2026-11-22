@@ -180,7 +180,10 @@ pub fn relay_mode(c: &RelayChoice) -> Result<RelayMode, String> {
         RelayChoice::Custom(urls) if urls.is_empty() => return Err("no relay URL".into()),
         RelayChoice::Custom(urls) => RelayMode::custom(
             urls.iter()
-                .map(|u| u.parse::<RelayUrl>().map_err(|e| format!("relay URL {u}: {e}")))
+                .map(|u| {
+                    u.parse::<RelayUrl>()
+                        .map_err(|e| format!("relay URL {u}: {e}"))
+                })
                 .collect::<Result<Vec<_>, _>>()?,
         ),
     })
@@ -798,7 +801,13 @@ impl Net {
     /// is sent, and nothing more is queued to it (REKEY included). Also covers a reconnect that
     /// races a key rotation.
     pub fn block(&self, id: Id) {
-        refuse(&self.links, &self.refused, id, "blocked", CloseReason::Blocked);
+        refuse(
+            &self.links,
+            &self.refused,
+            id,
+            "blocked",
+            CloseReason::Blocked,
+        );
     }
 
     pub fn unblock(&self, id: &Id) {
@@ -1068,7 +1077,13 @@ impl Shared {
     /// member first: the caller passes the REKEY on right after.
     fn install_key(&mut self, k: Zeroizing<Key>, grace: Duration, evicted: Option<Id>) {
         if let Some(id) = evicted.filter(|id| *id != self.me.id) {
-            refuse(&self.links, &self.refused, id, "evicted", CloseReason::Removed);
+            refuse(
+                &self.links,
+                &self.refused,
+                id,
+                "evicted",
+                CloseReason::Removed,
+            );
         }
         self.evicted = evicted;
         let old = self.key.replace(k.clone());
@@ -1152,7 +1167,11 @@ pub(crate) async fn bind(
         match b.bind().await {
             Ok(ep) => return Ok(ep),
             Err(e) if port_required => {
-                return Err(format!("cannot bind UDP {}: {}", SocketAddr::new(ip, p), chain(&e)));
+                return Err(format!(
+                    "cannot bind UDP {}: {}",
+                    SocketAddr::new(ip, p),
+                    chain(&e)
+                ));
             }
             Err(e) => err = e.to_string(),
         }
@@ -1508,7 +1527,12 @@ async fn rdv_session(
 
 /// Joining by name: while we are in no session and no dial is under way, dial the next listed
 /// peer we have not tried (cycling once all were tried), at most one per call.
-fn join_step(shared: &SharedRef, peers: &[PeerAddr], pw: &Zeroizing<String>, tried: &mut HashSet<Id>) {
+fn join_step(
+    shared: &SharedRef,
+    peers: &[PeerAddr],
+    pw: &Zeroizing<String>,
+    tried: &mut HashSet<Id>,
+) {
     let s = lock(shared);
     let me = s.me.id;
     if !s.members.is_empty() || peers.iter().any(|p| s.dialing.contains(&p.id)) {
@@ -1697,7 +1721,12 @@ async fn conn_task(
         }) => {
             lock(&links).remove(&id);
             // The real source address (the admission key is a /64 or IPv4 address).
-            let ip = match conn.paths().iter().find(|p| p.is_selected()).map(|p| p.remote_addr().clone()) {
+            let ip = match conn
+                .paths()
+                .iter()
+                .find(|p| p.is_selected())
+                .map(|p| p.remote_addr().clone())
+            {
                 Some(TransportAddr::Ip(a)) => a.ip(),
                 _ => Ipv4Addr::UNSPECIFIED.into(),
             };
@@ -1958,7 +1987,9 @@ async fn session(
                         s.install_key(Zeroizing::new(r.key), grace, r.evicted);
                         // ...then passes this key on, under the same lock, to those whose
                         // authority we are
-                        s.send_rekey(|m| m.entry.id != peer.id && s.delegated.contains(&m.entry.id));
+                        s.send_rekey(|m| {
+                            m.entry.id != peer.id && s.delegated.contains(&m.entry.id)
+                        });
                     }
                 }
                 Frame::KeyProof(m) => {
@@ -2583,7 +2614,11 @@ async fn acceptor(
             .filter(|m| !s.hub() && m.entry.id != peer)
             .map(|m| m.entry.clone())
             .collect();
-        let mode = if s.hub() { SessionMode::Broadcast } else { SessionMode::Mesh };
+        let mode = if s.hub() {
+            SessionMode::Broadcast
+        } else {
+            SessionMode::Mesh
+        };
         (k, epoch, me_entry, members, s.formats.clone(), s.host, mode)
     };
     let mut roster = vec![me_entry];
@@ -2699,7 +2734,13 @@ mod tests {
         // a roster peer (not our authority), a mesh WELCOME, later connections, already one
         assert!(!joins_as_listener(b, false, Some(hub), other, true));
         assert!(!joins_as_listener(b, false, None, other, true));
-        assert!(!joins_as_listener(SessionMode::Mesh, false, Some(hub), hub, true));
+        assert!(!joins_as_listener(
+            SessionMode::Mesh,
+            false,
+            Some(hub),
+            hub,
+            true
+        ));
         assert!(!joins_as_listener(b, false, Some(hub), hub, false));
         assert!(!joins_as_listener(b, true, Some(hub), hub, true));
     }
@@ -2738,9 +2779,16 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let ep = bind(Ipv4Addr::LOCALHOST.into(), 0, false, None, RelayMode::Disabled, ALPN)
-                .await
-                .unwrap();
+            let ep = bind(
+                Ipv4Addr::LOCALHOST.into(),
+                0,
+                false,
+                None,
+                RelayMode::Disabled,
+                ALPN,
+            )
+            .await
+            .unwrap();
             assert!(ep.address_lookup().unwrap().is_empty());
             ep.close().await;
         });
@@ -2765,7 +2813,10 @@ mod tests {
             ..r.clone()
         };
         let got = n.resolve().unwrap();
-        assert!(got.addrs.contains(&"127.0.0.1:7".parse().unwrap()), "{got:?}");
+        assert!(
+            got.addrs.contains(&"127.0.0.1:7".parse().unwrap()),
+            "{got:?}"
+        );
         assert_eq!(got.addrs.iter().filter(|a| a.ip().is_ipv4()).count(), 1);
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -2792,7 +2843,16 @@ mod tests {
             .build()
             .unwrap();
         rt.block_on(async {
-            let b = |strict| bind(taken.ip(), taken.port(), strict, None, RelayMode::Disabled, ALPN);
+            let b = |strict| {
+                bind(
+                    taken.ip(),
+                    taken.port(),
+                    strict,
+                    None,
+                    RelayMode::Disabled,
+                    ALPN,
+                )
+            };
             let e = b(true).await.err().unwrap();
             assert!(e.starts_with(&format!("cannot bind UDP {taken}: ")), "{e}");
             let ep = b(false).await.unwrap();

@@ -33,19 +33,34 @@ impl Host for NoHost {
 fn plugin_app(lang: &str) -> SonobusApp {
     let mut state = AppState::new(true);
     state.extra.lang_override_code = lang.into();
-    let audio = AudioConfig { sample_rate: 48_000, block_size: 256, input_channels: 2, output_channels: 2 };
-    let (engine, _rt) = Engine::new(EngineConfig { audio, udp_port: 0, state }).unwrap();
+    let audio = AudioConfig {
+        sample_rate: 48_000,
+        block_size: 256,
+        input_channels: 2,
+        output_channels: 2,
+    };
+    let (engine, _rt) = Engine::new(EngineConfig {
+        audio,
+        udp_port: 0,
+        state,
+    })
+    .unwrap();
     let ctrl = AppController::hosted(Arc::new(engine), Box::new(NoHost), Soundboards::default());
     let form = ctrl.default_request();
     SonobusApp::new(ctrl, form)
 }
 
 fn harness(app: SonobusApp, size: (f32, f32)) -> Harness<'static, SonobusApp> {
-    Harness::builder().with_size(size).build_ui_state(|ui, app: &mut SonobusApp| app.show(ui), app)
+    Harness::builder()
+        .with_size(size)
+        .build_ui_state(|ui, app: &mut SonobusApp| app.show(ui), app)
 }
 
 fn absent(h: &Harness<'_, SonobusApp>, label: &str) {
-    assert!(h.query_by_label(label).is_none(), "{label:?} is shown in the plugin");
+    assert!(
+        h.query_by_label(label).is_none(),
+        "{label:?} is shown in the plugin"
+    );
 }
 
 #[test]
@@ -74,10 +89,15 @@ fn plugin_capabilities_hide_what_does_not_apply() {
         absent(&h, "Import settings from SonoBus...");
         h.key_press(egui::Key::Escape);
         // pages that do not exist here cannot be opened
-        for p in [Page::AudioSetup, Page::File(FileAction::LoadSetup), Page::File(FileAction::SaveSetup), Page::File(FileAction::ImportSonoBus)] {
+        for p in [
+            Page::AudioSetup,
+            Page::File(FileAction::LoadSetup),
+            Page::File(FileAction::SaveSetup),
+            Page::File(FileAction::ImportSonoBus),
+        ] {
             h.state_mut().open_page(p);
             h.run_steps(1);
-        h.run();
+            h.run();
             assert_ne!(h.state().page, p);
         }
         h.state_mut().page = Page::AudioSetup; // set directly: falls back to the main page
@@ -103,8 +123,12 @@ fn plugin_capabilities_hide_what_does_not_apply() {
         absent(&h, "Save now");
         h.get_by_label("Language");
         h.get_by_label("Enable OSC control");
-        assert!(!h.state().ctrl.vm().osc.config.enabled, "OSC off by default");
-        h.get_by_label("Save as default plugin options").click_accesskit();
+        assert!(
+            !h.state().ctrl.vm().osc.config.enabled,
+            "OSC off by default"
+        );
+        h.get_by_label("Save as default plugin options")
+            .click_accesskit();
         h.run_steps(1);
         h.run();
         assert!(!h.state().ctrl.vm().status_is_error);
@@ -141,7 +165,9 @@ fn two_instances_in_their_own_languages() {
     assert_eq!(sonobus_app::i18n::current(), None);
     assert_eq!(sonobus_app::tr("Mute All Input"), "Mute All Input");
     // a language change applies when the host reopens the view
-    de.state_mut().ctrl.edit(|s| s.extra.lang_override_code = "fr".into());
+    de.state_mut()
+        .ctrl
+        .edit(|s| s.extra.lang_override_code = "fr".into());
     de.state_mut().ctrl.reload_language();
     de.run();
     de.get_by_label("Toutes entrées muettes");
@@ -157,5 +183,8 @@ fn plugin_hosts_secure_sessions_without_lan_advertising_by_default() {
     h.run_steps(2);
     h.check_accessibility();
     h.get_by_label("Host Secure Session");
-    assert!(!h.state().host_form.lan, "LAN advertising starts unticked in a plugin");
+    assert!(
+        !h.state().host_form.lan,
+        "LAN advertising starts unticked in a plugin"
+    );
 }

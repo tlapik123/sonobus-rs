@@ -20,7 +20,10 @@ pub type Inbox = Receiver<(ConnId, Bytes)>;
 
 /// A sink factory that forwards every datagram (tagged with its connection) to the returned
 /// channel.
-pub fn channel_sinks() -> (impl FnMut(ConnId, &PeerInfo) -> Sink + Send + 'static, Inbox) {
+pub fn channel_sinks() -> (
+    impl FnMut(ConnId, &PeerInfo) -> Sink + Send + 'static,
+    Inbox,
+) {
     let (tx, rx) = channel();
     let f = move |conn: ConnId, _: &PeerInfo| {
         let tx = tx.clone();
@@ -254,7 +257,9 @@ impl Listener {
                 self.rx.handle_audio(t, &a);
             }
         }
-        if self.rtt_at.is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_millis(100))
+        if self
+            .rtt_at
+            .is_none_or(|t| now.saturating_duration_since(t) >= Duration::from_millis(100))
         {
             self.rtt_at = Some(now);
             if let Some(p) = self.host.path() {
@@ -318,6 +323,11 @@ pub fn recovered(e: &RxEvent) -> Option<u32> {
 }
 
 /// Find `d` with `out[d + n] == input(n)` over 64 samples starting at `from`.
-pub fn find_delay(out: &[f32], input: impl Fn(usize) -> f32, from: usize, max: usize) -> Option<usize> {
+pub fn find_delay(
+    out: &[f32],
+    input: impl Fn(usize) -> f32,
+    from: usize,
+    max: usize,
+) -> Option<usize> {
     (0..max).find(|&d| (from..from + 64).all(|n| out.get(d + n) == Some(&input(n))))
 }

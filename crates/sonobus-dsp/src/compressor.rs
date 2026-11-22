@@ -24,18 +24,44 @@ pub struct Compressor {
 }
 
 impl Compressor {
-    pub const THRESHOLD_DB: ParamSpec =
-        ParamSpec { min: -60.0, max: 0.0, step: 1.0, skew: 1.5, default: -16.0 };
+    pub const THRESHOLD_DB: ParamSpec = ParamSpec {
+        min: -60.0,
+        max: 0.0,
+        step: 1.0,
+        skew: 1.5,
+        default: -16.0,
+    };
     /// UI range; the engine accepts up to [`RATIO_ENGINE_MAX`].
-    pub const RATIO: ParamSpec = ParamSpec { min: 1.0, max: 20.0, step: 0.1, skew: 0.5, default: 2.0 };
-    pub const ATTACK_MS: ParamSpec =
-        ParamSpec { min: 1.0, max: 1000.0, step: 1.0, skew: 0.5, default: 10.0 };
-    pub const RELEASE_MS: ParamSpec =
-        ParamSpec { min: 1.0, max: 1000.0, step: 1.0, skew: 0.5, default: 80.0 };
+    pub const RATIO: ParamSpec = ParamSpec {
+        min: 1.0,
+        max: 20.0,
+        step: 0.1,
+        skew: 0.5,
+        default: 2.0,
+    };
+    pub const ATTACK_MS: ParamSpec = ParamSpec {
+        min: 1.0,
+        max: 1000.0,
+        step: 1.0,
+        skew: 0.5,
+        default: 10.0,
+    };
+    pub const RELEASE_MS: ParamSpec = ParamSpec {
+        min: 1.0,
+        max: 1000.0,
+        step: 1.0,
+        skew: 0.5,
+        default: 80.0,
+    };
     /// Manual makeup range. Upstream defaults to auto makeup, which gives 4 dB at the
     /// default threshold/ratio.
-    pub const MAKEUP_GAIN_DB: ParamSpec =
-        ParamSpec { min: 0.0, max: 60.0, step: 1.0, skew: 0.75, default: 0.0 };
+    pub const MAKEUP_GAIN_DB: ParamSpec = ParamSpec {
+        min: 0.0,
+        max: 60.0,
+        step: 1.0,
+        skew: 0.75,
+        default: 0.0,
+    };
     pub const AUTO_MAKEUP_DEFAULT: bool = true;
     /// Fixed by `commitCompressorParams`.
     pub const KNEE_DB: f32 = 2.0;
@@ -151,7 +177,10 @@ impl Compressor {
         let a1 = x1.abs();
         let c1 = if self.env_r > a1 { k.release } else { k.attack };
         self.env_r = self.env_r * c1 + a1 * (1.0 - c1);
-        let over = cmax(0.0, k.knee + (20.0 * cmax(self.env_l, self.env_r).log10() - k.threshold));
+        let over = cmax(
+            0.0,
+            k.knee + (20.0 * cmax(self.env_l, self.env_r).log10() - k.threshold),
+        );
         let p = cmin(1.0, cmax(0.0, k.inv_knee * over));
         let red = k.one_minus_ratio * ((over * p) / (1.0 - k.one_minus_ratio * p));
         self.outgain_db = red;
@@ -177,7 +206,11 @@ pub fn auto_makeup_gain_db(threshold_db: f32, ratio: f32) -> f32 {
 /// Meter value upstream feeds to `setReductionLevel`:
 /// `jlimit(0, 1, Decibels::decibelsToGain(outgain))` (JUCE floor -100 dB -> 0).
 pub fn reduction_meter_level(gain_reduction_db: f32) -> f32 {
-    let g = if gain_reduction_db > -100.0 { 10.0f32.powf(gain_reduction_db * 0.05) } else { 0.0 };
+    let g = if gain_reduction_db > -100.0 {
+        10.0f32.powf(gain_reduction_db * 0.05)
+    } else {
+        0.0
+    };
     g.clamp(0.0, 1.0)
 }
 

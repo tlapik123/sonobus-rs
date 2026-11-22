@@ -104,8 +104,14 @@ mod tests {
     #[test]
     fn codec_ids_and_fallback() {
         // PR #201 writes them dashed in its source
-        assert_eq!(codec_id("d30affc3-db76-40fd-85bd-6ba4f67d75f0"), CODEC_IDS[0]);
-        assert_eq!(codec_id("9825290e-f2cf-41be-9ff8-0c25f60ae8ad"), CODEC_IDS[10]);
+        assert_eq!(
+            codec_id("d30affc3-db76-40fd-85bd-6ba4f67d75f0"),
+            CODEC_IDS[0]
+        );
+        assert_eq!(
+            codec_id("9825290e-f2cf-41be-9ff8-0c25f60ae8ad"),
+            CODEC_IDS[10]
+        );
         // legacy: everything
         assert!((0..FORMATS.len()).all(|i| supports(None, i)));
         assert!(!supports(None, FORMATS.len()));

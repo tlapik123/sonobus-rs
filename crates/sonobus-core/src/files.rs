@@ -24,7 +24,9 @@
 //! Hosts keep the plugin state themselves: it is the binary [`ValueTree`]
 //! (`ValueTree::read` + [`AppState::apply_tree`] with [`Scope::FULL`]).
 
-use crate::juce_xml::{Error, TextFormat, XmlElement, XmlNode, escape, from_base64, juce_int, to_base64, var_to_string};
+use crate::juce_xml::{
+    Error, TextFormat, XmlElement, XmlNode, escape, from_base64, juce_int, to_base64, var_to_string,
+};
 use crate::state::{AppState, Scope, int_enum};
 use crate::valuetree::{ValueTree, Var, set_all};
 use std::borrow::Cow;
@@ -81,7 +83,9 @@ impl PropertiesFile {
             };
             pairs.push((name.to_string(), value));
         }
-        Ok(PropertiesFile { entries: set_all(pairs) })
+        Ok(PropertiesFile {
+            entries: set_all(pairs),
+        })
     }
 
     /// `PropertiesFile::saveAsXml` + `XmlElement::writeTo(file, {})`.
@@ -100,7 +104,10 @@ impl PropertiesFile {
     }
 
     pub fn get(&self, key: &str) -> Option<&str> {
-        self.entries.iter().find(|(k, _)| k == key).map(|(_, v)| v.as_str())
+        self.entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
     }
 
     /// `PropertySet::setValue`: replaces in place or appends (linear in the key count).
@@ -141,7 +148,9 @@ impl PropertiesFile {
             return ValueTree::from_xml_str(xml).map(Some);
         }
         match self.get("filterState").filter(|s| !s.is_empty()) {
-            Some(b64) => Ok(Some(ValueTree::read(&from_base64(b64).ok_or(Error::Base64)?)?)),
+            Some(b64) => Ok(Some(ValueTree::read(
+                &from_base64(b64).ok_or(Error::Base64)?,
+            )?)),
             None => Ok(None),
         }
     }
@@ -227,11 +236,20 @@ impl StandaloneSettings {
             .unwrap_or_default();
         StandaloneSettings {
             audio_setup: p.get("audioSetup").map(str::to_string),
-            should_override_sample_rate: p.get_bool("shouldOverrideSampleRate").unwrap_or(d.should_override_sample_rate),
-            should_check_for_new_version: p.get_bool("shouldCheckForNewVersion").unwrap_or(d.should_check_for_new_version),
-            allow_bluetooth_input: p.get_bool("allowBluetoothInput").unwrap_or(d.allow_bluetooth_input),
+            should_override_sample_rate: p
+                .get_bool("shouldOverrideSampleRate")
+                .unwrap_or(d.should_override_sample_rate),
+            should_check_for_new_version: p
+                .get_bool("shouldCheckForNewVersion")
+                .unwrap_or(d.should_check_for_new_version),
+            allow_bluetooth_input: p
+                .get_bool("allowBluetoothInput")
+                .unwrap_or(d.allow_bluetooth_input),
             recent_setup_files,
-            last_recents_setup_folder: p.get("lastRecentsSetupFolder").unwrap_or_default().to_string(),
+            last_recents_setup_folder: p
+                .get("lastRecentsSetupFolder")
+                .unwrap_or_default()
+                .to_string(),
             last_state_file: p.get("lastStateFile").map(str::to_string),
             window: WINDOW_KEYS.map(|k| p.get_int(k)),
             should_mute_input: p.get_bool("shouldMuteInput"),
@@ -243,8 +261,14 @@ impl StandaloneSettings {
     pub fn store(&self, p: &mut PropertiesFile) {
         p.set("audioSetup", self.audio_setup.clone().unwrap_or_default());
         let b = |v: bool| if v { "1" } else { "0" };
-        p.set("shouldOverrideSampleRate", b(self.should_override_sample_rate));
-        p.set("shouldCheckForNewVersion", b(self.should_check_for_new_version));
+        p.set(
+            "shouldOverrideSampleRate",
+            b(self.should_override_sample_rate),
+        );
+        p.set(
+            "shouldCheckForNewVersion",
+            b(self.should_check_for_new_version),
+        );
         p.set("allowBluetoothInput", b(self.allow_bluetooth_input));
         let mut list = XmlElement::new("PATHLIST");
         for f in &self.recent_setup_files {
@@ -253,7 +277,10 @@ impl StandaloneSettings {
             list.children.push(XmlNode::Element(path));
         }
         p.set_xml("recentSetupFiles", Some(&list));
-        p.set("lastRecentsSetupFolder", self.last_recents_setup_folder.clone());
+        p.set(
+            "lastRecentsSetupFolder",
+            self.last_recents_setup_folder.clone(),
+        );
         if let Some(f) = &self.last_state_file {
             p.set("lastStateFile", f.clone());
         }
@@ -270,7 +297,10 @@ impl StandaloneSettings {
 /// write back with [`save_settings`]. Fails only when the file itself is unreadable: like stock
 /// (SonoStandaloneFilterWindow.h:489-506), an unreadable embedded state leaves `state` as it was
 /// and everything else still loads; [`load_settings_checked`] also returns why.
-pub fn load_settings(data: &[u8], state: &mut AppState) -> Result<(PropertiesFile, StandaloneSettings), Error> {
+pub fn load_settings(
+    data: &[u8],
+    state: &mut AppState,
+) -> Result<(PropertiesFile, StandaloneSettings), Error> {
     load_settings_checked(data, state).map(|(p, s, _)| (p, s))
 }
 
@@ -296,9 +326,17 @@ fn apply_processor_state(p: &PropertiesFile, state: &mut AppState, scope: Scope)
 
 /// Updates `props` (from [`load_settings`], or empty for a new file) and serializes it, setting
 /// keys in stock order: device/options keys, `filterStateXML`, window position.
-pub fn save_settings(props: &mut PropertiesFile, settings: &StandaloneSettings, state: &AppState) -> String {
+pub fn save_settings(
+    props: &mut PropertiesFile,
+    settings: &StandaloneSettings,
+    state: &AppState,
+) -> String {
     let window = settings.window;
-    StandaloneSettings { window: [None; 4], ..settings.clone() }.store(props);
+    StandaloneSettings {
+        window: [None; 4],
+        ..settings.clone()
+    }
+    .store(props);
     props.set_processor_state(&state.to_tree());
     for (k, v) in WINDOW_KEYS.iter().zip(window) {
         if let Some(v) = v {
@@ -318,7 +356,10 @@ pub fn load_setup(data: &[u8], state: &mut AppState) -> Result<Option<String>, E
 }
 
 /// [`load_setup`], plus the error of an embedded processor state that was skipped.
-pub fn load_setup_checked(data: &[u8], state: &mut AppState) -> Result<(Option<String>, Option<Error>), Error> {
+pub fn load_setup_checked(
+    data: &[u8],
+    state: &mut AppState,
+) -> Result<(Option<String>, Option<Error>), Error> {
     let p = PropertiesFile::parse(data)?;
     let err = apply_processor_state(&p, state, Scope::SETUP_FILE);
     Ok((p.get("audioSetup").map(str::to_string), err))
@@ -329,7 +370,10 @@ pub fn load_setup_checked(data: &[u8], state: &mut AppState) -> Result<(Option<S
 pub fn save_setup(state: &AppState, audio_setup: Option<&str>) -> String {
     let mut p = PropertiesFile::default();
     p.set("audioSetup", audio_setup.unwrap_or_default());
-    p.set_xml("filterStateXML", state.to_tree_scoped(Scope::SETUP_FILE).to_xml().as_ref());
+    p.set_xml(
+        "filterStateXML",
+        state.to_tree_scoped(Scope::SETUP_FILE).to_xml().as_ref(),
+    );
     p.to_xml_string()
 }
 
@@ -343,7 +387,10 @@ pub fn load_plugin_default(data: &[u8], state: &mut AppState) -> Result<(), Erro
 /// `PluginDefault.xml` bytes (P.cpp:8805-8812): `toXmlString()` written with
 /// `OutputStream::writeString`, which appends a NUL.
 pub fn save_plugin_default(state: &AppState) -> Vec<u8> {
-    let mut b = state.to_tree_scoped(Scope::PLUGIN_DEFAULT).to_xml_string().into_bytes();
+    let mut b = state
+        .to_tree_scoped(Scope::PLUGIN_DEFAULT)
+        .to_xml_string()
+        .into_bytes();
     b.push(0);
     b
 }
@@ -374,7 +421,12 @@ impl GlobalState {
                         .collect()
                 })
                 .unwrap_or_default(),
-            other: tree.children.iter().filter(|c| c.type_name != "BlockedAddresses").cloned().collect(),
+            other: tree
+                .children
+                .iter()
+                .filter(|c| c.type_name != "BlockedAddresses")
+                .cloned()
+                .collect(),
         })
     }
 
@@ -409,7 +461,12 @@ pub struct Soundboards {
 
 impl Default for Soundboards {
     fn default() -> Self {
-        Soundboards { selected: None, hotkeys_muted: false, hotkeys_allow_numeric: true, boards: Vec::new() }
+        Soundboards {
+            selected: None,
+            hotkeys_muted: false,
+            hotkeys_allow_numeric: true,
+            boards: Vec::new(),
+        }
     }
 }
 
@@ -502,7 +559,9 @@ impl Soundboards {
         let selected = tree.get("selected").map_or(0, Var::to_i32);
         let flag = |k, def| tree.get(k).map_or(def, Var::to_bool);
         Ok(Soundboards {
-            selected: usize::try_from(selected).ok().filter(|&i| i < tree.children.len()),
+            selected: usize::try_from(selected)
+                .ok()
+                .filter(|&i| i < tree.children.len()),
             hotkeys_muted: flag("hotkeysMuted", d.hotkeys_muted),
             hotkeys_allow_numeric: flag("hotkeysAllowNumeric", d.hotkeys_allow_numeric),
             boards: tree.children.iter().map(Soundboard::from_tree).collect(),

@@ -24,7 +24,10 @@ fn found(b: &mut LanBrowser, host: &[u8; 32], within: Duration) -> Option<Discov
 }
 
 #[test]
-#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
+#[cfg_attr(
+    not(any(target_os = "linux", windows)),
+    ignore = "needs distinct loopback addresses"
+)]
 fn discover_join_with_pin_and_withdraw() {
     let host = simple(Config {
         role: Role::Host,
@@ -32,7 +35,10 @@ fn discover_join_with_pin_and_withdraw() {
         ..cfg("host", None, None)
     });
     let pin = host.enable_pin();
-    assert!(pin.len() == 6 && pin.bytes().all(|c| c.is_ascii_digit()), "{pin}");
+    assert!(
+        pin.len() == 6 && pin.bytes().all(|c| c.is_ascii_digit()),
+        "{pin}"
+    );
     let hlan = Lan::loopback().unwrap();
     hlan.advertise(
         &host.local_addr(),

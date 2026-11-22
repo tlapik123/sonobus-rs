@@ -107,7 +107,10 @@ impl Run {
     /// but must not change the content. Channel 1 of the sine is never exactly 0.
     fn mismatches(&self, min: usize) -> usize {
         let out = &self.lis.out;
-        let gaps = out[1].windows(2).filter(|w| w[0] != 0.0 && w[1] == 0.0).count();
+        let gaps = out[1]
+            .windows(2)
+            .filter(|w| w[0] != 0.0 && w[1] == 0.0)
+            .count();
         println!("{} silence gaps after the start", gaps.saturating_sub(1));
         assert_eq!(self.src.dropped_callbacks, 0);
         let played: Vec<usize> = (0..out[1].len()).filter(|&i| out[1][i] != 0.0).collect();
@@ -195,14 +198,13 @@ fn report_drives_adapt_to_redundancy() {
         }
         d
     });
-    let mut r = setup(
-        pcm(PcmBitDepth::Int16),
-        opts(40.0, 0),
-        drop,
-        Duration::ZERO,
-    );
+    let mut r = setup(pcm(PcmBitDepth::Int16), opts(40.0, 0), drop, Duration::ZERO);
     r.run(15.0, |r| !r.src.changes.is_empty());
-    let (_, d) = *r.src.changes.first().expect("adapt never changed the subscription");
+    let (_, d) = *r
+        .src
+        .changes
+        .first()
+        .expect("adapt never changed the subscription");
     assert_eq!((d.level, d.redundancy), (0, 1));
     let (t0, switched) = (r.start, Instant::now());
     let lost_before = r.lis.count(r.start, lost);

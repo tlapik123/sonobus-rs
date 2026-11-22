@@ -89,7 +89,9 @@ impl H {
     fn events(&mut self) -> Vec<SinkEventKind> {
         let now = self.now();
         self.sink.send(now, |_, _| {});
-        std::iter::from_fn(|| self.sink.poll_event()).map(|e| e.kind).collect()
+        std::iter::from_fn(|| self.sink.poll_event())
+            .map(|e| e.kind)
+            .collect()
     }
 
     fn src(&self) -> &SourceDesc {
@@ -105,7 +107,15 @@ fn data(seq: i32, frame: i32, nframes: i32, bytes: &[u8], total: i32) -> Message
     data_from(3, SALT, seq, frame, nframes, bytes, total)
 }
 
-fn data_from(src: i32, salt: i32, seq: i32, frame: i32, nframes: i32, bytes: &[u8], total: i32) -> Message<'_> {
+fn data_from(
+    src: i32,
+    salt: i32,
+    seq: i32,
+    frame: i32,
+    nframes: i32,
+    bytes: &[u8],
+    total: i32,
+) -> Message<'_> {
     Message::SinkData {
         sink: 5,
         src,
@@ -140,16 +150,27 @@ fn format_creates_source_and_reports() {
     let ev = h.events();
     assert_eq!(ev[0], SinkEventKind::SourceAdded);
     match &ev[1] {
-        SinkEventKind::FormatChanged { format, user_format } => {
+        SinkEventKind::FormatChanged {
+            format,
+            user_format,
+        } => {
             assert_eq!((format.blocksize, format.codec_name()), (64, "pcm"));
             assert_eq!(user_format, b"layout");
         }
         e => panic!("{e:?}"),
     }
     // wrong sink id is not for us; wildcard is
-    let m = Message::SinkPing { sink: 6, src: 3, tt: 1 };
+    let m = Message::SinkPing {
+        sink: 6,
+        src: 3,
+        tt: 1,
+    };
     assert!(!h.feed(&m));
-    let m = Message::SinkPing { sink: -1, src: 3, tt: 1 };
+    let m = Message::SinkPing {
+        sink: -1,
+        src: 3,
+        tt: 1,
+    };
     assert!(h.feed(&m));
 }
 
@@ -200,7 +221,10 @@ fn resend_requests_and_counters() {
     assert_eq!(requests(&h.sent()), [(2, -1); 4]);
     h.block(2, 0.2); // arrives after all
     let ev = h.events();
-    assert!(ev.contains(&SinkEventKind::BlocksResent { count: 1 }), "{ev:?}");
+    assert!(
+        ev.contains(&SinkEventKind::BlocksResent { count: 1 }),
+        "{ev:?}"
+    );
     // incomplete blocks: missing frames are requested individually
     let bytes = block_bytes(&[0.3; BS]);
     h.t += 0.011;
@@ -250,7 +274,9 @@ fn sequence_wrap() {
     assert!(
         !ev.iter().any(|e| matches!(
             e,
-            SinkEventKind::BlocksLost { .. } | SinkEventKind::BlocksGap { .. } | SinkEventKind::BlocksReordered { .. }
+            SinkEventKind::BlocksLost { .. }
+                | SinkEventKind::BlocksGap { .. }
+                | SinkEventKind::BlocksReordered { .. }
         )),
         "{ev:?}"
     );
@@ -269,10 +295,19 @@ fn salt_change_requests_format() {
     let p = h.sent();
     assert_eq!(
         parse(&p[0]).unwrap(),
-        Message::SourceFormat { src: 3, sink: 5, version: VERSION }
+        Message::SourceFormat {
+            src: 3,
+            sink: 5,
+            version: VERSION
+        }
     );
     // /d with an unknown salt: not ours, but the quiet source at that address is asked
-    let d = Message::CompactData { salt: 999, seq: 0, samplerate: None, data: &bytes };
+    let d = Message::CompactData {
+        salt: 999,
+        seq: 0,
+        samplerate: None,
+        data: &bytes,
+    };
     assert!(!h.feed(&d));
     assert!(h.sent().is_empty()); // source delivered data just now
     h.t += 1.0;
@@ -287,7 +322,12 @@ fn salt_change_requests_format() {
     let m = data_from(4, SALT, 0, 0, 1, &bytes, 256);
     h.feed(&m);
     let p = h.sent();
-    assert!(p.iter().any(|p| parse(p).unwrap() == Message::SourceFormat { src: 4, sink: 5, version: VERSION }));
+    assert!(p.iter().any(|p| parse(p).unwrap()
+        == Message::SourceFormat {
+            src: 4,
+            sink: 5,
+            version: VERSION
+        }));
     assert!(h.events().contains(&SinkEventKind::SourceAdded));
 }
 
@@ -298,8 +338,14 @@ fn gap_and_empty_blocks() {
     h.block(1, 0.1);
     h.block(100, 0.1); // > queue capacity ahead: reset
     let ev = h.events();
-    assert!(ev.contains(&SinkEventKind::BlocksGap { count: 98 }), "{ev:?}");
-    assert!(ev.contains(&SinkEventKind::BlocksLost { count: 2 }), "{ev:?}");
+    assert!(
+        ev.contains(&SinkEventKind::BlocksGap { count: 98 }),
+        "{ev:?}"
+    );
+    assert!(
+        ev.contains(&SinkEventKind::BlocksLost { count: 2 }),
+        "{ev:?}"
+    );
     assert_eq!(h.src().next, Some(100));
     // empty block (source xrun) skips ahead
     h.feed(&data(101, 0, 0, &[], 0));
@@ -312,7 +358,12 @@ fn compact_data_and_samplerate_reuse() {
     let mut h = H::new(0);
     h.play();
     let bytes = block_bytes(&[0.25; BS]);
-    let d = |seq| Message::CompactData { salt: SALT, seq, samplerate: None, data: &bytes };
+    let d = |seq| Message::CompactData {
+        salt: SALT,
+        seq,
+        samplerate: None,
+        data: &bytes,
+    };
     assert!(h.feed(&d(0)));
     h.play();
     assert!(h.feed(&d(1)));
@@ -321,13 +372,24 @@ fn compact_data_and_samplerate_reuse() {
 
 #[test]
 fn invite_repeats_until_format() {
-    let setup = Setup { samplerate: 48000, blocksize: 64, nchannels: 1 };
+    let setup = Setup {
+        samplerate: 48000,
+        blocksize: 64,
+        nchannels: 1,
+    };
     let (mut sink, _audio) = Sink::new(5, setup, SinkOptions::default());
     sink.invite_source(addr(1), 0);
     let count = |sink: &mut Sink, t: f64| {
         let mut n = 0;
         sink.send(TimeTag::from_secs(t), |_, p| {
-            assert!(matches!(parse(p).unwrap(), Message::SourceInvite { sink: 5, flags: Some(1), .. }));
+            assert!(matches!(
+                parse(p).unwrap(),
+                Message::SourceInvite {
+                    sink: 5,
+                    flags: Some(1),
+                    ..
+                }
+            ));
             n += 1;
         });
         n
@@ -338,7 +400,10 @@ fn invite_repeats_until_format() {
     sink.uninvite_source(addr(1), 0);
     let mut msgs = Vec::new();
     sink.send(TimeTag::from_secs(12.0), |_, p| msgs.push(p.to_vec()));
-    assert_eq!(parse(&msgs[0]).unwrap(), Message::SourceUninvite { src: 0, sink: 5 });
+    assert_eq!(
+        parse(&msgs[0]).unwrap(),
+        Message::SourceUninvite { src: 0, sink: 5 }
+    );
     assert_eq!(count(&mut sink, 13.0), 0);
     // a format stops the repetition
     sink.invite_source(addr(1), 3);
@@ -365,13 +430,24 @@ fn invite_repeats_until_format() {
 #[test]
 fn ping_only_while_playing_and_state_events() {
     let mut h = H::new(0);
-    h.feed(&Message::SinkPing { sink: 5, src: 3, tt: 42 });
+    h.feed(&Message::SinkPing {
+        sink: 5,
+        src: 3,
+        tt: 42,
+    });
     assert!(h.sent().is_empty());
     h.play(); // prefilled silence: playing
     h.block(0, 0.5); // decoded right away (ring has room), blocks are packet-driven
     h.play();
-    assert!(h.events().contains(&SinkEventKind::StateChanged { playing: true }));
-    h.feed(&Message::SinkPing { sink: 5, src: 3, tt: 42 });
+    assert!(
+        h.events()
+            .contains(&SinkEventKind::StateChanged { playing: true })
+    );
+    h.feed(&Message::SinkPing {
+        sink: 5,
+        src: 3,
+        tt: 42,
+    });
     let now = h.now();
     match parse(&h.sent()[0]).unwrap() {
         Message::SourcePing { tt1, tt2, .. } => assert_eq!((tt1, tt2), (42, now.0)),
@@ -385,7 +461,10 @@ fn ping_only_while_playing_and_state_events() {
     h.play();
     h.play();
     h.sent();
-    assert!(h.events().contains(&SinkEventKind::StateChanged { playing: false }));
+    assert!(
+        h.events()
+            .contains(&SinkEventKind::StateChanged { playing: false })
+    );
 }
 
 /// No buffer size and no announced format makes a sink allocate more than its caps.
@@ -393,7 +472,12 @@ fn ping_only_while_playing_and_state_events() {
 fn buffer_size_is_capped() {
     let mut h = H::new(1_000_000_000);
     assert_eq!(h.sink.options().buffersize_ms, MAX_BUFFER_MS);
-    let ring = |h: &H| h.src().samples.as_ref().map_or(0, |s| s.buffer().capacity());
+    let ring = |h: &H| {
+        h.src()
+            .samples
+            .as_ref()
+            .map_or(0, |s| s.buffer().capacity())
+    };
     // 10 s at 48 kHz mono, rounded up to whole 64-frame blocks
     assert_eq!(ring(&h), 480_000);
     h.sink.set_options(SinkOptions {
@@ -414,7 +498,11 @@ fn buffer_size_is_capped() {
         options: &[0, 0, 0, 2],
         user_format: None,
     });
-    assert!(ring(&h) <= MAX_RING_SAMPLES && ring(&h) >= 255 * BS, "{}", ring(&h));
+    assert!(
+        ring(&h) <= MAX_RING_SAMPLES && ring(&h) >= 255 * BS,
+        "{}",
+        ring(&h)
+    );
 }
 
 #[test]

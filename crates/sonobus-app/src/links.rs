@@ -19,7 +19,11 @@ pub struct Link {
 /// `host[:port]`, port defaulting to 10998 when missing or not positive (as upstream).
 pub fn parse_host_port(s: &str) -> (String, u16) {
     let (host, port) = s.split_once(':').unwrap_or((s, ""));
-    let port = port.parse::<u16>().ok().filter(|&p| p > 0).unwrap_or(DEFAULT_SERVER_PORT as u16);
+    let port = port
+        .parse::<u16>()
+        .ok()
+        .filter(|&p| p > 0)
+        .unwrap_or(DEFAULT_SERVER_PORT as u16);
     (host.trim().to_owned(), port)
 }
 
@@ -88,10 +92,15 @@ pub fn parse_link(text: &str) -> Option<Link> {
     if let Some(g) = get("g") {
         link.group = Some(g.to_owned());
         link.password = get("p").unwrap_or_default().to_owned();
-        link.public = get("public").and_then(|v| v.trim().parse::<i64>().ok()).is_some_and(|v| v > 0);
+        link.public = get("public")
+            .and_then(|v| v.trim().parse::<i64>().ok())
+            .is_some_and(|v| v > 0);
     }
     if sonobus {
-        let authority = head["sonobus://".len()..].split('/').next().unwrap_or_default();
+        let authority = head["sonobus://".len()..]
+            .split('/')
+            .next()
+            .unwrap_or_default();
         if authority.is_empty() {
             return None;
         }
@@ -104,13 +113,21 @@ pub fn parse_link(text: &str) -> Option<Link> {
 
 /// Inverse of [`parse_host_port`]: the default port is left out.
 pub fn host_port_text(host: &str, port: u16) -> String {
-    if i32::from(port) == DEFAULT_SERVER_PORT { host.to_owned() } else { format!("{host}:{port}") }
+    if i32::from(port) == DEFAULT_SERVER_PORT {
+        host.to_owned()
+    } else {
+        format!("{host}:{port}")
+    }
 }
 
 /// The `http://go.sonobus.net/sblaunch?...` link upstream copies with "Copy Share Link".
 pub fn share_link(host: &str, port: u16, group: &str, password: &str, public: bool) -> String {
     let hostport = host_port_text(host, port);
-    let mut s = format!("http://go.sonobus.net/sblaunch?s={}&g={}", escape(&hostport), escape(group));
+    let mut s = format!(
+        "http://go.sonobus.net/sblaunch?s={}&g={}",
+        escape(&hostport),
+        escape(group)
+    );
     if !password.is_empty() {
         s += &format!("&p={}", escape(password));
     }
@@ -138,7 +155,10 @@ const WORDMAKER: &str = include_str!("../assets/wordmaker.g");
 fn random_index(n: usize) -> usize {
     use std::hash::{BuildHasher, Hasher};
     // every RandomState has fresh keys: its empty hash is a random number
-    (std::collections::hash_map::RandomState::new().build_hasher().finish() % n.max(1) as u64) as usize
+    (std::collections::hash_map::RandomState::new()
+        .build_hasher()
+        .finish()
+        % n.max(1) as u64) as usize
 }
 
 /// "Generate a random group name" (RandomSentenceGenerator.cpp with `capEveryWord`): expands
@@ -152,7 +172,9 @@ pub fn random_group_name() -> String {
             continue;
         }
         let Some(rule) = lines.next() else { break };
-        let list = rules.entry(rule.trim_end_matches(delims).to_lowercase()).or_default();
+        let list = rules
+            .entry(rule.trim_end_matches(delims).to_lowercase())
+            .or_default();
         for l in lines.by_ref() {
             if l.contains('}') {
                 break;
@@ -160,8 +182,14 @@ pub fn random_group_name() -> String {
             list.push(l.trim_end_matches(delims));
         }
     }
-    fn expand(rules: &std::collections::HashMap<String, Vec<&str>>, rule: &str, depth: u32) -> String {
-        let Some(list) = rules.get(rule).filter(|l| !l.is_empty() && depth < 8) else { return String::new() };
+    fn expand(
+        rules: &std::collections::HashMap<String, Vec<&str>>,
+        rule: &str,
+        depth: u32,
+    ) -> String {
+        let Some(list) = rules.get(rule).filter(|l| !l.is_empty() && depth < 8) else {
+            return String::new();
+        };
         let mut s = list[random_index(list.len())].to_owned();
         while let (Some(a), Some(b)) = (s.find('<'), s.find('>')) {
             if b < a {
@@ -247,7 +275,9 @@ Secure sessions (this app only, end-to-end encrypted):
 /// A `sonobus2://join/...` link (the OS hands these to the app).
 pub fn is_invite_link(s: &str) -> bool {
     let p = sonobus_net::auth::INVITE_URL_PREFIX;
-    s.trim().get(..p.len()).is_some_and(|x| x.eq_ignore_ascii_case(p))
+    s.trim()
+        .get(..p.len())
+        .is_some_and(|x| x.eq_ignore_ascii_case(p))
 }
 
 /// `--relay`'s value: `none`, `n0` or a relay URL.
@@ -256,7 +286,9 @@ pub fn relay_choice(s: &str) -> Result<sonobus_engine::modern::RelayChoice, Stri
     Ok(match s.trim() {
         "none" => RelayChoice::None,
         "n0" => RelayChoice::N0Default,
-        u if u.starts_with("https://") || u.starts_with("http://") => RelayChoice::Custom(vec![u.to_owned()]),
+        u if u.starts_with("https://") || u.starts_with("http://") => {
+            RelayChoice::Custom(vec![u.to_owned()])
+        }
         u => return Err(format!("--relay: none, n0 or an http(s) URL, not {u:?}")),
     })
 }
@@ -270,19 +302,30 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String>
             Some((n, v)) if n.starts_with('-') => (n.to_owned(), Some(v.to_owned())),
             _ => (a.clone(), None),
         };
-        let mut value = || inline.clone().or_else(|| it.next()).ok_or(format!("{name} needs a value"));
+        let mut value = || {
+            inline
+                .clone()
+                .or_else(|| it.next())
+                .ok_or(format!("{name} needs a value"))
+        };
         match name.as_str() {
             "-v" | "--version" => cli.version = true,
             "-h" | "--help" => cli.help = true,
             "-q" | "--headless" => cli.headless = true,
             "--no-audio" => cli.no_audio = true,
             "-c" | "--connectionserver" => cli.server = Some(parse_host_port(&value()?)),
-            "-g" | "--group" => cli.group = Some(value()?.trim().to_owned()).filter(|g| !g.is_empty()),
+            "-g" | "--group" => {
+                cli.group = Some(value()?.trim().to_owned()).filter(|g| !g.is_empty())
+            }
             "-p" | "--group-password" => cli.group_password = Some(value()?),
-            "-n" | "--username" => cli.user = Some(value()?.trim().to_owned()).filter(|u| !u.is_empty()),
+            "-n" | "--username" => {
+                cli.user = Some(value()?.trim().to_owned()).filter(|u| !u.is_empty())
+            }
             "-l" | "--load-setup" => cli.load_setup = Some(value()?),
             "--settings-dir" => cli.settings_dir = Some(value()?),
-            "--host-session" => cli.secure_host = Some(value()?.trim().to_owned()).filter(|g| !g.is_empty()),
+            "--host-session" => {
+                cli.secure_host = Some(value()?.trim().to_owned()).filter(|g| !g.is_empty())
+            }
             "--join" => cli.secure_join = Some(value()?),
             "--broadcast" => cli.broadcast = true,
             "--pin" => cli.pin = true,
@@ -302,8 +345,16 @@ pub fn parse_args(args: impl IntoIterator<Item = String>) -> Result<Cli, String>
     if let Some(r) = &cli.relay {
         relay_choice(r)?;
     }
-    if cli.headless && cli.group.is_none() && cli.host_server.is_none() && cli.url.is_none() && cli.secure_host.is_none() && cli.secure_join.is_none() {
-        return Err("Error: you need to specify a group to connect to for headless operation".into());
+    if cli.headless
+        && cli.group.is_none()
+        && cli.host_server.is_none()
+        && cli.url.is_none()
+        && cli.secure_host.is_none()
+        && cli.secure_join.is_none()
+    {
+        return Err(
+            "Error: you need to specify a group to connect to for headless operation".into(),
+        );
     }
     Ok(cli)
 }
@@ -318,7 +369,10 @@ mod tests {
 
     #[test]
     fn sonobus_scheme() {
-        let l = parse_link("join me: sonobus://example.org:11000/?g=my%20band&p=s3cret&public=1 thanks").unwrap();
+        let l = parse_link(
+            "join me: sonobus://example.org:11000/?g=my%20band&p=s3cret&public=1 thanks",
+        )
+        .unwrap();
         assert_eq!(l.server, Some(("example.org".into(), 11000)));
         assert_eq!(l.group.as_deref(), Some("my band"));
         assert_eq!(l.password, "s3cret");
@@ -336,12 +390,16 @@ mod tests {
 
     #[test]
     fn sblaunch_and_round_trip() {
-        let l = parse_link("https://go.sonobus.net/sblaunch?s=10.0.0.2:10999&g=x&public=0").unwrap();
+        let l =
+            parse_link("https://go.sonobus.net/sblaunch?s=10.0.0.2:10999&g=x&public=0").unwrap();
         assert_eq!(l.server, Some(("10.0.0.2".into(), 10999)));
         assert_eq!(l.group.as_deref(), Some("x"));
         assert!(!l.public);
         let link = share_link("aoo.sonobus.net", 10998, "Jazz & Co/2", "p w", true);
-        assert_eq!(link, "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=Jazz%20%26%20Co%2F2&p=p%20w&public=1");
+        assert_eq!(
+            link,
+            "http://go.sonobus.net/sblaunch?s=aoo.sonobus.net&g=Jazz%20%26%20Co%2F2&p=p%20w&public=1"
+        );
         let l = parse_link(&link).unwrap();
         assert_eq!(
             l,
@@ -368,7 +426,10 @@ mod tests {
 
     #[test]
     fn command_line() {
-        let c = parse_args(args("-c myserver:11000 --group=band -p pw -n Alice -q --no-audio")).unwrap();
+        let c = parse_args(args(
+            "-c myserver:11000 --group=band -p pw -n Alice -q --no-audio",
+        ))
+        .unwrap();
         assert_eq!(c.server, Some(("myserver".into(), 11000)));
         assert_eq!(c.group.as_deref(), Some("band"));
         assert_eq!(c.group_password.as_deref(), Some("pw"));
@@ -380,16 +441,42 @@ mod tests {
         assert!(parse_args(args("-q")).is_err());
         assert!(parse_args(args("--bogus")).is_err());
         assert!(parse_args(args("-g")).is_err());
-        assert_eq!(parse_args(args("--host-server 10999 -q")).unwrap().host_server, Some(10999));
-        assert_eq!(parse_args(args("-c host")).unwrap().server, Some(("host".into(), 10998)));
+        assert_eq!(
+            parse_args(args("--host-server 10999 -q"))
+                .unwrap()
+                .host_server,
+            Some(10999)
+        );
+        assert_eq!(
+            parse_args(args("-c host")).unwrap().server,
+            Some(("host".into(), 10998))
+        );
         // secure sessions
         let c = parse_args(args("-q --host-session jam --broadcast --pin --lan --password pw --relay none --print-invite")).unwrap();
-        assert_eq!((c.secure_host.as_deref(), c.password.as_deref(), c.relay.as_deref()), (Some("jam"), Some("pw"), Some("none")));
+        assert_eq!(
+            (
+                c.secure_host.as_deref(),
+                c.password.as_deref(),
+                c.relay.as_deref()
+            ),
+            (Some("jam"), Some("pw"), Some("none"))
+        );
         assert!(c.broadcast && c.pin && c.lan && c.print_invite);
         let c = parse_args(args("-q SONOBUS2://join/abc")).unwrap();
-        assert_eq!((c.secure_join.as_deref(), c.url), (Some("SONOBUS2://join/abc"), None));
-        assert_eq!(parse_args(args("--join x")).unwrap().secure_join.as_deref(), Some("x"));
+        assert_eq!(
+            (c.secure_join.as_deref(), c.url),
+            (Some("SONOBUS2://join/abc"), None)
+        );
+        assert_eq!(
+            parse_args(args("--join x")).unwrap().secure_join.as_deref(),
+            Some("x")
+        );
         assert!(parse_args(args("--relay ftp://x")).is_err());
-        assert_eq!(relay_choice("https://r.example/"), Ok(sonobus_engine::modern::RelayChoice::Custom(vec!["https://r.example/".into()])));
+        assert_eq!(
+            relay_choice("https://r.example/"),
+            Ok(sonobus_engine::modern::RelayChoice::Custom(vec![
+                "https://r.example/".into()
+            ]))
+        );
     }
 }

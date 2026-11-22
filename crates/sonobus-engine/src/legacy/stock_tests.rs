@@ -399,27 +399,27 @@ struct Rig {
 /// The engine under test: mono in and out, 40 ms buffers, "in a group".
 fn engine() -> (Engine, EngineAudio) {
     let mut s = AppState::new(false);
-        s.params.dry = 0.0;
-        s.params.def_net_buf = 0.04;
-        let mut g = ChannelGroup::input_default(0, false);
-        g.num_channels = 1;
-        g.pans = vec![0.0];
-        s.input_groups = vec![g];
-        let audio = AudioConfig {
-            sample_rate: SR,
-            block_size: BLOCK,
-            input_channels: 1,
-            output_channels: 1,
-        };
-        let (e, a) = Engine::new(EngineConfig {
-            audio,
-            udp_port: 0,
-            state: s,
-        })
-        .unwrap();
-        // "in a group": only announced peers may connect
-        e.with_legacy(|_, s| s.conn = ConnState::Connected);
-        (e, a)
+    s.params.dry = 0.0;
+    s.params.def_net_buf = 0.04;
+    let mut g = ChannelGroup::input_default(0, false);
+    g.num_channels = 1;
+    g.pans = vec![0.0];
+    s.input_groups = vec![g];
+    let audio = AudioConfig {
+        sample_rate: SR,
+        block_size: BLOCK,
+        input_channels: 1,
+        output_channels: 1,
+    };
+    let (e, a) = Engine::new(EngineConfig {
+        audio,
+        udp_port: 0,
+        state: s,
+    })
+    .unwrap();
+    // "in a group": only announced peers may connect
+    e.with_legacy(|_, s| s.conn = ConnState::Connected);
+    (e, a)
 }
 
 impl Rig {
@@ -630,8 +630,7 @@ fn stock_peer_latency_test_against_our_echo() {
         assert!(r.until_two_way(6.0));
         r.stock.start_latency_test();
         let start = Instant::now();
-        while r.stock.lat.as_ref().unwrap().measurer.state < 3 && start.elapsed().as_secs() < 8
-        {
+        while r.stock.lat.as_ref().unwrap().measurer.state < 3 && start.elapsed().as_secs() < 8 {
             r.run(0.1);
         }
         let m = &r.stock.lat.as_ref().unwrap().measurer;
@@ -660,13 +659,22 @@ fn codec_advertisement_with_a_stock_peer() {
     r.run(0.2);
     r.stock.invite_dummy();
     assert!(r.until_two_way(6.0));
-    let ours = r.stock.pinfo.clone().expect("our /sb/pinfo").supported_codecs;
+    let ours = r
+        .stock
+        .pinfo
+        .clone()
+        .expect("our /sb/pinfo")
+        .supported_codecs;
     assert_eq!(ours, Some(CODEC_IDS.map(str::to_owned).to_vec()));
 
     let peer = |r: &Rig| r.e.snapshot().peers[0].clone();
     let id = peer(&r).id;
     let all: Vec<usize> = (0..FORMATS.len()).collect();
-    assert_eq!(peer(&r).supported_formats, all, "stock sends no list: legacy set");
+    assert_eq!(
+        peer(&r).supported_formats,
+        all,
+        "stock sends no list: legacy set"
+    );
     r.e.set_peer_send_format(id, 9);
     assert_eq!(peer(&r).send_format, 9);
 
@@ -691,7 +699,11 @@ fn codec_advertisement_with_a_stock_peer() {
         r.run(0.05);
     }
     assert_eq!(peer(&r).supported_formats, [2, 4]);
-    assert_eq!(peer(&r).send_format, 4, "PCM 24 is not listed: nearest listed");
+    assert_eq!(
+        peer(&r).send_format,
+        4,
+        "PCM 24 is not listed: nearest listed"
+    );
     r.run(0.5);
     let opus = |f: Option<Format>| match f.map(|f| f.codec) {
         Some(Codec::Opus(o)) => o.bitrate,
@@ -793,8 +805,14 @@ fn same_host_peers_resolved_through_different_aliases() {
         "a hears {:.3}, b hears {:.3}; a: {:?}, b: {:?}",
         tone(&heard_a, STOCK_FREQ),
         tone(&heard_b, OUR_FREQ),
-        a.snapshot().peers.first().map(|p| (p.addr, p.connected, p.packets_received)),
-        b.snapshot().peers.first().map(|p| (p.addr, p.connected, p.packets_received)),
+        a.snapshot()
+            .peers
+            .first()
+            .map(|p| (p.addr, p.connected, p.packets_received)),
+        b.snapshot()
+            .peers
+            .first()
+            .map(|p| (p.addr, p.connected, p.packets_received)),
     );
 }
 
@@ -846,7 +864,8 @@ fn peer_latency_figures_are_bounded() {
         };
         r.sb_from(&stock, &m);
     }
-    let (rem, ping) = r.e.with_legacy(|_, s| (s.peers[0].c.remote, s.peers[0].c.ping.smooth.mean));
+    let (rem, ping) =
+        r.e.with_legacy(|_, s| (s.peers[0].c.remote, s.peers[0].c.ping.smooth.mean));
     assert_eq!(rem.in_latency_ms, 0.0);
     assert_eq!(rem.out_latency_ms, MAX_PEER_LATENCY_MS);
     assert_eq!(rem.jitter_buffer_ms, 0.0);
@@ -896,7 +915,10 @@ fn sb_messages_only_from_peers() {
         },
     );
     let mut b = [0u8; 2048];
-    assert!(stranger.recv_from(&mut b).is_err(), "no answer to a stranger");
+    assert!(
+        stranger.recv_from(&mut b).is_err(),
+        "no answer to a stranger"
+    );
     assert!(r.notes().is_empty());
     let (entries, ready, _) = r.e.latency_match_info();
     assert!(!ready && entries.len() == 1, "{entries:?}");
@@ -907,10 +929,7 @@ fn sb_messages_only_from_peers() {
     let (entries, ready, target) = r.e.latency_match_info();
     assert!(ready && entries.len() == 2, "{entries:?}");
     assert_eq!(target, crate::jitter::MAX_PEER_LATENCY_MS);
-    assert!(
-        r.notes()
-            .contains(&crate::Notification::LatencyMatchReady)
-    );
+    assert!(r.notes().contains(&crate::Notification::LatencyMatchReady));
 
     // a flood of suggestions: one notification, and a recording error survives a full queue;
     // the sender shown is the peer's own name, whatever the body claims
@@ -1028,7 +1047,14 @@ fn stock_codec_requests_respect_max_send_quality() {
             blocksize: BLOCK as i32,
             codec,
         };
-        assert!(r.stock.link.as_mut().unwrap().sink.request_codec_change(engine, ours, f));
+        assert!(
+            r.stock
+                .link
+                .as_mut()
+                .unwrap()
+                .sink
+                .request_codec_change(engine, ours, f)
+        );
     };
     let fmt = |r: &Rig| r.e.snapshot().peers[0].send_format;
     let wait = |r: &mut Rig, want: usize| {
@@ -1048,7 +1074,11 @@ fn stock_codec_requests_respect_max_send_quality() {
         Some(Codec::Opus(o)) => o.bitrate,
         _ => 0,
     };
-    assert_eq!(opus(r.stock.format), 96_000, "and the stream follows the cap");
+    assert_eq!(
+        opus(r.stock.format),
+        96_000,
+        "and the stream follows the cap"
+    );
     r.e.set_honour_quality_requests(false);
     ask(&mut r, Codec::Pcm(PcmBitDepth::Int16));
     r.run(0.5);

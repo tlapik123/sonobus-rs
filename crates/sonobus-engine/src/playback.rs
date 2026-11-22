@@ -720,7 +720,10 @@ mod tests {
             press(&mut sb, (0, k), &mut out); // again
             let again = pos(&sb, k).unwrap();
             if k == 0 {
-                assert!((again - at).abs() < 0.01, "resumed at {again}, stopped at {at}");
+                assert!(
+                    (again - at).abs() < 0.01,
+                    "resumed at {again}, stopped at {at}"
+                );
             } else {
                 assert!(again < 0.01, "from the start: {again}");
             }
@@ -734,7 +737,9 @@ mod tests {
     #[test]
     fn voice_limit() {
         let short = wav("voices.wav", 0.5, 0.1);
-        let samples = (0..=MAX_VOICES).map(|_| sample(&short, 1, 0, 0, 0)).collect();
+        let samples = (0..=MAX_VOICES)
+            .map(|_| sample(&short, 1, 0, 0, 0))
+            .collect();
         let mut sb = SoundboardPlayer::new();
         let mut out = |_c: Cmd| {};
         sb.set_boards(board(samples), &mut out);

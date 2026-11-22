@@ -10,7 +10,11 @@ use std::ptr::NonNull;
 /// `(streams, coupled_streams)`: uncoupled = one mono stream per channel; coupled = channel
 /// pairs share a stereo stream (an odd last channel is mono). The identity mapping fits both.
 fn layout(nch: i32, coupled: bool) -> (i32, i32) {
-    if coupled { (nch - nch / 2, nch / 2) } else { (nch, 0) }
+    if coupled {
+        (nch - nch / 2, nch / 2)
+    } else {
+        (nch, 0)
+    }
 }
 
 fn mapping(nch: usize) -> [u8; 256] {
@@ -88,16 +92,27 @@ impl Encoder {
             }
             None => return Err(err),
         };
-        let enc = Self { st, nch: nch as usize };
+        let enc = Self {
+            st,
+            nch: nch as usize,
+        };
         let (mut cplx, mut sig): (i32, i32) = (0, 0);
         // SAFETY: valid state; request codes take one `opus_int32` value or `*mut opus_int32`.
         unsafe {
             let p = enc.st.as_ptr();
             ffi::opus_multistream_encoder_ctl(p, ffi::OPUS_SET_COMPLEXITY_REQUEST, complexity);
-            ffi::opus_multistream_encoder_ctl(p, ffi::OPUS_GET_COMPLEXITY_REQUEST, &mut cplx as *mut i32);
+            ffi::opus_multistream_encoder_ctl(
+                p,
+                ffi::OPUS_GET_COMPLEXITY_REQUEST,
+                &mut cplx as *mut i32,
+            );
             ffi::opus_multistream_encoder_ctl(p, ffi::OPUS_SET_BITRATE_REQUEST, bitrate);
             ffi::opus_multistream_encoder_ctl(p, ffi::OPUS_SET_SIGNAL_REQUEST, signal);
-            ffi::opus_multistream_encoder_ctl(p, ffi::OPUS_GET_SIGNAL_REQUEST, &mut sig as *mut i32);
+            ffi::opus_multistream_encoder_ctl(
+                p,
+                ffi::OPUS_GET_SIGNAL_REQUEST,
+                &mut sig as *mut i32,
+            );
         }
         Ok((enc, cplx, sig))
     }
@@ -127,7 +142,11 @@ impl Encoder {
     pub fn set_bitrate(&mut self, bitrate: i32) {
         // SAFETY: valid state; the request takes one `opus_int32`.
         unsafe {
-            ffi::opus_multistream_encoder_ctl(self.st.as_ptr(), ffi::OPUS_SET_BITRATE_REQUEST, bitrate)
+            ffi::opus_multistream_encoder_ctl(
+                self.st.as_ptr(),
+                ffi::OPUS_SET_BITRATE_REQUEST,
+                bitrate,
+            )
         };
     }
 
@@ -179,7 +198,10 @@ impl Decoder {
             ffi::opus_multistream_decoder_create(sr, nch, streams, pairs, map.as_ptr(), &mut err)
         };
         match NonNull::new(st) {
-            Some(st) if err == ffi::OPUS_OK => Ok(Self { st, nch: nch as usize }),
+            Some(st) if err == ffi::OPUS_OK => Ok(Self {
+                st,
+                nch: nch as usize,
+            }),
             Some(st) => {
                 // SAFETY: created above and not used afterwards.
                 unsafe { ffi::opus_multistream_decoder_destroy(st.as_ptr()) };
@@ -206,7 +228,12 @@ impl Decoder {
         unsafe { ffi::opus_multistream_decoder_ctl(self.st.as_ptr(), ffi::OPUS_RESET_STATE) };
     }
 
-    fn decode_impl(&mut self, data: Option<&[u8]>, out: &mut [f32], fec: c_int) -> Result<usize, i32> {
+    fn decode_impl(
+        &mut self,
+        data: Option<&[u8]>,
+        out: &mut [f32],
+        fec: c_int,
+    ) -> Result<usize, i32> {
         let (ptr, len) = match data {
             Some(d) => (d.as_ptr(), d.len().min(i32::MAX as usize) as i32),
             None => (std::ptr::null(), 0),
@@ -240,9 +267,15 @@ mod tests {
     use crate::codec::{OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC};
 
     fn round_trip(nch: usize) {
-        let (mut enc, cplx, sig) =
-            Encoder::new(48000, nch as i32, OPUS_APPLICATION_RESTRICTED_LOWDELAY, 96_000 * nch as i32, 10, OPUS_SIGNAL_MUSIC)
-                .unwrap();
+        let (mut enc, cplx, sig) = Encoder::new(
+            48000,
+            nch as i32,
+            OPUS_APPLICATION_RESTRICTED_LOWDELAY,
+            96_000 * nch as i32,
+            10,
+            OPUS_SIGNAL_MUSIC,
+        )
+        .unwrap();
         assert_eq!((cplx, sig), (10, OPUS_SIGNAL_MUSIC));
         let mut dec = Decoder::new(48000, nch as i32).unwrap();
         let mut packet = vec![0u8; 4000];
@@ -271,15 +304,24 @@ mod tests {
     /// coupled decoder round-trips it, PLC and FEC included.
     #[test]
     fn coupled_stereo() {
-        let (mut enc, ..) =
-            Encoder::with_coupling(48000, 2, true, OPUS_APPLICATION_RESTRICTED_LOWDELAY, 96_000, 5, OPUS_SIGNAL_MUSIC)
-                .unwrap();
+        let (mut enc, ..) = Encoder::with_coupling(
+            48000,
+            2,
+            true,
+            OPUS_APPLICATION_RESTRICTED_LOWDELAY,
+            96_000,
+            5,
+            OPUS_SIGNAL_MUSIC,
+        )
+        .unwrap();
         enc.set_fec(true, 10);
         enc.set_bitrate(64_000);
         let mut dec = Decoder::with_coupling(48000, 2, true).unwrap();
         let mut packet = vec![0u8; 4000];
         let mut out = vec![0f32; 960];
-        let pcm: Vec<f32> = (0..960).map(|i| ((i / 2) as f32 * 0.05).sin() * 0.5).collect();
+        let pcm: Vec<f32> = (0..960)
+            .map(|i| ((i / 2) as f32 * 0.05).sin() * 0.5)
+            .collect();
         let n = enc.encode(&pcm, &mut packet).unwrap();
         assert_ne!(packet[0] & 0x04, 0, "stereo TOC flag");
         assert_eq!(dec.decode(Some(&packet[..n]), &mut out).unwrap(), 480);

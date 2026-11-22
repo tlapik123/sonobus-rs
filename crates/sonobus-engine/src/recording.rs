@@ -255,7 +255,13 @@ impl Recorder {
                     let kind = TrackKind::SelfInput(Some(g.name.as_str()));
                     let w = match nch {
                         0 => None,
-                        _ => match start_file(&Self::track(&a, kind, nch), &a, nch, &mut files, false) {
+                        _ => match start_file(
+                            &Self::track(&a, kind, nch),
+                            &a,
+                            nch,
+                            &mut files,
+                            false,
+                        ) {
                             Ok((w, r)) => {
                                 a.main.push(r);
                                 Some((w, nch))
@@ -328,7 +334,11 @@ impl Recorder {
         files: &mut Vec<PathBuf>,
     ) -> io::Result<(sonobus_files::RecordWriter, Recording)> {
         // nothing known yet: assume there will be something eventually (upstream: 2)
-        let nch = if p.recv_channels == 0 { 2 } else { p.recv_channels };
+        let nch = if p.recv_channels == 0 {
+            2
+        } else {
+            p.recv_channels
+        };
         let placeholder;
         let user = if p.user.is_empty() {
             placeholder = format!("user{}", p.slot + 1);
@@ -336,7 +346,13 @@ impl Recorder {
         } else {
             &p.user
         };
-        start_file(&Self::track(a, TrackKind::User(user), nch), a, nch, files, true)
+        start_file(
+            &Self::track(a, TrackKind::User(user), nch),
+            a,
+            nch,
+            files,
+            true,
+        )
     }
 
     fn sidecar_lines(path: &Path, what: &str, peers: &[PeerRec]) -> io::Result<()> {

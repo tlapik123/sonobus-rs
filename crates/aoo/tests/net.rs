@@ -270,7 +270,9 @@ fn login_frame(user: &str) -> Vec<u8> {
 /// Reads whatever is pending; true once the server has closed the connection.
 fn is_closed(s: &mut TcpStream) -> bool {
     // macOS refuses socket options (EINVAL) once the peer has reset the connection
-    if s.set_read_timeout(Some(Duration::from_millis(300))).is_err() {
+    if s.set_read_timeout(Some(Duration::from_millis(300)))
+        .is_err()
+    {
         return true;
     }
     let mut buf = [0u8; 4096];
@@ -382,7 +384,11 @@ fn non_reading_watchers_do_not_stall_others() {
     let mut left = std::collections::BTreeSet::new();
     let end = Instant::now() + Duration::from_secs(20);
     while left.len() < 3 || probes < 200 {
-        assert!(Instant::now() < end, "watchers not dropped: {left:?} {:?} {probes}", srv.counts());
+        assert!(
+            Instant::now() < end,
+            "watchers not dropped: {left:?} {:?} {probes}",
+            srv.counts()
+        );
         let t = Instant::now();
         u.send_to(&req, addr).unwrap();
         let n = u.recv(&mut buf).expect("UDP reply lost");
@@ -399,7 +405,10 @@ fn non_reading_watchers_do_not_stall_others() {
         }
         std::thread::sleep(Duration::from_millis(10));
     }
-    assert!(worst < Duration::from_millis(500), "UDP reply took {worst:?}");
+    assert!(
+        worst < Duration::from_millis(500),
+        "UDP reply took {worst:?}"
+    );
     let _ = churner.shutdown(std::net::Shutdown::Both); // unless the server dropped it too
     // left: the observer in "p"; the watchers' own groups and the churned one are purged
     let end = Instant::now() + Duration::from_secs(5);
@@ -411,7 +420,11 @@ fn non_reading_watchers_do_not_stall_others() {
     let end = Instant::now() + Duration::from_secs(5);
     let mut fresh = Vec::new();
     while fresh.len() < 5 {
-        assert!(Instant::now() < end, "slots not freed: {} of 5", fresh.len());
+        assert!(
+            Instant::now() < end,
+            "slots not freed: {} of 5",
+            fresh.len()
+        );
         fresh.extend(try_login(addr, &format!("new{}", fresh.len())));
     }
     let st = srv.stats();
@@ -442,7 +455,10 @@ fn driver_connection_limits() {
         assert!(Instant::now() < end, "slot not freed");
     }
     let st = srv.stats();
-    assert!(st.refused.per_ip_cap >= 1 && st.refused.global_cap == 0, "{st:?}");
+    assert!(
+        st.refused.per_ip_cap >= 1 && st.refused.global_cap == 0,
+        "{st:?}"
+    );
 
     let limits = Limits {
         max_connections: 2,
@@ -625,5 +641,8 @@ fn ipv6_any_server_serves_ipv4_clients() {
     let mut buf = [0u8; 256];
     let (n, from) = u.recv_from(&mut buf).expect("UDP reply");
     assert_eq!(from, v4);
-    assert!(matches!(message::parse(&buf[..n]), Ok(Message::ClientReply { .. })));
+    assert!(matches!(
+        message::parse(&buf[..n]),
+        Ok(Message::ClientReply { .. })
+    ));
 }

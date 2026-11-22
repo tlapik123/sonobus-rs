@@ -469,11 +469,38 @@ mod conversion_tests {
     #[test]
     fn var_conversions_match_juce() {
         let s = |x: &str| Var::String(x.into());
-        assert_eq!((s("1.0").to_i32(), s("12abc").to_i32(), s(" -3x").to_i32(), s("+3").to_i32()), (1, 12, -3, 0));
-        assert_eq!((s("12ms").to_f64(), s("1e3x").to_f64(), s("x").to_f64()), (12.0, 1000.0, 0.0));
-        assert_eq!((Var::Double(2.9).to_i32(), Var::Double(-2.9).to_i32(), Var::Int64(1 << 32 | 5).to_i32()), (2, -2, 5));
-        assert!(s("2.9").to_bool() && s(" Yes ").to_bool() && s("TRUE").to_bool() && !s("0.9").to_bool());
-        assert!(Var::Array(vec![]).to_bool() && !Var::Binary(vec![1]).to_bool() && !Var::Undefined.to_bool());
+        assert_eq!(
+            (
+                s("1.0").to_i32(),
+                s("12abc").to_i32(),
+                s(" -3x").to_i32(),
+                s("+3").to_i32()
+            ),
+            (1, 12, -3, 0)
+        );
+        assert_eq!(
+            (s("12ms").to_f64(), s("1e3x").to_f64(), s("x").to_f64()),
+            (12.0, 1000.0, 0.0)
+        );
+        assert_eq!(
+            (
+                Var::Double(2.9).to_i32(),
+                Var::Double(-2.9).to_i32(),
+                Var::Int64(1 << 32 | 5).to_i32()
+            ),
+            (2, -2, 5)
+        );
+        assert!(
+            s("2.9").to_bool()
+                && s(" Yes ").to_bool()
+                && s("TRUE").to_bool()
+                && !s("0.9").to_bool()
+        );
+        assert!(
+            Var::Array(vec![]).to_bool()
+                && !Var::Binary(vec![1]).to_bool()
+                && !Var::Undefined.to_bool()
+        );
         assert_eq!(s("99999999999").to_i64(), 99_999_999_999);
     }
 
@@ -481,10 +508,17 @@ mod conversion_tests {
     fn binary_read_duplicate_property_is_last_value_first_position() {
         // JUCE readFromStream uses NamedValueSet::set (juce_ValueTree.cpp:1062).
         let mut t = ValueTree::new("T");
-        t.properties = vec![("a".into(), Var::Int(1)), ("b".into(), Var::Int(2)), ("a".into(), Var::Int(3))];
+        t.properties = vec![
+            ("a".into(), Var::Int(1)),
+            ("b".into(), Var::Int(2)),
+            ("a".into(), Var::Int(3)),
+        ];
         let mut bytes = Vec::new();
         t.write(&mut bytes);
         let back = ValueTree::read(&bytes).unwrap();
-        assert_eq!(back.properties, vec![("a".into(), Var::Int(3)), ("b".into(), Var::Int(2))]);
+        assert_eq!(
+            back.properties,
+            vec![("a".into(), Var::Int(3)), ("b".into(), Var::Int(2))]
+        );
     }
 }

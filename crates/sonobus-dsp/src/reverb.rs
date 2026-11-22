@@ -39,10 +39,34 @@ pub struct ReverbParams {
 }
 
 impl ReverbParams {
-    pub const LEVEL: ParamSpec = ParamSpec { min: 0.0, max: 1.0, step: 0.0, skew: 0.4, default: 1.0 };
-    pub const SIZE: ParamSpec = ParamSpec { min: 0.0, max: 1.0, step: 0.0, skew: 1.0, default: 0.15 };
-    pub const DAMPING: ParamSpec = ParamSpec { min: 0.0, max: 1.0, step: 0.0, skew: 1.0, default: 0.5 };
-    pub const PREDELAY_MS: ParamSpec = ParamSpec { min: 0.0, max: 100.0, step: 1.0, skew: 1.0, default: 20.0 };
+    pub const LEVEL: ParamSpec = ParamSpec {
+        min: 0.0,
+        max: 1.0,
+        step: 0.0,
+        skew: 0.4,
+        default: 1.0,
+    };
+    pub const SIZE: ParamSpec = ParamSpec {
+        min: 0.0,
+        max: 1.0,
+        step: 0.0,
+        skew: 1.0,
+        default: 0.15,
+    };
+    pub const DAMPING: ParamSpec = ParamSpec {
+        min: 0.0,
+        max: 1.0,
+        step: 0.0,
+        skew: 1.0,
+        default: 0.5,
+    };
+    pub const PREDELAY_MS: ParamSpec = ParamSpec {
+        min: 0.0,
+        max: 100.0,
+        step: 1.0,
+        skew: 1.0,
+        default: 20.0,
+    };
 }
 
 impl Default for ReverbParams {
@@ -181,8 +205,10 @@ impl MainReverb {
     pub fn set_level(&mut self, level: f32) {
         self.params.level = level;
         self.update_freeverb();
-        self.mverb.set_parameter(MVerbParam::Gain, jmap(level, 0.0, 0.8));
-        self.zita.set_level_db(jlimit(-70.0, 40.0, gain_to_db(level) + 6.0));
+        self.mverb
+            .set_parameter(MVerbParam::Gain, jmap(level, 0.0, 0.8));
+        self.zita
+            .set_level_db(jlimit(-70.0, 40.0, gain_to_db(level) + 6.0));
     }
 
     /// `mainreverbsize`, 0..1. For MVerb this clears the tank (upstream behaviour).
@@ -200,14 +226,16 @@ impl MainReverb {
         self.params.damping = damping;
         self.update_freeverb();
         self.zita.set_hf_damping(jmap(damping, 23520.0, 1500.0));
-        self.mverb.set_parameter(MVerbParam::DampingFreq, jmap(damping, 0.0, 0.85));
+        self.mverb
+            .set_parameter(MVerbParam::DampingFreq, jmap(damping, 0.0, 0.85));
     }
 
     /// `mainreverbpredelay`, 0..100 ms. Freeverb has no pre-delay.
     pub fn set_predelay_ms(&mut self, ms: f32) {
         self.params.predelay_ms = ms;
         self.zita.set_in_delay_ms(jlimit(0.0, 100.0, ms));
-        self.mverb.set_parameter(MVerbParam::PreDelay, mverb_predelay(ms));
+        self.mverb
+            .set_parameter(MVerbParam::PreDelay, mverb_predelay(ms));
     }
 
     pub fn model(&self) -> ReverbModel {
@@ -291,7 +319,11 @@ impl InputReverb {
     /// Upstream defaults, disabled.
     pub fn new(sample_rate: u32) -> Self {
         let params = ReverbParams::default();
-        Self { params, state: EnableState::default(), mverb: new_mverb(sample_rate, params) }
+        Self {
+            params,
+            state: EnableState::default(),
+            mverb: new_mverb(sample_rate, params),
+        }
     }
 
     pub fn params(&self) -> ReverbParams {
@@ -306,7 +338,8 @@ impl InputReverb {
     /// `inreverblevel`, 0..1.
     pub fn set_level(&mut self, level: f32) {
         self.params.level = level;
-        self.mverb.set_parameter(MVerbParam::Gain, jmap(level, 0.0, 0.8));
+        self.mverb
+            .set_parameter(MVerbParam::Gain, jmap(level, 0.0, 0.8));
     }
     /// `inreverbsize`, 0..1. Clears the tank (upstream behaviour).
     pub fn set_size(&mut self, size: f32) {
@@ -316,12 +349,14 @@ impl InputReverb {
     /// `inreverbdamp`, 0..1.
     pub fn set_damping(&mut self, damping: f32) {
         self.params.damping = damping;
-        self.mverb.set_parameter(MVerbParam::DampingFreq, jmap(damping, 0.0, 0.85));
+        self.mverb
+            .set_parameter(MVerbParam::DampingFreq, jmap(damping, 0.0, 0.85));
     }
     /// `inreverbpredelay`, 0..100 ms.
     pub fn set_predelay_ms(&mut self, ms: f32) {
         self.params.predelay_ms = ms;
-        self.mverb.set_parameter(MVerbParam::PreDelay, mverb_predelay(ms));
+        self.mverb
+            .set_parameter(MVerbParam::PreDelay, mverb_predelay(ms));
     }
 
     pub fn enabled(&self) -> bool {

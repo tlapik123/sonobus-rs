@@ -26,14 +26,35 @@ pub struct Expander {
 }
 
 impl Expander {
-    pub const THRESHOLD_DB: ParamSpec =
-        ParamSpec { min: -96.0, max: 0.0, step: 1.0, skew: 1.5, default: -60.0 };
+    pub const THRESHOLD_DB: ParamSpec = ParamSpec {
+        min: -96.0,
+        max: 0.0,
+        step: 1.0,
+        skew: 1.5,
+        default: -60.0,
+    };
     /// UI range; the engine accepts up to [`RATIO_ENGINE_MAX`].
-    pub const RATIO: ParamSpec = ParamSpec { min: 1.0, max: 20.0, step: 0.1, skew: 0.5, default: 2.0 };
-    pub const ATTACK_MS: ParamSpec =
-        ParamSpec { min: 1.0, max: 1000.0, step: 1.0, skew: 0.5, default: 1.0 };
-    pub const RELEASE_MS: ParamSpec =
-        ParamSpec { min: 1.0, max: 1000.0, step: 1.0, skew: 0.5, default: 200.0 };
+    pub const RATIO: ParamSpec = ParamSpec {
+        min: 1.0,
+        max: 20.0,
+        step: 0.1,
+        skew: 0.5,
+        default: 2.0,
+    };
+    pub const ATTACK_MS: ParamSpec = ParamSpec {
+        min: 1.0,
+        max: 1000.0,
+        step: 1.0,
+        skew: 0.5,
+        default: 1.0,
+    };
+    pub const RELEASE_MS: ParamSpec = ParamSpec {
+        min: 1.0,
+        max: 1000.0,
+        step: 1.0,
+        skew: 0.5,
+        default: 200.0,
+    };
     /// Fixed by `commitExpanderParams`.
     pub const KNEE_DB: f32 = 3.0;
 
@@ -97,7 +118,10 @@ impl Expander {
             let a1 = x1.abs();
             let c1 = if self.env_r > a1 { release } else { attack };
             self.env_r = self.env_r * c1 + a1 * (1.0 - c1);
-            let under = cmax(0.0, thresh_plus_knee - 20.0 * cmax(self.env_l, self.env_r).log10());
+            let under = cmax(
+                0.0,
+                thresh_plus_knee - 20.0 * cmax(self.env_l, self.env_r).log10(),
+            );
             // `under` is +inf on silence; `0 * inf` would be NaN (see module docs).
             let gain_db = if one_minus_ratio == 0.0 {
                 0.0

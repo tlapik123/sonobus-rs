@@ -9,13 +9,25 @@ fn wav(path: &std::path::Path) {
     b.extend_from_slice(b"RIFF");
     b.extend_from_slice(&(36 + 2 * n).to_le_bytes());
     b.extend_from_slice(b"WAVEfmt ");
-    for v in [16u32.to_le_bytes(), [1, 0, 1, 0], 48000u32.to_le_bytes(), 96000u32.to_le_bytes(), [2, 0, 16, 0]] {
+    for v in [
+        16u32.to_le_bytes(),
+        [1, 0, 1, 0],
+        48000u32.to_le_bytes(),
+        96000u32.to_le_bytes(),
+        [2, 0, 16, 0],
+    ] {
         b.extend_from_slice(&v);
     }
     b.extend_from_slice(b"data");
     b.extend_from_slice(&(2 * n).to_le_bytes());
     for i in 0..n {
-        let v: i16 = if i < 48_000 { 0 } else if (i / 50) % 2 == 0 { 16384 } else { -16384 };
+        let v: i16 = if i < 48_000 {
+            0
+        } else if (i / 50) % 2 == 0 {
+            16384
+        } else {
+            -16384
+        };
         b.extend_from_slice(&v.to_le_bytes());
     }
     std::fs::write(path, b).unwrap();
@@ -31,8 +43,16 @@ fn peaks_and_trim() {
     let p = compute_peaks(&f, 48000).unwrap();
     assert_eq!(p.len(), BUCKETS);
     // first half silent, second half +-0.5
-    assert!(p[..BUCKETS / 2 - 1].iter().all(|q| q[0] == 0.0 && q[1] == 0.0));
-    assert!(p[BUCKETS / 2 + 1..].iter().all(|q| (q[1] - 0.5).abs() < 0.01 && (q[0] + 0.5).abs() < 0.01));
+    assert!(
+        p[..BUCKETS / 2 - 1]
+            .iter()
+            .all(|q| q[0] == 0.0 && q[1] == 0.0)
+    );
+    assert!(
+        p[BUCKETS / 2 + 1..]
+            .iter()
+            .all(|q| (q[1] - 0.5).abs() < 0.01 && (q[0] + 0.5).abs() < 0.01)
+    );
 
     // the last 0.75 s to a new file next to it, same format
     let t = trim_to_new(&f, 48000, 1.25, 0.75).unwrap();
@@ -42,6 +62,9 @@ fn peaks_and_trim() {
     assert_eq!(player.info().frames, Some(36_000));
     assert!(p.iter().all(|q| (q[1].max(-q[0]) - 0.5).abs() < 0.01));
     // again: a fresh name
-    assert_eq!(trim_to_new(&f, 48000, 0.0, 0.5).unwrap(), dir.join("take-trim(2).wav"));
+    assert_eq!(
+        trim_to_new(&f, 48000, 0.0, 0.5).unwrap(),
+        dir.join("take-trim(2).wav")
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }

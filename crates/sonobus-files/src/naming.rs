@@ -125,7 +125,9 @@ pub fn nonexistent_path(path: &Path) -> PathBuf {
         // JUCE getIntValue(): empty -> 0.
         number = stem[open + 1..close]
             .parse::<u64>()
-            .map_or(if open + 1 < close { MAX_START } else { 0 }, |n| n.min(MAX_START));
+            .map_or(if open + 1 < close { MAX_START } else { 0 }, |n| {
+                n.min(MAX_START)
+            });
         prefix = &stem[..open];
     }
     let mut candidate = path.to_owned();
@@ -220,7 +222,10 @@ mod tests {
     fn nonexistent_sibling_with_a_huge_number() {
         let dir = std::env::temp_dir().join(format!("sbfiles-naming-big-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        for n in ["a(18446744073709551615).wav", "a(99999999999999999999999).wav"] {
+        for n in [
+            "a(18446744073709551615).wav",
+            "a(99999999999999999999999).wav",
+        ] {
             let p = dir.join(n);
             std::fs::write(&p, b"").unwrap();
             let got = nonexistent_path(&p);

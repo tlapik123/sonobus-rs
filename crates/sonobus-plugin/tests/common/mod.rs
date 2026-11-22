@@ -36,7 +36,13 @@ impl ProcessContext<SonoBus> for Ctx {
     fn try_send_event(
         &mut self,
         _: PluginNoteEvent<SonoBus>,
-    ) -> Result<(), (PluginNoteEvent<SonoBus>, nice_plug::context::process::SendEventError)> {
+    ) -> Result<
+        (),
+        (
+            PluginNoteEvent<SonoBus>,
+            nice_plug::context::process::SendEventError,
+        ),
+    > {
         Ok(())
     }
     fn set_latency_samples(&self, _: u32) {}
@@ -55,7 +61,8 @@ impl ActivateContext<SonoBus> for Ctx {
 
 /// A unique scratch directory under cargo's per-test tmp dir.
 pub fn tmp_dir(name: &str) -> PathBuf {
-    let d = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("{name}-{}", std::process::id()));
+    let d =
+        PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -87,7 +94,9 @@ impl Host {
     pub fn with_dir(freq: f64, dir: Option<PathBuf>) -> Self {
         Host {
             plugin: SonoBus::with_defaults_dir(dir),
-            ctx: Ctx { transport: Transport::new(SR) },
+            ctx: Ctx {
+                transport: Transport::new(SR),
+            },
             sr: SR,
             freq,
             phase: 0.0,
@@ -132,7 +141,10 @@ impl Host {
         unsafe { buffer.set_slices(n, |s| s.extend(main.iter_mut().map(|c| &mut c[..n]))) };
         let mut ins = bus(aux_in, n);
         let mut outs = bus(aux_out, n);
-        let mut aux = AuxiliaryBuffers { inputs: &mut ins, outputs: &mut outs };
+        let mut aux = AuxiliaryBuffers {
+            inputs: &mut ins,
+            outputs: &mut outs,
+        };
         let (plugin, ctx) = (&mut self.plugin, &mut self.ctx);
         armed(&mut || {
             plugin.process(&mut buffer, &mut aux, ctx);
@@ -198,7 +210,9 @@ impl Host {
 
     /// Peers we receive audio from.
     pub fn receiving(&self) -> usize {
-        let Some(e) = self.plugin.session().engine() else { return 0 };
+        let Some(e) = self.plugin.session().engine() else {
+            return 0;
+        };
         let s = e.snapshot();
         if s.connection != Connection::Connected {
             return 0;
@@ -250,5 +264,6 @@ pub fn run(hosts: &mut [&mut Host], secs: f64) {
 /// Network tests share the machine's real-time budget: one at a time.
 pub fn serial() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-    LOCK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    LOCK.lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
 }

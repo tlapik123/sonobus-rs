@@ -204,7 +204,10 @@ fn pake_join_learns_key_and_key_proves_to_third() {
 }
 
 #[test]
-#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
+#[cfg_attr(
+    not(any(target_os = "linux", windows)),
+    ignore = "needs distinct loopback addresses"
+)]
 fn wrong_password_backs_off_per_address() {
     let host = simple(cfg("host", None, Some("right")));
     let joiner = simple(cfg("joiner", None, None));

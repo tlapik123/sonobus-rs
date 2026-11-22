@@ -127,13 +127,25 @@ impl OscConfig {
         opt::set(e, KEY_SEND_STATE, TreeVar::Bool(self.send_state_on_start));
         opt::set(e, KEY_PEER_LEVELS, TreeVar::Bool(self.send_peer_levels));
         opt::set(e, KEY_TARGET_IP, TreeVar::String(self.target_host.clone()));
-        opt::set(e, KEY_TARGET_PORT, TreeVar::Int(i32::from(self.target_port)));
-        opt::set(e, KEY_RECEIVE_PORT, TreeVar::Int(i32::from(self.receive_port)));
+        opt::set(
+            e,
+            KEY_TARGET_PORT,
+            TreeVar::Int(i32::from(self.target_port)),
+        );
+        opt::set(
+            e,
+            KEY_RECEIVE_PORT,
+            TreeVar::Int(i32::from(self.receive_port)),
+        );
         opt::set(e, KEY_ALLOW_NETWORK, TreeVar::Bool(self.allow_network));
     }
 
     pub fn bind_addr(&self) -> SocketAddr {
-        let ip = if self.allow_network { Ipv4Addr::UNSPECIFIED } else { Ipv4Addr::LOCALHOST };
+        let ip = if self.allow_network {
+            Ipv4Addr::UNSPECIFIED
+        } else {
+            Ipv4Addr::LOCALHOST
+        };
         SocketAddr::from((ip, self.receive_port))
     }
 
@@ -188,7 +200,9 @@ fn inverted(addr: &str) -> bool {
 pub fn wire_arg<'a>(addr: &str, v: &'a Var) -> Arg<'a> {
     match v {
         Var::Int(i) if inverted(addr) => Arg::Int(i32::from(*i == 0)),
-        Var::Double(d) if inverted(addr) => Arg::Float(if d.abs() < 0.5 { 1.0 } else { 0.0 } * SCALE),
+        Var::Double(d) if inverted(addr) => {
+            Arg::Float(if d.abs() < 0.5 { 1.0 } else { 0.0 } * SCALE)
+        }
         Var::Int(i) => Arg::Int(*i),
         Var::Double(d) => Arg::Float(*d as f32 * SCALE),
         Var::Str(x) => Arg::Str(x),
@@ -239,13 +253,19 @@ fn unpack(p: &[u8], depth: u32, out: &mut Vec<(String, InArg)>) -> Option<()> {
     }
     let m = osc::decode(p).ok()?;
     // JUCE knows only i f s b (and r colours, which it would pass on: we drop them)
-    if !m.tags().bytes().all(|t| matches!(t, b'i' | b'f' | b's' | b'b')) {
+    if !m
+        .tags()
+        .bytes()
+        .all(|t| matches!(t, b'i' | b'f' | b's' | b'b'))
+    {
         return None;
     }
     let arg = match m.args().next() {
         None => InArg::None,
         Some(Arg::Int(i)) if inverted(m.addr) => InArg::Int(i32::from(i == 0)),
-        Some(Arg::Float(x)) if inverted(m.addr) => InArg::Float(if x.abs() < 0.5 { 1.0 } else { 0.0 }),
+        Some(Arg::Float(x)) if inverted(m.addr) => {
+            InArg::Float(if x.abs() < 0.5 { 1.0 } else { 0.0 })
+        }
         Some(Arg::Int(i)) => InArg::Int(i),
         Some(Arg::Float(x)) => InArg::Float(x),
         Some(Arg::Str(x)) => InArg::Str(x.to_owned()),
@@ -287,22 +307,71 @@ pub fn meter_value(m: &MeterLevels) -> f32 {
 
 /// Every global address the fork registers (`registerAllOSCControls`).
 pub const GLOBAL: &[&str] = &[
-    "/OutGainSlider", "/MainMuteButton", "/RecvSyncButton", "/OptionsMaxRecvPaddingSlider", "/OptionsRecStealth",
-    "/DrySlider", "/MainRecvMuteButton", "/MainPushToTalkButton", "/MetLevelSlider", "/MetEnableButton",
-    "/MetTempoSlider", "/RecordingButton", "/BufferMinButton", "/OptionsDynamicResamplingButton",
-    "/OptionsAutoReconnectButton", "/OptionsInputLimiterButton", "/OptionsDefaultLevelSlider",
-    "/OptionsAutosizeDefaultChoice", "/OptionsFormatChoiceDefaultChoice", "/OptionsMetRecordedButton",
-    "/OptionsRecMixButton", "/OptionsRecSelfButton", "/OptionsRecOthersButton", "/OptionsRecMixMinusButton",
-    "/MainReverbEnabled", "/ReverbLevelSlider", "/ReverbSizeSlider", "/ReverbDampingSlider", "/ReverbPreDelaySlider",
-    "/MetSyncButton", "/MetSyncFileButton", "/InMuteButton", "/InSoloButton", "/OptionsRecSelfPostFxButton",
-    "/OptionsRecSelfSilenceMutedButton", "/OptionsDisableShortcutButton", "/OptionsChangeAllFormatButton",
-    "/OptionsAutoDropThreshSlider", "/BufferTimeSlider", "/OptionsUseSpecificUdpPortButton",
-    "/OptionsOverrideSamplerateButton", "/OptionsShouldCheckForUpdateButton", "/OptionsUdpPortEditor",
-    "/OSCTargetIPAddress", "/OSCTargetPort", "/OSCReceivePort", "/OptionsSliderSnapToMouseButton", "/MetSendButton",
-    "/FileSendButton", "/SoundboardSendButton", "/PlaybackSlider", "/SoundboardLevelSlider",
-    "/SoundboardMonitorSlider", "/SoundboardVolumeSlider", "/SoundboardStopAllPlayback", "/FileMonitorSlider",
-    "/MetPanSlider", "/MetMonitorSlider", "/InputReverbLevel", "/InputReverbSize", "/InputReverbDamping",
-    "/InputReverbPreDelay", "/InReverbButton", "/MonDelayButton", "/FilePlaybackPreLevel",
+    "/OutGainSlider",
+    "/MainMuteButton",
+    "/RecvSyncButton",
+    "/OptionsMaxRecvPaddingSlider",
+    "/OptionsRecStealth",
+    "/DrySlider",
+    "/MainRecvMuteButton",
+    "/MainPushToTalkButton",
+    "/MetLevelSlider",
+    "/MetEnableButton",
+    "/MetTempoSlider",
+    "/RecordingButton",
+    "/BufferMinButton",
+    "/OptionsDynamicResamplingButton",
+    "/OptionsAutoReconnectButton",
+    "/OptionsInputLimiterButton",
+    "/OptionsDefaultLevelSlider",
+    "/OptionsAutosizeDefaultChoice",
+    "/OptionsFormatChoiceDefaultChoice",
+    "/OptionsMetRecordedButton",
+    "/OptionsRecMixButton",
+    "/OptionsRecSelfButton",
+    "/OptionsRecOthersButton",
+    "/OptionsRecMixMinusButton",
+    "/MainReverbEnabled",
+    "/ReverbLevelSlider",
+    "/ReverbSizeSlider",
+    "/ReverbDampingSlider",
+    "/ReverbPreDelaySlider",
+    "/MetSyncButton",
+    "/MetSyncFileButton",
+    "/InMuteButton",
+    "/InSoloButton",
+    "/OptionsRecSelfPostFxButton",
+    "/OptionsRecSelfSilenceMutedButton",
+    "/OptionsDisableShortcutButton",
+    "/OptionsChangeAllFormatButton",
+    "/OptionsAutoDropThreshSlider",
+    "/BufferTimeSlider",
+    "/OptionsUseSpecificUdpPortButton",
+    "/OptionsOverrideSamplerateButton",
+    "/OptionsShouldCheckForUpdateButton",
+    "/OptionsUdpPortEditor",
+    "/OSCTargetIPAddress",
+    "/OSCTargetPort",
+    "/OSCReceivePort",
+    "/OptionsSliderSnapToMouseButton",
+    "/MetSendButton",
+    "/FileSendButton",
+    "/SoundboardSendButton",
+    "/PlaybackSlider",
+    "/SoundboardLevelSlider",
+    "/SoundboardMonitorSlider",
+    "/SoundboardVolumeSlider",
+    "/SoundboardStopAllPlayback",
+    "/FileMonitorSlider",
+    "/MetPanSlider",
+    "/MetMonitorSlider",
+    "/InputReverbLevel",
+    "/InputReverbSize",
+    "/InputReverbDamping",
+    "/InputReverbPreDelay",
+    "/InReverbButton",
+    "/MonDelayButton",
+    "/FilePlaybackPreLevel",
 ];
 
 /// Registered addresses this app has no feature for: accepted and ignored.
@@ -315,20 +384,59 @@ pub const IGNORED: &[&str] = &[
 
 /// Effect parameters shared by `/InputGroup<n>...` and `/Peer<n>...`, in the fork's send order.
 pub const FX: &[&str] = &[
-    "CompressorEnable", "CompressorThreshold", "CompressorRatio", "CompressorAttack", "CompressorRelease",
-    "CompressorMakeupGain", "CompressorAuto", "ExpanderEnable", "ExpanderNoiseFloor", "ExpanderRatio",
-    "ExpanderAttack", "ExpanderRelease", "EqEnable", "EqLowShelfFreq", "EqLowShelfGain", "EqPara1Freq",
-    "EqPara1Gain", "EqPara1Q", "EqHighShelfFreq", "EqHighShelfGain", "EqPara2Freq", "EqPara2Gain", "EqPara2Q",
+    "CompressorEnable",
+    "CompressorThreshold",
+    "CompressorRatio",
+    "CompressorAttack",
+    "CompressorRelease",
+    "CompressorMakeupGain",
+    "CompressorAuto",
+    "ExpanderEnable",
+    "ExpanderNoiseFloor",
+    "ExpanderRatio",
+    "ExpanderAttack",
+    "ExpanderRelease",
+    "EqEnable",
+    "EqLowShelfFreq",
+    "EqLowShelfGain",
+    "EqPara1Freq",
+    "EqPara1Gain",
+    "EqPara1Q",
+    "EqHighShelfFreq",
+    "EqHighShelfGain",
+    "EqPara2Freq",
+    "EqPara2Gain",
+    "EqPara2Q",
 ];
 
 /// `/InputGroup<n><suffix>` (besides [`FX`]).
 pub const GROUP: &[&str] = &[
-    "PreLevel", "Pan", "PanLeft", "PanRight", "Monitor", "MonDelayEnable", "MonDelayTime", "MonDelayLink",
-    "MonReverbSend", "Mute", "Solo", "InputReverbSend", "PolarityInvert",
+    "PreLevel",
+    "Pan",
+    "PanLeft",
+    "PanRight",
+    "Monitor",
+    "MonDelayEnable",
+    "MonDelayTime",
+    "MonDelayLink",
+    "MonReverbSend",
+    "Mute",
+    "Solo",
+    "InputReverbSend",
+    "PolarityInvert",
 ];
 
 /// `/Peer<n><suffix>` (besides [`FX`]).
-pub const PEER: &[&str] = &["Mute", "Solo", "BufferMin", "ResetDrop", "Level", "Pan", "InputReverbSend", "PolarityInvert"];
+pub const PEER: &[&str] = &[
+    "Mute",
+    "Solo",
+    "BufferMin",
+    "ResetDrop",
+    "Level",
+    "Pan",
+    "InputReverbSend",
+    "PolarityInvert",
+];
 
 /// Outbound-only addresses: `/Peer<n>RemotePeerUserName`, `/Peer<n>RecvMeterLevel`,
 /// `/Soundboard<n>Name` (and `/Soundboard<n>Track<m>` names).
@@ -466,11 +574,19 @@ fn set_fx(g: &mut ChannelGroup, name: &str, v: f32, on: bool) {
 
 /// `pan[chan]`, or `panStereo[chan]` for a 2-channel group (P.cpp:2017-2027, 4933-4970).
 fn pan_mut(g: &mut ChannelGroup, chan: usize) -> Option<&mut f32> {
-    if g.num_channels == 2 && chan < 2 { Some(&mut g.pan_stereo[chan]) } else { g.pans.get_mut(chan) }
+    if g.num_channels == 2 && chan < 2 {
+        Some(&mut g.pan_stereo[chan])
+    } else {
+        g.pans.get_mut(chan)
+    }
 }
 
 fn pan(g: &ChannelGroup, chan: usize) -> f32 {
-    if g.num_channels == 2 && chan < 2 { g.pan_stereo[chan] } else { g.pans.get(chan).copied().unwrap_or(0.0) }
+    if g.num_channels == 2 && chan < 2 {
+        g.pan_stereo[chan]
+    } else {
+        g.pans.get(chan).copied().unwrap_or(0.0)
+    }
 }
 
 const GAIN: (f32, f32) = (0.0, 2.0);
@@ -483,7 +599,12 @@ pub fn apply(c: &mut AppController, addr: &str, a: &InArg) {
         Some(Addr::Peer(i, x)) => peer(c, i, x, a),
         Some(Addr::Track(bi, ti)) => {
             // float >= 0.5 triggers (SoundboardView::triggerSampleBySoundboardAndTrackIndex)
-            let exists = c.vm().soundboards.boards.get(bi).is_some_and(|bd| ti < bd.samples.len());
+            let exists = c
+                .vm()
+                .soundboards
+                .boards
+                .get(bi)
+                .is_some_and(|bd| ti < bd.samples.len());
             if float(a).is_some_and(|v| v >= 0.5)
                 && exists
                 && let Err(e) = c.engine().soundboard_press((bi, ti))
@@ -614,12 +735,20 @@ fn global(c: &mut AppController, addr: &str, a: &InArg) {
         }
         "OptionsInputLimiterButton" => {
             if let Some(on) = any_bool(a) {
-                c.edit(move |s| s.input_groups.iter_mut().for_each(|g| g.limiter.enabled = on));
+                c.edit(move |s| {
+                    s.input_groups
+                        .iter_mut()
+                        .for_each(|g| g.limiter.enabled = on)
+                });
             }
         }
         "OptionsAutosizeDefaultChoice" | "OptionsFormatChoiceDefaultChoice" => {
             if let Some(v) = int(a) {
-                let id = if name == "OptionsAutosizeDefaultChoice" { "defnetauto" } else { "defsendqual" };
+                let id = if name == "OptionsAutosizeDefaultChoice" {
+                    "defnetauto"
+                } else {
+                    "defsendqual"
+                };
                 param(c, id, v as f32);
             }
         }
@@ -720,8 +849,14 @@ fn global(c: &mut AppController, addr: &str, a: &InArg) {
             {
                 c.edit(move |s| {
                     let groups = s.input_groups.iter_mut();
-                    let extra = [&mut s.metronome_group, &mut s.file_playback_group, &mut s.soundboard_group];
-                    groups.chain(extra).for_each(|g| g.monitor_delay.enabled = on);
+                    let extra = [
+                        &mut s.metronome_group,
+                        &mut s.file_playback_group,
+                        &mut s.soundboard_group,
+                    ];
+                    groups
+                        .chain(extra)
+                        .for_each(|g| g.monitor_delay.enabled = on);
                 });
             }
         }
@@ -730,7 +865,14 @@ fn global(c: &mut AppController, addr: &str, a: &InArg) {
 }
 
 fn any_mon_delay(s: &sonobus_core::state::AppState) -> bool {
-    s.input_groups.iter().chain([&s.metronome_group, &s.file_playback_group, &s.soundboard_group]).any(|g| g.monitor_delay.enabled)
+    s.input_groups
+        .iter()
+        .chain([
+            &s.metronome_group,
+            &s.file_playback_group,
+            &s.soundboard_group,
+        ])
+        .any(|g| g.monitor_delay.enabled)
 }
 
 fn group(c: &mut AppController, i: usize, name: &str, a: &InArg) {
@@ -750,7 +892,9 @@ fn group(c: &mut AppController, i: usize, name: &str, a: &InArg) {
     }
     let name = name.to_owned();
     c.edit(move |s| {
-        let Some(g) = s.input_groups.get_mut(i) else { return };
+        let Some(g) = s.input_groups.get_mut(i) else {
+            return;
+        };
         match name.as_str() {
             "PreLevel" => g.gain = v.clamp(GAIN.0, GAIN.1),
             "Pan" | "PanLeft" | "PanRight" => {
@@ -760,7 +904,9 @@ fn group(c: &mut AppController, i: usize, name: &str, a: &InArg) {
             }
             "Monitor" => g.monitor = v.clamp(GAIN.0, GAIN.1),
             "MonDelayEnable" => g.monitor_delay.enabled = flag,
-            "MonDelayTime" => g.monitor_delay.delay_time_ms = clamp(v, sonobus_dsp::MonitorDelay::DELAY_MS),
+            "MonDelayTime" => {
+                g.monitor_delay.delay_time_ms = clamp(v, sonobus_dsp::MonitorDelay::DELAY_MS)
+            }
             "MonReverbSend" => g.mon_reverb_send = v.clamp(0.0, 1.0),
             "InputReverbSend" => g.in_reverb_send = v.clamp(0.0, 1.0),
             "Mute" => g.muted = flag,
@@ -770,7 +916,9 @@ fn group(c: &mut AppController, i: usize, name: &str, a: &InArg) {
 }
 
 fn peer(c: &mut AppController, i: usize, name: &str, a: &InArg) {
-    let Some(id) = c.vm().snapshot.peers.get(i).map(|p| p.id) else { return };
+    let Some(id) = c.vm().snapshot.peers.get(i).map(|p| p.id) else {
+        return;
+    };
     match name {
         // float != 0
         "Mute" => {
@@ -806,7 +954,14 @@ fn peer(c: &mut AppController, i: usize, name: &str, a: &InArg) {
                 InArg::Int(n) => (0.0, *n != 0),
                 _ => return,
             };
-            let is_flag = matches!(name, "PolarityInvert" | "CompressorEnable" | "CompressorAuto" | "ExpanderEnable" | "EqEnable");
+            let is_flag = matches!(
+                name,
+                "PolarityInvert"
+                    | "CompressorEnable"
+                    | "CompressorAuto"
+                    | "ExpanderEnable"
+                    | "EqEnable"
+            );
             if is_flag != matches!(a, InArg::Int(_)) {
                 return;
             }
@@ -845,14 +1000,24 @@ pub struct Fb {
     pub dump: Dump,
 }
 
-fn fx_feedback(out: &mut Vec<Fb>, prefix: &str, g: &ChannelGroup, flag: fn(bool) -> Var, dump: &Dump) {
+fn fx_feedback(
+    out: &mut Vec<Fb>,
+    prefix: &str,
+    g: &ChannelGroup,
+    flag: fn(bool) -> Var,
+    dump: &Dump,
+) {
     let mut g = g.clone();
     for name in FX {
         let val = match fx_flag(&mut g, name) {
             Some(on) => flag(*on),
             None => f(*fx_value(&mut g, name).map(|(v, _)| v).expect("fx name")),
         };
-        out.push(Fb { addr: format!("{prefix}{name}"), val, dump: dump.clone() });
+        out.push(Fb {
+            addr: format!("{prefix}{name}"),
+            val,
+            dump: dump.clone(),
+        });
     }
 }
 
@@ -862,10 +1027,20 @@ pub fn state(c: &AppController, rx_padding: f32, ptt: bool) -> Vec<Fb> {
     let vm = c.vm();
     let (st, p, x) = (&vm.state, &vm.state.params, &vm.state.extra);
     let mut out = Vec::with_capacity(1100);
-    let mut push = |addr: &str, val: Var, dump: Dump| out.push(Fb { addr: addr.to_owned(), val, dump });
+    let mut push = |addr: &str, val: Var, dump: Dump| {
+        out.push(Fb {
+            addr: addr.to_owned(),
+            val,
+            dump,
+        })
+    };
     use Dump::{No, Same};
     let rec = x.default_recording_options;
-    let (file, sb, met) = (&st.file_playback_group, &st.soundboard_group, &st.metronome_group);
+    let (file, sb, met) = (
+        &st.file_playback_group,
+        &st.soundboard_group,
+        &st.metronome_group,
+    );
     push("/OutGainSlider", f(gain_to_position(p.wet)), Same);
     push("/DrySlider", f(p.dry), Same);
     push("/MainMuteButton", b(p.main_send_mute), Same);
@@ -888,8 +1063,16 @@ pub fn state(c: &AppController, rx_padding: f32, ptt: bool) -> Vec<Fb> {
     push("/SoundboardSendButton", b(p.send_soundboard_audio), Same);
     push("/SoundboardLevelSlider", f(sb.gain), Same);
     push("/SoundboardMonitorSlider", f(sb.monitor), Same);
-    push("/SoundboardVolumeSlider", f(gain_to_position(sb.gain)), Same);
-    push("/MetPanSlider", f(met.pans.first().copied().unwrap_or(0.0)), Same);
+    push(
+        "/SoundboardVolumeSlider",
+        f(gain_to_position(sb.gain)),
+        Same,
+    );
+    push(
+        "/MetPanSlider",
+        f(met.pans.first().copied().unwrap_or(0.0)),
+        Same,
+    );
     push("/MetMonitorSlider", f(met.monitor), Same);
     push("/InputReverbLevel", f(p.in_reverb_level), Same);
     push("/InputReverbSize", f(p.in_reverb_size), Same);
@@ -901,27 +1084,71 @@ pub fn state(c: &AppController, rx_padding: f32, ptt: bool) -> Vec<Fb> {
     push("/ReverbDampingSlider", f(p.main_reverb_damp), Same);
     push("/ReverbPreDelaySlider", f(p.main_reverb_predelay), Same);
     push("/OptionsMaxRecvPaddingSlider", f(rx_padding), Same);
-    push("/OptionsDynamicResamplingButton", b(p.dynamic_resampling), Same);
+    push(
+        "/OptionsDynamicResamplingButton",
+        b(p.dynamic_resampling),
+        Same,
+    );
     push("/OptionsAutoReconnectButton", b(p.reconnect_last), Same);
     // the dump sends paramDefaultNetbufMs here, and the normalised choice truncated to int
-    push("/OptionsDefaultLevelSlider", f(p.def_peer_level), Dump::As(f(p.def_net_buf)));
-    push("/OptionsAutosizeDefaultChoice", Var::Int(p.def_net_auto), Dump::As(Var::Int(i32::from(p.def_net_auto >= 3))));
+    push(
+        "/OptionsDefaultLevelSlider",
+        f(p.def_peer_level),
+        Dump::As(f(p.def_net_buf)),
+    );
+    push(
+        "/OptionsAutosizeDefaultChoice",
+        Var::Int(p.def_net_auto),
+        Dump::As(Var::Int(i32::from(p.def_net_auto >= 3))),
+    );
     push("/OptionsRecMixButton", b(rec & 1 != 0), Same);
     push("/OptionsRecMixMinusButton", b(rec & 4 != 0), Same);
     push("/OptionsRecSelfButton", b(rec & 2 != 0), Same);
     push("/OptionsRecOthersButton", b(rec & 8 != 0), Same);
-    push("/OptionsRecSelfPostFxButton", b(!x.record_self_pre_fx), Same);
-    push("/OptionsRecSelfSilenceMutedButton", b(x.record_self_silence_when_muted), Same);
+    push(
+        "/OptionsRecSelfPostFxButton",
+        b(!x.record_self_pre_fx),
+        Same,
+    );
+    push(
+        "/OptionsRecSelfSilenceMutedButton",
+        b(x.record_self_silence_when_muted),
+        Same,
+    );
     // change notifications only
     push("/MetSyncButton", b(p.sync_met_host), No);
-    push("/OptionsFormatChoiceDefaultChoice", Var::Int(p.def_send_qual), No);
-    push("/OptionsInputLimiterButton", b(st.input_groups.iter().any(|g| g.limiter.enabled)), No);
-    push("/OptionsDisableShortcutButton", b(x.disable_key_shortcuts), No);
-    push("/OptionsChangeAllFormatButton", b(x.change_qual_for_all), No);
-    push("/OptionsSliderSnapToMouseButton", b(x.slider_snap_to_mouse), No);
+    push(
+        "/OptionsFormatChoiceDefaultChoice",
+        Var::Int(p.def_send_qual),
+        No,
+    );
+    push(
+        "/OptionsInputLimiterButton",
+        b(st.input_groups.iter().any(|g| g.limiter.enabled)),
+        No,
+    );
+    push(
+        "/OptionsDisableShortcutButton",
+        b(x.disable_key_shortcuts),
+        No,
+    );
+    push(
+        "/OptionsChangeAllFormatButton",
+        b(x.change_qual_for_all),
+        No,
+    );
+    push(
+        "/OptionsSliderSnapToMouseButton",
+        b(x.slider_snap_to_mouse),
+        No,
+    );
     let drop_slider = (1.0 / f64::from(x.auto_drop_rate_thresh).max(0.001)).clamp(1.0, 20.0) as f32;
     push("/OptionsAutoDropThreshSlider", f(drop_slider), No);
-    push("/OptionsUseSpecificUdpPortButton", b(x.use_udp_port != 0), No);
+    push(
+        "/OptionsUseSpecificUdpPortButton",
+        b(x.use_udp_port != 0),
+        No,
+    );
     push("/OptionsUdpPortEditor", Var::Int(x.use_udp_port), No);
     let o = &vm.osc.config;
     push("/OSCTargetIPAddress", s(&o.target_host), No);
@@ -930,7 +1157,13 @@ pub fn state(c: &AppController, rx_padding: f32, ptt: bool) -> Vec<Fb> {
     push("/MonDelayButton", b(any_mon_delay(st)), No);
     for (i, g) in st.input_groups.iter().enumerate().take(SLOTS) {
         let pre = format!("/InputGroup{}", i + 1);
-        let mut push = |name: &str, val: Var| out.push(Fb { addr: format!("{pre}{name}"), val, dump: No });
+        let mut push = |name: &str, val: Var| {
+            out.push(Fb {
+                addr: format!("{pre}{name}"),
+                val,
+                dump: No,
+            })
+        };
         push("PreLevel", f(g.gain));
         if g.num_channels == 2 {
             push("PanLeft", f(g.pan_stereo[0]));
@@ -955,10 +1188,20 @@ pub fn state(c: &AppController, rx_padding: f32, ptt: bool) -> Vec<Fb> {
     for bi in 0..SLOTS {
         let board = vm.soundboards.boards.get(bi);
         let name = board.map_or("", |bd| bd.name.as_str());
-        out.push(Fb { addr: format!("/Soundboard{}Name", bi + 1), val: s(name), dump: Same });
+        out.push(Fb {
+            addr: format!("/Soundboard{}Name", bi + 1),
+            val: s(name),
+            dump: Same,
+        });
         for ti in 0..SLOTS {
-            let t = board.and_then(|bd| bd.samples.get(ti)).map_or("", |x| x.name.as_str());
-            out.push(Fb { addr: format!("/Soundboard{}Track{}", bi + 1, ti + 1), val: s(t), dump: Same });
+            let t = board
+                .and_then(|bd| bd.samples.get(ti))
+                .map_or("", |x| x.name.as_str());
+            out.push(Fb {
+                addr: format!("/Soundboard{}Track{}", bi + 1, ti + 1),
+                val: s(t),
+                dump: Same,
+            });
         }
     }
     out
@@ -967,7 +1210,13 @@ pub fn state(c: &AppController, rx_padding: f32, ptt: bool) -> Vec<Fb> {
 /// `sendPeerOSCState` for a connected peer, `clearPeerOSCState` for an empty slot.
 fn peer_state(out: &mut Vec<Fb>, i: usize, peer: Option<&PeerStatus>) {
     let pre = format!("/Peer{}", i + 1);
-    let mut push = |name: &str, val: Var| out.push(Fb { addr: format!("{pre}{name}"), val, dump: Dump::Same });
+    let mut push = |name: &str, val: Var| {
+        out.push(Fb {
+            addr: format!("{pre}{name}"),
+            val,
+            dump: Dump::Same,
+        })
+    };
     match peer {
         Some(p) => {
             let g0 = p.groups.first().cloned().unwrap_or_default();
@@ -979,8 +1228,16 @@ fn peer_state(out: &mut Vec<Fb>, i: usize, peer: Option<&PeerStatus>) {
             let polarity = g0.invert_polarity;
             let rev = g0.mon_reverb_send;
             fx_feedback(out, &pre, &g0, b, &Dump::Same);
-            out.push(Fb { addr: format!("{pre}InputReverbSend"), val: f(rev), dump: Dump::Same });
-            out.push(Fb { addr: format!("{pre}PolarityInvert"), val: b(polarity), dump: Dump::Same });
+            out.push(Fb {
+                addr: format!("{pre}InputReverbSend"),
+                val: f(rev),
+                dump: Dump::Same,
+            });
+            out.push(Fb {
+                addr: format!("{pre}PolarityInvert"),
+                val: b(polarity),
+                dump: Dump::Same,
+            });
         }
         None => {
             push("RemotePeerUserName", s(""));
@@ -991,14 +1248,28 @@ fn peer_state(out: &mut Vec<Fb>, i: usize, peer: Option<&PeerStatus>) {
             push("RecvMeterLevel", f(0.0));
             for name in FX {
                 let val = match *name {
-                    "CompressorEnable" | "CompressorAuto" | "ExpanderEnable" | "EqEnable" => Var::Int(0),
+                    "CompressorEnable" | "CompressorAuto" | "ExpanderEnable" | "EqEnable" => {
+                        Var::Int(0)
+                    }
                     "CompressorRatio" | "ExpanderRatio" => f(1.0),
                     _ => f(0.0),
                 };
-                out.push(Fb { addr: format!("{pre}{name}"), val, dump: Dump::Same });
+                out.push(Fb {
+                    addr: format!("{pre}{name}"),
+                    val,
+                    dump: Dump::Same,
+                });
             }
-            out.push(Fb { addr: format!("{pre}InputReverbSend"), val: f(0.0), dump: Dump::Same });
-            out.push(Fb { addr: format!("{pre}PolarityInvert"), val: Var::Int(0), dump: Dump::Same });
+            out.push(Fb {
+                addr: format!("{pre}InputReverbSend"),
+                val: f(0.0),
+                dump: Dump::Same,
+            });
+            out.push(Fb {
+                addr: format!("{pre}PolarityInvert"),
+                val: Var::Int(0),
+                dump: Dump::Same,
+            });
         }
     }
 }
@@ -1042,42 +1313,50 @@ impl Drop for Listener {
 /// [`Osc`], so a rebind does not start a fresh second.
 type RateWindow = Arc<std::sync::Mutex<(Instant, u32)>>;
 
-fn listen(bind: SocketAddr, tx: SyncSender<(String, InArg)>, rate: RateWindow) -> io::Result<Listener> {
+fn listen(
+    bind: SocketAddr,
+    tx: SyncSender<(String, InArg)>,
+    rate: RateWindow,
+) -> io::Result<Listener> {
     let sock = UdpSocket::bind(bind)?;
     sock.set_read_timeout(Some(Duration::from_millis(100)))?;
     let addr = sock.local_addr()?;
     let stop = Arc::new(AtomicBool::new(false));
     let stop2 = stop.clone();
-    std::thread::Builder::new().name("osc-control".into()).spawn(move || {
-        let mut buf = vec![0u8; MAX_PACKET + 1];
-        let mut msgs = Vec::new();
-        while !stop2.load(Ordering::Relaxed) {
-            let n = match sock.recv_from(&mut buf) {
-                Ok((n, _)) => n,
-                Err(_) => continue, // timeout (or a transient error)
-            };
-            if n > MAX_PACKET {
-                continue;
-            }
-            msgs.clear();
-            decode_packet(&buf[..n], &mut msgs);
-            for m in msgs.drain(..) {
-                {
-                    let mut w = rate.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
-                    if w.0.elapsed() >= Duration::from_secs(1) {
-                        *w = (Instant::now(), 0);
+    std::thread::Builder::new()
+        .name("osc-control".into())
+        .spawn(move || {
+            let mut buf = vec![0u8; MAX_PACKET + 1];
+            let mut msgs = Vec::new();
+            while !stop2.load(Ordering::Relaxed) {
+                let n = match sock.recv_from(&mut buf) {
+                    Ok((n, _)) => n,
+                    Err(_) => continue, // timeout (or a transient error)
+                };
+                if n > MAX_PACKET {
+                    continue;
+                }
+                msgs.clear();
+                decode_packet(&buf[..n], &mut msgs);
+                for m in msgs.drain(..) {
+                    {
+                        let mut w = rate
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner);
+                        if w.0.elapsed() >= Duration::from_secs(1) {
+                            *w = (Instant::now(), 0);
+                        }
+                        w.1 += 1;
+                        if w.1 > MAX_RATE {
+                            continue;
+                        }
                     }
-                    w.1 += 1;
-                    if w.1 > MAX_RATE {
-                        continue;
+                    if let Err(TrySendError::Disconnected(_)) = tx.try_send(m) {
+                        return;
                     }
                 }
-                if let Err(TrySendError::Disconnected(_)) = tx.try_send(m) {
-                    return;
-                }
             }
-        }
-    })?;
+        })?;
     Ok(Listener { stop, bind, addr })
 }
 
@@ -1126,7 +1405,11 @@ impl Default for Osc {
 
 impl Osc {
     pub fn status(&self) -> OscStatus {
-        OscStatus { config: self.cfg.clone(), listening: self.listener.as_ref().map(|l| l.addr), error: self.error.clone() }
+        OscStatus {
+            config: self.cfg.clone(),
+            listening: self.listener.as_ref().map(|l| l.addr),
+            error: self.error.clone(),
+        }
     }
 
     pub fn enabled(&self) -> bool {
@@ -1142,21 +1425,37 @@ impl Osc {
             self.sender = None;
             self.out.clear();
         } else {
-            if self.listener.as_ref().is_none_or(|l| l.bind != cfg.bind_addr()) {
+            if self
+                .listener
+                .as_ref()
+                .is_none_or(|l| l.bind != cfg.bind_addr())
+            {
                 // its thread frees the port shortly; a pending rebind means an older listener
                 // may still be letting go of the port we are going back to
                 let had = self.listener.take().is_some() | self.rebind.take().is_some();
                 match listen(cfg.bind_addr(), self.tx.clone(), self.rate.clone()) {
                     Ok(l) => self.listener = Some(l),
-                    Err(e) if had && e.kind() == io::ErrorKind::AddrInUse => self.rebind = Some(Instant::now()),
-                    Err(e) => self.error = Some(format!("{} {}: {e}", tr("Cannot listen on"), cfg.bind_addr())),
+                    Err(e) if had && e.kind() == io::ErrorKind::AddrInUse => {
+                        self.rebind = Some(Instant::now())
+                    }
+                    Err(e) => {
+                        self.error = Some(format!(
+                            "{} {}: {e}",
+                            tr("Cannot listen on"),
+                            cfg.bind_addr()
+                        ))
+                    }
                 }
             }
             if self.sender.is_none() {
                 self.sender = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok();
             }
             if cfg.target().is_none() {
-                self.error = Some(format!("{}: {}", tr("Invalid feedback IP address"), cfg.target_host));
+                self.error = Some(format!(
+                    "{}: {}",
+                    tr("Invalid feedback IP address"),
+                    cfg.target_host
+                ));
             }
         }
         self.dump_pending |= dump && cfg.enabled;
@@ -1170,7 +1469,10 @@ impl Osc {
             let bind = self.cfg.bind_addr();
             match listen(bind, self.tx.clone(), self.rate.clone()) {
                 Ok(l) => (self.listener, self.rebind) = (Some(l), None),
-                Err(e) if t.elapsed() >= Duration::from_secs(1) || e.kind() != io::ErrorKind::AddrInUse => {
+                Err(e)
+                    if t.elapsed() >= Duration::from_secs(1)
+                        || e.kind() != io::ErrorKind::AddrInUse =>
+                {
                     self.rebind = None;
                     self.error = Some(format!("{} {bind}: {e}", tr("Cannot listen on")));
                 }
@@ -1188,7 +1490,9 @@ impl Osc {
     }
 
     pub fn send(&mut self, addr: &str, v: &Var) {
-        let (Some(sock), Some(to)) = (&self.sender, self.cfg.target()) else { return };
+        let (Some(sock), Some(to)) = (&self.sender, self.cfg.target()) else {
+            return;
+        };
         self.buf.clear();
         encode(&mut self.buf, addr, v);
         let _ = sock.send_to(&self.buf, to);
@@ -1196,7 +1500,10 @@ impl Osc {
 
     /// Whether [`Self::feedback`] is due.
     pub fn feedback_due(&self, now: Instant) -> bool {
-        self.cfg.enabled && self.last_feedback.is_none_or(|t| now - t >= FEEDBACK_PERIOD)
+        self.cfg.enabled
+            && self
+                .last_feedback
+                .is_none_or(|t| now - t >= FEEDBACK_PERIOD)
     }
 
     /// Queues the pending dump, the events and every entry that changed since the last call,
@@ -1211,7 +1518,10 @@ impl Osc {
                     Dump::As(v) => self.out.push_back((e.addr.clone(), v.clone())),
                 }
             }
-            self.prev = entries.iter().map(|e| (e.addr.clone(), e.val.clone())).collect();
+            self.prev = entries
+                .iter()
+                .map(|e| (e.addr.clone(), e.val.clone()))
+                .collect();
         }
         self.out.extend(std::mem::take(&mut self.events));
         for e in entries {
@@ -1224,19 +1534,26 @@ impl Osc {
             self.out.pop_front();
         }
         for _ in 0..BURST {
-            let Some((a, v)) = self.out.pop_front() else { break };
+            let Some((a, v)) = self.out.pop_front() else {
+                break;
+            };
             self.send(&a, &v);
         }
     }
 
     /// The fork's peer level timer (only with "send peer levels").
     pub fn meters(&mut self, now: Instant, peers: &[PeerStatus]) {
-        if !(self.cfg.enabled && self.cfg.send_peer_levels) || self.last_meter.is_some_and(|t| now - t < METER_PERIOD) {
+        if !(self.cfg.enabled && self.cfg.send_peer_levels)
+            || self.last_meter.is_some_and(|t| now - t < METER_PERIOD)
+        {
             return;
         }
         self.last_meter = Some(now);
         for (i, p) in peers.iter().enumerate().take(SLOTS) {
-            self.send(&format!("/Peer{}RecvMeterLevel", i + 1), &f(meter_value(&p.meter)));
+            self.send(
+                &format!("/Peer{}RecvMeterLevel", i + 1),
+                &f(meter_value(&p.meter)),
+            );
         }
     }
 }
@@ -1254,7 +1571,10 @@ mod tests {
         assert_eq!(gain_to_position(5.0), 2.0);
         assert_eq!(position_to_gain(-1.0), 0.0);
         // mean RMS 0.12 -> 0.12 * 10 / 1.2 = 1.0
-        let m = MeterLevels { peak: vec![0.0, 0.0], rms: vec![0.1, 0.14] };
+        let m = MeterLevels {
+            peak: vec![0.0, 0.0],
+            rms: vec![0.1, 0.14],
+        };
         assert!((meter_value(&m) - 1.0).abs() < 1e-6);
         assert_eq!(meter_value(&MeterLevels::default()), 0.0);
     }
@@ -1263,13 +1583,33 @@ mod tests {
     fn parse_addresses() {
         assert_eq!(parse("/Peer16Mute"), Some(Addr::Peer(15, "Mute")));
         assert_eq!(parse("/Peer1EqPara2Q"), Some(Addr::Peer(0, "EqPara2Q")));
-        assert_eq!(parse("/InputGroup3PanLeft"), Some(Addr::Group(2, "PanLeft")));
+        assert_eq!(
+            parse("/InputGroup3PanLeft"),
+            Some(Addr::Group(2, "PanLeft"))
+        );
         assert_eq!(parse("/Soundboard2Track16"), Some(Addr::Track(1, 15)));
-        assert_eq!(parse("/OutGainSlider"), Some(Addr::Global("/OutGainSlider")));
-        for bad in ["/Peer0Mute", "/Peer17Mute", "/Peer01Mute", "/PeerMute", "/Peer1Nope", "/Soundboard1Track0", "/Soundboard1Name", "/outgainslider", "/Peer1RecvMeterLevel"] {
+        assert_eq!(
+            parse("/OutGainSlider"),
+            Some(Addr::Global("/OutGainSlider"))
+        );
+        for bad in [
+            "/Peer0Mute",
+            "/Peer17Mute",
+            "/Peer01Mute",
+            "/PeerMute",
+            "/Peer1Nope",
+            "/Soundboard1Track0",
+            "/Soundboard1Name",
+            "/outgainslider",
+            "/Peer1RecvMeterLevel",
+        ] {
             assert_eq!(parse(bad), None, "{bad}");
         }
-        assert!(is_known("/Peer1RecvMeterLevel") && is_known("/Soundboard16Name") && !is_known("/Soundboard17Name"));
+        assert!(
+            is_known("/Peer1RecvMeterLevel")
+                && is_known("/Soundboard16Name")
+                && !is_known("/Soundboard17Name")
+        );
     }
 
     #[test]
@@ -1295,7 +1635,16 @@ mod tests {
         osc::encode(&mut d, "/DrySlider", [Arg::Double(1.0)]);
         let mut t = Vec::new();
         osc::encode(&mut t, "/MetEnableButton", [Arg::Bool(true)]);
-        for p in [&bad[..], &bundle[..bundle.len() - 1], b"#bundle\0", &d, &t, b"", b"\0\0\0\0", &[0xff; 64]] {
+        for p in [
+            &bad[..],
+            &bundle[..bundle.len() - 1],
+            b"#bundle\0",
+            &d,
+            &t,
+            b"",
+            b"\0\0\0\0",
+            &[0xff; 64],
+        ] {
             out.clear();
             decode_packet(p, &mut out);
             assert!(out.is_empty(), "{p:?}");
@@ -1320,11 +1669,23 @@ mod tests {
             encode(&mut o, addr, &v);
             o
         };
-        assert_eq!(enc("/MainMuteButton", Var::Int(1)), b"/MainMuteButton\0,i\0\0\0\0\0\0");
-        assert_eq!(enc("/MainRecvMuteButton", Var::Int(0)), b"/MainRecvMuteButton\0,i\0\0\0\0\0\x01");
-        assert_eq!(enc("/InMuteButton", Var::Int(1)), b"/InMuteButton\0\0\0,i\0\0\0\0\0\x01");
+        assert_eq!(
+            enc("/MainMuteButton", Var::Int(1)),
+            b"/MainMuteButton\0,i\0\0\0\0\0\0"
+        );
+        assert_eq!(
+            enc("/MainRecvMuteButton", Var::Int(0)),
+            b"/MainRecvMuteButton\0,i\0\0\0\0\0\x01"
+        );
+        assert_eq!(
+            enc("/InMuteButton", Var::Int(1)),
+            b"/InMuteButton\0\0\0,i\0\0\0\0\0\x01"
+        );
         // double: inverted, then scaled
-        assert_eq!(enc("/MainMuteButton", Var::Double(0.0)), b"/MainMuteButton\0,f\0\0\x3f\0\0\0");
+        assert_eq!(
+            enc("/MainMuteButton", Var::Double(0.0)),
+            b"/MainMuteButton\0,f\0\0\x3f\0\0\0"
+        );
         let dec = |p: &[u8]| {
             let mut o = Vec::new();
             decode_packet(p, &mut o);
@@ -1344,10 +1705,19 @@ mod tests {
     #[test]
     fn listener_drops_oversize_and_rate_limits() {
         let (tx, rx) = sync_channel(4 * MAX_RATE as usize);
-        let l = listen("127.0.0.1:0".parse().unwrap(), tx, Arc::new(std::sync::Mutex::new((Instant::now(), 0)))).unwrap();
+        let l = listen(
+            "127.0.0.1:0".parse().unwrap(),
+            tx,
+            Arc::new(std::sync::Mutex::new((Instant::now(), 0))),
+        )
+        .unwrap();
         let s = UdpSocket::bind("127.0.0.1:0").unwrap();
         let mut big = Vec::new();
-        osc::encode(&mut big, "/DrySlider", [Arg::Float(1.0), Arg::Blob(&[0; MAX_PACKET])]);
+        osc::encode(
+            &mut big,
+            "/DrySlider",
+            [Arg::Float(1.0), Arg::Blob(&[0; MAX_PACKET])],
+        );
         s.send_to(&big, l.addr).unwrap();
         let mut m = Vec::new();
         encode(&mut m, "/DrySlider", &f(0.5));
@@ -1360,8 +1730,15 @@ mod tests {
         }
         std::thread::sleep(Duration::from_millis(200));
         let got: Vec<_> = rx.try_iter().collect();
-        assert!(got.iter().all(|g| g == &("/DrySlider".to_owned(), InArg::Float(0.25))));
-        assert!(got.len() <= MAX_RATE as usize && got.len() > MAX_RATE as usize / 2, "{}", got.len());
+        assert!(
+            got.iter()
+                .all(|g| g == &("/DrySlider".to_owned(), InArg::Float(0.25)))
+        );
+        assert!(
+            got.len() <= MAX_RATE as usize && got.len() > MAX_RATE as usize / 2,
+            "{}",
+            got.len()
+        );
         drop(l);
     }
 
@@ -1369,20 +1746,38 @@ mod tests {
     /// rebind (review finding 3: a burst of rebinds took seconds, each reset the limit).
     #[test]
     fn rebinds_are_quick_and_keep_the_rate_limit() {
-        let free = || UdpSocket::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+        let free = || {
+            UdpSocket::bind("127.0.0.1:0")
+                .unwrap()
+                .local_addr()
+                .unwrap()
+                .port()
+        };
         let (p1, p2) = (free(), free());
         let mut o = Osc::default();
-        let cfg = |p| OscConfig { enabled: true, receive_port: p, ..OscConfig::default() };
+        let cfg = |p| OscConfig {
+            enabled: true,
+            receive_port: p,
+            ..OscConfig::default()
+        };
         let t = Instant::now();
         for i in 0..40 {
             o.configure(cfg(if i % 2 == 0 { p1 } else { p2 }), false);
             let _ = o.take_inbound();
         }
-        assert!(t.elapsed() < Duration::from_millis(500), "{:?}", t.elapsed());
+        assert!(
+            t.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            t.elapsed()
+        );
         // now on p2; wait until it listens (a rebind may be pending)
         let t = Instant::now();
         while o.status().listening.is_none() {
-            assert!(t.elapsed() < Duration::from_secs(2), "{:?}", o.status().error);
+            assert!(
+                t.elapsed() < Duration::from_secs(2),
+                "{:?}",
+                o.status().error
+            );
             let _ = o.take_inbound();
             std::thread::sleep(Duration::from_millis(5));
         }
@@ -1409,13 +1804,27 @@ mod tests {
         assert_eq!(d.bind_addr(), "127.0.0.1:6000".parse().unwrap());
         assert_eq!(d.target(), Some("127.0.0.1:6001".parse().unwrap()));
         assert_eq!(OscConfig::load(&ExtraState::default()), d);
-        let c = OscConfig { enabled: true, allow_network: true, receive_port: 7000, target_host: "10.0.0.2".into(), target_port: 7001, send_state_on_start: false, send_peer_levels: true };
+        let c = OscConfig {
+            enabled: true,
+            allow_network: true,
+            receive_port: 7000,
+            target_host: "10.0.0.2".into(),
+            target_port: 7001,
+            send_state_on_start: false,
+            send_peer_levels: true,
+        };
         let mut e = ExtraState::default();
         c.store(&mut e);
         assert_eq!(OscConfig::load(&e), c);
         assert_eq!(c.bind_addr(), "0.0.0.0:7000".parse().unwrap());
         // the fork's key names and types
-        assert!(e.unknown.contains(&(KEY_TARGET_PORT.into(), TreeVar::Int(7001))));
-        assert!(e.unknown.contains(&(KEY_ENABLED.into(), TreeVar::Bool(true))));
+        assert!(
+            e.unknown
+                .contains(&(KEY_TARGET_PORT.into(), TreeVar::Int(7001)))
+        );
+        assert!(
+            e.unknown
+                .contains(&(KEY_ENABLED.into(), TreeVar::Bool(true)))
+        );
     }
 }

@@ -393,9 +393,7 @@ pub(crate) fn stream_format(
 pub(crate) fn low_of(fi: usize) -> Option<usize> {
     match FORMATS[fi].codec {
         SendCodec::Opus { .. } => Some(fi.saturating_sub(2)).filter(|&l| l != fi),
-        SendCodec::Pcm { bytes } if bytes > 2 => {
-            crate::formats::find(SendCodec::Pcm { bytes: 2 })
-        }
+        SendCodec::Pcm { bytes } if bytes > 2 => crate::formats::find(SendCodec::Pcm { bytes: 2 }),
         SendCodec::Pcm { .. } => None,
     }
 }
@@ -418,11 +416,9 @@ fn levels(sf: &StreamFormat) -> Vec<u32> {
         .iter()
         .map(|e| match *e {
             Encoding::Opus { bitrate, .. } => bitrate,
-            Encoding::Pcm(d) => {
-                (d.sample_size() as u32 * 8)
-                    .saturating_mul(sf.sample_rate)
-                    .saturating_mul(u32::from(sf.channels))
-            }
+            Encoding::Pcm(d) => (d.sample_size() as u32 * 8)
+                .saturating_mul(sf.sample_rate)
+                .saturating_mul(u32::from(sf.channels)),
         })
         .collect()
 }
@@ -542,7 +538,9 @@ impl Sub {
             return 0;
         }
         let d = self.decision;
-        d.redundancy.max(floor).min(self.adapt.max_redundancy(d.level))
+        d.redundancy
+            .max(floor)
+            .min(self.adapt.max_redundancy(d.level))
     }
 }
 
@@ -581,7 +579,11 @@ impl Clock {
 
     /// Time (`ms`, the engine's clock) for the next PING ([`Self::fast`] or one a second).
     fn ping_due(&self, ms: f64) -> bool {
-        let every = if self.fast(ms) { SYNC_PING_FIRST_MS } else { SYNC_PING_MS };
+        let every = if self.fast(ms) {
+            SYNC_PING_FIRST_MS
+        } else {
+            SYNC_PING_MS
+        };
         ms - self.last_ping_ms >= every
     }
 
@@ -980,7 +982,8 @@ impl Session {
 
     /// Our PING/PONG/PLAYOUT clock: µs since [`Self::epoch`] (plus the test skew).
     fn us(&self, t: Instant) -> u64 {
-        (t.saturating_duration_since(self.epoch).as_micros() as u64).saturating_add(self.clock_skew_us)
+        (t.saturating_duration_since(self.epoch).as_micros() as u64)
+            .saturating_add(self.clock_skew_us)
     }
 
     /// Broadcast host: PLAYOUT to every listener, for the stream it gets (no anchor yet:
@@ -1194,9 +1197,17 @@ impl Session {
     }
 
     /// The send thread's work: every send stream and every peer's datagram sender.
-    pub fn sources(&self, streams: &mut Vec<Arc<Mutex<TxStream>>>, subs: &mut Vec<(ConnId, PeerTx)>) {
+    pub fn sources(
+        &self,
+        streams: &mut Vec<Arc<Mutex<TxStream>>>,
+        subs: &mut Vec<(ConnId, PeerTx)>,
+    ) {
         streams.extend(self.main.iter().map(|t| t.tx.clone()));
-        streams.extend(self.peers.iter().filter_map(|p| p.private.as_ref().map(|t| t.tx.clone())));
+        streams.extend(
+            self.peers
+                .iter()
+                .filter_map(|p| p.private.as_ref().map(|t| t.tx.clone())),
+        );
         subs.extend(self.peers.iter().map(|p| (p.conn, p.tx.clone())));
     }
 
@@ -1253,11 +1264,16 @@ impl Session {
             NetEvent::Closed { conn, reason } => {
                 if let Some(i) = self.find_conn(conn) {
                     let id = self.peers[i].info.id;
-                    let host = self.peers[i].info.is_invite_host || self.net.authority() == Some(id);
+                    let host =
+                        self.peers[i].info.is_invite_host || self.net.authority() == Some(id);
                     self.remove_peer_at(h, i, false);
                     // the reasons a peer sends (`CloseReason`); local reasons never match
                     let reason = match reason.as_str() {
-                        r @ (END_REMOVED | END_BLOCKED | END_FULL) if host || self.peers.is_empty() => Some(r),
+                        r @ (END_REMOVED | END_BLOCKED | END_FULL)
+                            if host || self.peers.is_empty() =>
+                        {
+                            Some(r)
+                        }
                         _ if self.role == SessionRole::Listener && host => Some(END_HOST_LEFT),
                         _ => None,
                     };
@@ -1437,7 +1453,10 @@ impl Session {
     fn apply_request(&mut self, h: &mut Host, i: usize) {
         let ms = h.now_ms();
         let p = &mut self.peers[i];
-        let Some(want) = p.pending_req.filter(|_| ms - p.req_ms >= REQUEST_INTERVAL_MS) else {
+        let Some(want) = p
+            .pending_req
+            .filter(|_| ms - p.req_ms >= REQUEST_INTERVAL_MS)
+        else {
             return;
         };
         p.pending_req = None;
@@ -1447,8 +1466,7 @@ impl Session {
         // a hub serves its shared encodings only; a member a few private streams
         if let Some(main) = &self.main {
             let shared_only = self.mode == SessionMode::Broadcast
-                || (self.peers[i].private.is_none()
-                    && self.private_count() >= MAX_PRIVATE_STREAMS);
+                || (self.peers[i].private.is_none() && self.private_count() >= MAX_PRIVATE_STREAMS);
             if shared_only && !main.formats.contains(&fi) {
                 fi = nearest(&main.formats, fi);
             }
@@ -1509,7 +1527,10 @@ impl Session {
         let dynres = h.model.state.params.dynamic_resampling;
         let p = &mut self.peers[i];
         let slot = p.c.slot;
-        if p.rx.as_ref().is_none_or(|r| r.rx.format().is_none() || stream_id(r) != f.stream) {
+        if p.rx
+            .as_ref()
+            .is_none_or(|r| r.rx.format().is_none() || stream_id(r) != f.stream)
+        {
             let opts = RxOptions {
                 buffer_ms: p.c.jitter.buffer_ms,
                 dynamic_resampling: dynres,
@@ -1629,8 +1650,12 @@ impl Session {
         sub.decision = d;
         let congested = sub.adapt.congested();
         let k = sub.k(floor);
-        let rung = sub.ladder.then(|| sub.levels[d.level.min(sub.levels.len() - 1)]);
-        let Some(t) = self.stream_of(i, stream) else { return };
+        let rung = sub
+            .ladder
+            .then(|| sub.levels[d.level.min(sub.levels.len() - 1)]);
+        let Some(t) = self.stream_of(i, stream) else {
+            return;
+        };
         let mut tx = t.lock();
         if active {
             match rung {
@@ -1677,7 +1702,8 @@ impl Session {
         let p = &self.peers[i].c;
         let routed = h.model.routed_to[p.slot] != 0;
         let fits = main.formats.contains(&p.format_index);
-        (routed || p.send_channels != main.nch || !fits).then_some((p.format_index, p.send_channels))
+        (routed || p.send_channels != main.nch || !fits)
+            .then_some((p.format_index, p.send_channels))
     }
 
     /// Give peer `i` the shared stream or a private one, as it needs; a change announces the
@@ -1754,7 +1780,8 @@ impl Session {
 
     pub fn on_datagram(&mut self, h: &mut Host, conn: ConnId, d: &Bytes, now: Instant) {
         if !self.rx_delay.is_zero() && d.first().is_some_and(|k| k & 0x0f == KIND_AUDIO) {
-            self.delayed.push_back((now + self.rx_delay, conn, d.clone()));
+            self.delayed
+                .push_back((now + self.rx_delay, conn, d.clone()));
             return;
         }
         self.handle_datagram(h, conn, d, now);
@@ -1768,7 +1795,10 @@ impl Session {
         match Datagram::decode(d) {
             Ok(Datagram::Audio(a)) => {
                 if self.loss_pct > 0 {
-                    self.loss_seed = self.loss_seed.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    self.loss_seed = self
+                        .loss_seed
+                        .wrapping_mul(1_664_525)
+                        .wrapping_add(1_013_904_223);
                     if (self.loss_seed >> 8) % 100 < self.loss_pct {
                         return;
                     }
@@ -1881,7 +1911,8 @@ impl Session {
                         }
                         RxEvent::BlocksLost { count } => {
                             let n = count.min(i32::MAX as u32) as i32;
-                            if p.c.jitter.on_blocks_lost(n, ms, block_ms, thresh) == Change::Buffer {
+                            if p.c.jitter.on_blocks_lost(n, ms, block_ms, thresh) == Change::Buffer
+                            {
                                 change = Change::Buffer;
                             }
                         }
@@ -1947,7 +1978,10 @@ impl Session {
             }
         }
         // a send stream that changed format announces it to everyone who may subscribe
-        let main_change = self.main.as_ref().and_then(|t| t.lock().take_format_change());
+        let main_change = self
+            .main
+            .as_ref()
+            .and_then(|t| t.lock().take_format_change());
         // a new generation needs a new anchor
         let due = self.playout_ms.is_some()
             && (main_change.is_some() || ms - self.last_playout_ms >= PLAYOUT_INTERVAL_MS);
@@ -1957,7 +1991,10 @@ impl Session {
             self.send_playout();
         }
         for i in 0..self.peers.len() {
-            let private = self.peers[i].private.as_ref().map(|t| t.lock().take_format_change());
+            let private = self.peers[i]
+                .private
+                .as_ref()
+                .map(|t| t.lock().take_format_change());
             match private {
                 Some(Some(f)) => self.peers[i].send_control(&self.net, Frame::Format(f)),
                 Some(None) => {}
@@ -2182,7 +2219,14 @@ impl Proto for Session {
     fn recv_format_name(&self, i: usize) -> Option<String> {
         let f = self.peers[i].rx.as_ref()?.format.as_ref()?;
         Some(format_of(f, 0).map_or_else(
-            || if f.codec() == CODEC_OPUS { "Opus" } else { "PCM" }.to_owned(),
+            || {
+                if f.codec() == CODEC_OPUS {
+                    "Opus"
+                } else {
+                    "PCM"
+                }
+                .to_owned()
+            },
             |fi| FORMATS[fi].name.to_owned(),
         ))
     }
@@ -2209,7 +2253,10 @@ impl Proto for Session {
             direct: p.path.as_ref().is_some_and(|x| x.direct),
             relay: p.path.as_ref().and_then(|x| x.relay.clone()),
             remote: p.path.as_ref().and_then(|x| x.remote),
-            rtt_ms: p.path.as_ref().map_or(0.0, |x| x.rtt.as_secs_f32() * 1000.0),
+            rtt_ms: p
+                .path
+                .as_ref()
+                .map_or(0.0, |x| x.rtt.as_secs_f32() * 1000.0),
             send_level: p
                 .sub
                 .as_ref()
@@ -2292,7 +2339,12 @@ mod tests {
         let exchange = |c: &mut Clock, t1: u64, up: u64, down: u64| {
             let id = c.ping(t1, 0.0).id;
             let t2 = t1 + up + 5000;
-            let p = Pong { id, t1, t2, t3: t2 + 10 };
+            let p = Pong {
+                id,
+                t1,
+                t2,
+                t3: t2 + 10,
+            };
             c.on_pong(&p, t2 + 10 - 5000 + down, t1 as f64 / 1000.0);
             p
         };
@@ -2322,17 +2374,62 @@ mod tests {
         // a replay of an answered one, one for a PING never sent, one with the wrong echo
         let at = ms(&c);
         c.on_pong(&first, 10_000_000, at);
-        c.on_pong(&Pong { id: 999, t1: 1, t2: u64::MAX / 2, t3: u64::MAX / 2 }, 1, at);
+        c.on_pong(
+            &Pong {
+                id: 999,
+                t1: 1,
+                t2: u64::MAX / 2,
+                t3: u64::MAX / 2,
+            },
+            1,
+            at,
+        );
         let id = c.ping(20_000_000, 0.0).id;
-        c.on_pong(&Pong { id, t1: 20_000_001, t2: 1, t3: 1 }, 20_000_001, at);
+        c.on_pong(
+            &Pong {
+                id,
+                t1: 20_000_001,
+                t2: 1,
+                t3: 1,
+            },
+            20_000_001,
+            at,
+        );
         // zero round trip, but a hold time beyond reason; a round trip beyond reason
         let id = c.ping(30_000_000, 0.0).id;
-        c.on_pong(&Pong { id, t1: 30_000_000, t2: 1, t3: 3_000_001 }, 33_000_000, at);
+        c.on_pong(
+            &Pong {
+                id,
+                t1: 30_000_000,
+                t2: 1,
+                t3: 3_000_001,
+            },
+            33_000_000,
+            at,
+        );
         let id = c.ping(40_000_000, 0.0).id;
-        c.on_pong(&Pong { id, t1: 40_000_000, t2: 7, t3: 7 }, 45_000_000, at);
+        c.on_pong(
+            &Pong {
+                id,
+                t1: 40_000_000,
+                t2: 7,
+                t3: 7,
+            },
+            45_000_000,
+            at,
+        );
         // nonsense order
         let id = c.ping(50, 0.0).id;
-        c.on_pong(&Pong { id, t1: 50, t2: 20, t3: 15 }, 60, at);
+        c.on_pong(
+            &Pong {
+                id,
+                t1: 50,
+                t2: 20,
+                t3: 15,
+            },
+            60,
+            at,
+        );
         assert_eq!((c.n, c.offset(at)), (n, Some(4000)));
     }
 
@@ -2351,7 +2448,15 @@ mod tests {
             if c.ping_due(ms) {
                 let p = c.ping(us, ms);
                 let t2 = us + 750_000 + 7_000;
-                flight.push_back((us + 1_500_000, Pong { id: p.id, t1: p.t1, t2, t3: t2 }));
+                flight.push_back((
+                    us + 1_500_000,
+                    Pong {
+                        id: p.id,
+                        t1: p.t1,
+                        t2,
+                        t3: t2,
+                    },
+                ));
             }
             while flight.front().is_some_and(|f| f.0 <= us) {
                 let (t4, pong) = flight.pop_front().unwrap();
@@ -2399,7 +2504,15 @@ mod tests {
                 rng ^= rng << 17;
                 if answers && rng % 10 >= loss {
                     let t2 = us + 25_000 + 7_000;
-                    flight.push_back((us + 50_000, Pong { id: p.id, t1: p.t1, t2, t3: t2 }));
+                    flight.push_back((
+                        us + 50_000,
+                        Pong {
+                            id: p.id,
+                            t1: p.t1,
+                            t2,
+                            t3: t2,
+                        },
+                    ));
                 }
             }
             while flight.front().is_some_and(|f| f.0 <= us) {
@@ -2423,7 +2536,10 @@ mod tests {
     #[test]
     fn lost_pongs_bring_the_fast_rate_back() {
         let (missing, pings, after) = pinging(3, 600, 590.0);
-        eprintln!("30 % lost: offset missing {:.3} % of the time, {pings} PINGs in 590 s", missing * 100.0);
+        eprintln!(
+            "30 % lost: offset missing {:.3} % of the time, {pings} PINGs in 590 s",
+            missing * 100.0
+        );
         assert!(missing < 0.005, "{missing}");
         assert!(pings < 2 * 590, "{pings}");
         assert!(after <= 16 + 10, "{after}");
@@ -2435,7 +2551,10 @@ mod tests {
     fn mostly_lost_pongs_do_not_keep_the_fast_rate() {
         for loss in [7, 9] {
             let (missing, pings, _) = pinging(loss, 600, 600.0);
-            eprintln!("{loss}0 % lost: offset missing {:.1} % of the time, {pings} PINGs in 600 s", missing * 100.0);
+            eprintln!(
+                "{loss}0 % lost: offset missing {:.1} % of the time, {pings} PINGs in 600 s",
+                missing * 100.0
+            );
             assert!(pings <= 600 + 16 * (600 / 15 + 1), "{pings}");
         }
     }
@@ -2449,7 +2568,14 @@ mod tests {
         let ms = Duration::from_millis;
         // host clock 3 s ahead of ours, our clock 1 s ahead of `epoch`
         let off = 3_000_000;
-        let due = due_at(epoch, 1_000_000, 4_500_000 + off as u64, off, ms(200), ms(5));
+        let due = due_at(
+            epoch,
+            1_000_000,
+            4_500_000 + off as u64,
+            off,
+            ms(200),
+            ms(5),
+        );
         assert_eq!(due, Some(epoch + ms(3500 + 200 - 5)));
         // the host's time before our epoch
         let due = due_at(epoch + ms(10_000), 0, 1_000_000, 2_000_000, ms(100), ms(0));
@@ -2461,11 +2587,23 @@ mod tests {
 
         // turning sync off needs no anchor (a format change or device setup just cleared it)
         let off = playout_frame(None, 1, None).expect("off goes out without an anchor");
-        assert_eq!((off.stream, off.delay_ms, accept_playout(off)), (1, 0, None));
+        assert_eq!(
+            (off.stream, off.delay_ms, accept_playout(off)),
+            (1, 0, None)
+        );
         assert_eq!(playout_frame(Some(150), 0, None), None);
         let on = playout_frame(Some(150), 0, Some((3, 7, 99)));
-        assert_eq!(on.map(|p| (p.generation, p.seq, p.time_us, p.delay_ms)), Some((3, 7, 99, 150)));
-        let pl = |delay_ms| Playout { stream: 0, generation: 1, seq: 2, time_us: 3, delay_ms };
+        assert_eq!(
+            on.map(|p| (p.generation, p.seq, p.time_us, p.delay_ms)),
+            Some((3, 7, 99, 150))
+        );
+        let pl = |delay_ms| Playout {
+            stream: 0,
+            generation: 1,
+            seq: 2,
+            time_us: 3,
+            delay_ms,
+        };
         assert_eq!(accept_playout(pl(0)), None);
         assert_eq!(accept_playout(pl(150)), Some(pl(150)));
         assert_eq!(accept_playout(pl(u16::MAX)), Some(pl(MAX_PLAYOUT_MS)));

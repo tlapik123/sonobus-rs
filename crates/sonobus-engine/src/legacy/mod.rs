@@ -286,7 +286,10 @@ impl Session {
     fn same_host(&mut self, a: SocketAddr) -> SocketAddr {
         let SocketAddr::V4(v4) = a else { return a };
         let ip = *v4.ip();
-        if ip == Ipv4Addr::LOCALHOST || ip.is_unspecified() || ip.is_broadcast() || ip.is_multicast()
+        if ip == Ipv4Addr::LOCALHOST
+            || ip.is_unspecified()
+            || ip.is_broadcast()
+            || ip.is_multicast()
         {
             return a;
         }
@@ -322,7 +325,6 @@ impl Session {
             .iter()
             .position(|p| p.addr == addr && p.remote_sink_id == id)
     }
-
 
     pub fn connection(&self) -> Connection {
         match self.conn {
@@ -741,10 +743,8 @@ impl Session {
         };
         let format = c.format_index;
         let mono_format = aoo_format(format, 1, cfg.sample_rate, cfg.block_size);
-        let (mut echo_sink, echo_sink_audio) =
-            Sink::new(our_id + ECHO_ID_OFFSET, mono, side_sink);
-        let (mut lat_sink, lat_sink_audio) =
-            Sink::new(our_id + LATENCY_ID_OFFSET, mono, side_sink);
+        let (mut echo_sink, echo_sink_audio) = Sink::new(our_id + ECHO_ID_OFFSET, mono, side_sink);
+        let (mut lat_sink, lat_sink_audio) = Sink::new(our_id + LATENCY_ID_OFFSET, mono, side_sink);
         // each has one expected source (filtered in `on_packet`); a few in case the peer's
         // id for us changes while we keep the peer (entries are never removed)
         echo_sink.set_max_sources(SIDE_MAX_SOURCES);
@@ -1573,7 +1573,8 @@ impl Proto for Session {
 
     fn recv_format_name(&self, i: usize) -> Option<String> {
         self.peers[i].recv_format.map(|f| {
-            format_index(&f).map_or_else(|| f.codec_name().to_owned(), |i| FORMATS[i].name.to_owned())
+            format_index(&f)
+                .map_or_else(|| f.codec_name().to_owned(), |i| FORMATS[i].name.to_owned())
         })
     }
 

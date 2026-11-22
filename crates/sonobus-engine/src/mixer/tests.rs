@@ -518,7 +518,11 @@ fn file_and_soundboard_monitors_are_delayed() {
             r.cmd(Cmd::Delay(t, Box::new(MonitorDelay::new(48000, ch)), ch));
         }
         let (_player, d) = deck();
-        r.cmd(if voice { Cmd::Voice(0, Some(d)) } else { Cmd::File(Some(d)) });
+        r.cmd(if voice {
+            Cmd::Voice(0, Some(d))
+        } else {
+            Cmd::File(Some(d))
+        });
         let silent = vec![0.0f32; N];
         let mut out = Vec::new();
         for _ in 0..30 {
@@ -530,7 +534,10 @@ fn file_and_soundboard_monitors_are_delayed() {
     // (the first block's gain ramps start at 0, the delayed one's fade sits inside the line)
     let near = |d: usize| (470..=482).contains(&d);
     assert!(near(delayed - plain), "file: {plain} -> {delayed}");
-    let (plain, delayed) = (onset(None, true), onset(Some(DelayTarget::Soundboard), true));
+    let (plain, delayed) = (
+        onset(None, true),
+        onset(Some(DelayTarget::Soundboard), true),
+    );
     assert!(near(delayed - plain), "soundboard: {plain} -> {delayed}");
     std::fs::remove_file(path).unwrap();
 }
@@ -543,6 +550,10 @@ fn latency_monitor_bus_follows_the_output() {
         let mut r = Rig::new(cfg(1, n_out), globals(vec![group(0, 1)]));
         assert!(r.m.latency_monitor().is_none());
         r.update(|g| g.params.hear_latency_test = true);
-        assert_eq!(r.m.latency_monitor().map(|b| b.len()), Some(want), "{n_out}");
+        assert_eq!(
+            r.m.latency_monitor().map(|b| b.len()),
+            Some(want),
+            "{n_out}"
+        );
     }
 }

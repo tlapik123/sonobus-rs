@@ -15,16 +15,16 @@ use std::f32::consts::{PI, TAU};
 
 #[derive(Debug, Clone, Copy)]
 struct Controls {
-    ls_freq: f32,  // fHslider0
-    ls_gain: f32,  // fHslider1
-    p1_freq: f32,  // fHslider2
-    p1_gain: f32,  // fHslider3
-    p1_q: f32,     // fHslider4
-    p2_freq: f32,  // fHslider5
-    p2_gain: f32,  // fHslider6
-    p2_q: f32,     // fHslider7
-    hs_freq: f32,  // fHslider8
-    hs_gain: f32,  // fHslider9
+    ls_freq: f32, // fHslider0
+    ls_gain: f32, // fHslider1
+    p1_freq: f32, // fHslider2
+    p1_gain: f32, // fHslider3
+    p1_q: f32,    // fHslider4
+    p2_freq: f32, // fHslider5
+    p2_gain: f32, // fHslider6
+    p2_q: f32,    // fHslider7
+    hs_freq: f32, // fHslider8
+    hs_gain: f32, // fHslider9
 }
 
 /// Per-instance Faust state (`instanceClear` zeroes all of it).
@@ -77,23 +77,63 @@ pub struct ParametricEq {
     gate: Gate,
 }
 
-const GAIN_DB: ParamSpec = ParamSpec { min: -24.0, max: 24.0, step: 0.1, skew: 1.0, default: 0.0 };
-const PEAK_FREQ: ParamSpec = ParamSpec { min: 40.0, max: 10000.0, step: 1.0, skew: 0.3, default: 0.0 };
-const PEAK_Q: ParamSpec = ParamSpec { min: 0.4, max: 100.0, step: 0.1, skew: 0.35, default: 0.0 };
+const GAIN_DB: ParamSpec = ParamSpec {
+    min: -24.0,
+    max: 24.0,
+    step: 0.1,
+    skew: 1.0,
+    default: 0.0,
+};
+const PEAK_FREQ: ParamSpec = ParamSpec {
+    min: 40.0,
+    max: 10000.0,
+    step: 1.0,
+    skew: 0.3,
+    default: 0.0,
+};
+const PEAK_Q: ParamSpec = ParamSpec {
+    min: 0.4,
+    max: 100.0,
+    step: 0.1,
+    skew: 0.35,
+    default: 0.0,
+};
 
 impl ParametricEq {
     pub const LOW_SHELF_GAIN_DB: ParamSpec = GAIN_DB;
-    pub const LOW_SHELF_FREQ_HZ: ParamSpec =
-        ParamSpec { min: 20.0, max: 2000.0, step: 1.0, skew: 0.25, default: 60.0 };
+    pub const LOW_SHELF_FREQ_HZ: ParamSpec = ParamSpec {
+        min: 20.0,
+        max: 2000.0,
+        step: 1.0,
+        skew: 0.25,
+        default: 60.0,
+    };
     pub const PARA1_GAIN_DB: ParamSpec = GAIN_DB;
-    pub const PARA1_FREQ_HZ: ParamSpec = ParamSpec { default: 90.0, ..PEAK_FREQ };
-    pub const PARA1_Q: ParamSpec = ParamSpec { default: 1.5, ..PEAK_Q };
+    pub const PARA1_FREQ_HZ: ParamSpec = ParamSpec {
+        default: 90.0,
+        ..PEAK_FREQ
+    };
+    pub const PARA1_Q: ParamSpec = ParamSpec {
+        default: 1.5,
+        ..PEAK_Q
+    };
     pub const PARA2_GAIN_DB: ParamSpec = GAIN_DB;
-    pub const PARA2_FREQ_HZ: ParamSpec = ParamSpec { default: 360.0, ..PEAK_FREQ };
-    pub const PARA2_Q: ParamSpec = ParamSpec { default: 4.0, ..PEAK_Q };
+    pub const PARA2_FREQ_HZ: ParamSpec = ParamSpec {
+        default: 360.0,
+        ..PEAK_FREQ
+    };
+    pub const PARA2_Q: ParamSpec = ParamSpec {
+        default: 4.0,
+        ..PEAK_Q
+    };
     pub const HIGH_SHELF_GAIN_DB: ParamSpec = GAIN_DB;
-    pub const HIGH_SHELF_FREQ_HZ: ParamSpec =
-        ParamSpec { min: 500.0, max: 16000.0, step: 1.0, skew: 0.5, default: 10000.0 };
+    pub const HIGH_SHELF_FREQ_HZ: ParamSpec = ParamSpec {
+        min: 500.0,
+        max: 16000.0,
+        step: 1.0,
+        skew: 0.5,
+        default: 10000.0,
+    };
 
     /// Upstream defaults, disabled.
     pub fn new(sample_rate: u32) -> Self {
@@ -245,11 +285,13 @@ fn tick(s: &mut State, k: &Slow, c1: f32, c2: f32, x: f32) -> f32 {
     let t25 = if i21 { t24 } else { t23 };
     let t26 = 2.0 * (s.rec2[1] * (1.0 - (1.0 / (t19 * t19))));
     let t27 = ((t20 + t25) / t19) + 1.0;
-    s.rec2[0] = (((t16 + (s.rec3[0] * (((t10 + t18) / t9) + 1.0))) + (s.rec3[2] * (((t10 - t18) / t9) + 1.0)))
+    s.rec2[0] = (((t16 + (s.rec3[0] * (((t10 + t18) / t9) + 1.0)))
+        + (s.rec3[2] * (((t10 - t18) / t9) + 1.0)))
         / t17)
         - (((s.rec2[2] * (((t20 - t25) / t19) + 1.0)) + t26) / t27);
     let t28 = if i21 { t23 } else { t24 };
-    let t29 = (t26 + (s.rec2[0] * (((t20 + t28) / t19) + 1.0))) + (s.rec2[2] * (((t20 - t28) / t19) + 1.0));
+    let t29 = (t26 + (s.rec2[0] * (((t20 + t28) / t19) + 1.0)))
+        + (s.rec2[2] * (((t20 - t28) / t19) + 1.0));
     let t30 = t29 / t27;
     s.vec1[0] = t30;
     // high shelf
@@ -258,7 +300,8 @@ fn tick(s: &mut State, k: &Slow, c1: f32, c2: f32, x: f32) -> f32 {
     let t32 = 1.0 / t31;
     let t33 = t32 + 1.0;
     let t34 = 1.0 - t32;
-    s.rec1[0] = (s.vec1[1] * (0.0 - (1.0 / (t31 * t33)))) + (((t29 / (t31 * t27)) - (s.rec1[1] * t34)) / t33);
+    s.rec1[0] = (s.vec1[1] * (0.0 - (1.0 / (t31 * t33))))
+        + (((t29 / (t31 * t27)) - (s.rec1[1] * t34)) / t33);
     let t35 = ((t32 + -1.0) / t31) + 1.0;
     let t36 = t31 * t31;
     let t37 = 1.0 - (1.0 / t36);
@@ -267,7 +310,8 @@ fn tick(s: &mut State, k: &Slow, c1: f32, c2: f32, x: f32) -> f32 {
     s.rec16[0] = k.s9 + 0.999 * s.rec16[1];
     s.rec18[0] = 0.0 - (((t34 * s.rec18[1]) - (t30 + s.vec1[1])) / t33);
     s.rec17[0] = s.rec18[0] - (((t35 * s.rec17[2]) + (2.0 * (t37 * s.rec17[1]))) / t38);
-    let out = (((((s.rec0[1] * (0.0 - (2.0 / t36))) + (s.rec0[0] / t36)) + (s.rec0[2] / t36)) * pow10(0.05 * s.rec16[0]))
+    let out = (((((s.rec0[1] * (0.0 - (2.0 / t36))) + (s.rec0[0] / t36)) + (s.rec0[2] / t36))
+        * pow10(0.05 * s.rec16[0]))
         + (s.rec17[2] + (s.rec17[0] + (2.0 * s.rec17[1]))))
         / t38;
     // shift delay lines

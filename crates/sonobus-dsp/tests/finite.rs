@@ -10,7 +10,11 @@ const BS: usize = 256;
 /// (DC +1, DC -1, square waves of 1, 2 and 64 samples), then silence again.
 fn signal() -> Vec<f32> {
     let mut s = vec![0.0f32; 4 * BS];
-    let denorms = [f32::from_bits(1), f32::MIN_POSITIVE / 2.0, f32::MIN_POSITIVE / 1024.0];
+    let denorms = [
+        f32::from_bits(1),
+        f32::MIN_POSITIVE / 2.0,
+        f32::MIN_POSITIVE / 1024.0,
+    ];
     s.extend((0..4 * BS).map(|i| denorms[i % 3] * if i % 2 == 0 { 1.0 } else { -1.0 }));
     s.extend(std::iter::repeat_n(1.0, 2 * BS));
     s.extend(std::iter::repeat_n(-1.0, 2 * BS));
@@ -36,7 +40,11 @@ fn run(name: &str, mut fx: impl FnMut(&mut [f32], Option<&mut [f32]>)) {
 
 #[test]
 fn compressor_extremes() {
-    for (thr, ratio, ms, makeup) in [(-60.0, 120.0, 1.0, 60.0), (0.0, 1.0, 1000.0, 0.0), (-60.0, 1.0, 1.0, 60.0)] {
+    for (thr, ratio, ms, makeup) in [
+        (-60.0, 120.0, 1.0, 60.0),
+        (0.0, 1.0, 1000.0, 0.0),
+        (-60.0, 1.0, 1.0, 60.0),
+    ] {
         let mut c = Compressor::new(SR);
         c.set_threshold_db(thr);
         c.set_ratio(ratio);
@@ -50,7 +58,12 @@ fn compressor_extremes() {
 
 #[test]
 fn expander_extremes() {
-    for (thr, ratio, ms) in [(-96.0, 1.0, 1.0), (0.0, 120.0, 1.0), (0.0, 1.0, 1000.0), (-96.0, 120.0, 1000.0)] {
+    for (thr, ratio, ms) in [
+        (-96.0, 1.0, 1.0),
+        (0.0, 120.0, 1.0),
+        (0.0, 1.0, 1000.0),
+        (-96.0, 120.0, 1000.0),
+    ] {
         let mut e = Expander::new(SR);
         e.set_threshold_db(thr);
         e.set_ratio(ratio);
@@ -76,7 +89,11 @@ fn limiter_extremes() {
 
 #[test]
 fn eq_extremes() {
-    for (g, lo, hi, q) in [(24.0, 20.0, 16000.0, 100.0), (-24.0, 2000.0, 500.0, 0.4), (24.0, 2000.0, 500.0, 0.4)] {
+    for (g, lo, hi, q) in [
+        (24.0, 20.0, 16000.0, 100.0),
+        (-24.0, 2000.0, 500.0, 0.4),
+        (24.0, 2000.0, 500.0, 0.4),
+    ] {
         let mut e = ParametricEq::new(SR);
         e.set_low_shelf_gain_db(g);
         e.set_low_shelf_freq_hz(lo);

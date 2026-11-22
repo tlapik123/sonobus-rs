@@ -529,7 +529,12 @@ fn same_host_join_via_loopback_and_lan_address() {
             a.snap().peers.first().map(|p| p.addr),
             b.snap().peers.first().map(|p| p.addr)
         );
-        assert!(ok, "round {round}: no streams: a {} b {}", diag(&a), diag(&b));
+        assert!(
+            ok,
+            "round {round}: no streams: a {} b {}",
+            diag(&a),
+            diag(&b)
+        );
         assert!(
             hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE)
                 && hears(&mut [&mut a, &mut b], 0, 0, 660.0, CENTRE),

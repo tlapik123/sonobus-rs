@@ -1000,7 +1000,13 @@ mod tests {
         // another key
         assert!(!rekey_verify(&[6; 32], &E, &IC, &IA, &m));
         // not the handshake's KEY proof either
-        assert!(!rekey_verify(&K, &E, &IC, &IA, &key_proof(&K, Side::Connector, &E, &IC, &IA)));
+        assert!(!rekey_verify(
+            &K,
+            &E,
+            &IC,
+            &IA,
+            &key_proof(&K, Side::Connector, &E, &IC, &IA)
+        ));
         assert!(!rekey_verify(&K, &E, &IC, &IA, &m[..31]));
     }
 
@@ -1248,7 +1254,10 @@ mod tests {
             assert_eq!(l.wrong_guess(a), i + 1 == PIN_FAILURES as usize);
         }
         assert!(l.pin_invalidated());
-        assert!(!l.succeeded(last), "an attempt begun before the invalidation succeeded");
+        assert!(
+            !l.succeeded(last),
+            "an attempt begun before the invalidation succeeded"
+        );
         // a new PIN works again
         l.new_secret();
         let a = l.begin(ip(9), t).unwrap();
@@ -1364,9 +1373,14 @@ mod tests {
         // prefix optional and case-insensitive, upper-case hex, surrounding blanks
         let bare = format!(" {}@rdv.example.org:1\n", hexid.to_uppercase());
         let b = RdvAddr::parse(&bare).unwrap();
-        assert_eq!((b.id, &b.hosts[..], &b.relay), (id, &["rdv.example.org:1".to_string()][..], &None));
         assert_eq!(
-            RdvAddr::parse(&format!("SONOBUS2://RDV/{hexid}@h:1")).unwrap().id,
+            (b.id, &b.hosts[..], &b.relay),
+            (id, &["rdv.example.org:1".to_string()][..], &None)
+        );
+        assert_eq!(
+            RdvAddr::parse(&format!("SONOBUS2://RDV/{hexid}@h:1"))
+                .unwrap()
+                .id,
             id
         );
         // relay only
@@ -1374,13 +1388,19 @@ mod tests {
             hosts: vec![],
             ..a.clone()
         };
-        assert_eq!(r.to_url(), format!("sonobus2://rdv/{hexid}@?relay=https://relay.example/"));
+        assert_eq!(
+            r.to_url(),
+            format!("sonobus2://rdv/{hexid}@?relay=https://relay.example/")
+        );
         assert_eq!(RdvAddr::parse(&r.to_url()), Ok(r));
         assert!(RdvAddr::parse(&format!("{hexid}?relay=http://r/")).is_ok());
         // refusals
         assert_eq!(RdvAddr::parse(&hexid), Err("no address".into()));
         assert!(RdvAddr::parse("abc@192.0.2.7:1").is_err(), "short id");
-        assert!(RdvAddr::parse(&format!("{}x@h:1", &hexid[1..])).is_err(), "not hex");
+        assert!(
+            RdvAddr::parse(&format!("{}x@h:1", &hexid[1..])).is_err(),
+            "not hex"
+        );
         for bad in ["192.0.2.7", ":1", "h:99999", "h:", "a b:1"] {
             assert!(RdvAddr::parse(&format!("{hexid}@{bad}")).is_err(), "{bad}");
         }

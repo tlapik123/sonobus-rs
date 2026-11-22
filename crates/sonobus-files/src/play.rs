@@ -258,7 +258,9 @@ pub mod testing {
     /// Opening `path` and every decoder read from it take `delay` longer, as on a hung
     /// network share (`Duration::ZERO` removes it).
     pub fn set_slow_io(path: &Path, delay: Duration) {
-        let mut s = SLOW.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        let mut s = SLOW
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         s.retain(|(p, _)| p != path);
         if !delay.is_zero() {
             s.push((path.to_owned(), delay));
@@ -793,12 +795,19 @@ mod tests {
         testing::set_slow_io(&path, Duration::from_millis(400));
         let t0 = Instant::now();
         let (p, out) = open_player(&path, 48000).unwrap();
-        assert!(t0.elapsed() >= Duration::from_millis(400), "the open is slow");
+        assert!(
+            t0.elapsed() >= Duration::from_millis(400),
+            "the open is slow"
+        );
         std::thread::sleep(Duration::from_millis(50)); // the decoder is inside a read
         let t0 = Instant::now();
         drop(p);
         drop(out);
-        assert!(t0.elapsed() < Duration::from_millis(100), "{:?}", t0.elapsed());
+        assert!(
+            t0.elapsed() < Duration::from_millis(100),
+            "{:?}",
+            t0.elapsed()
+        );
         testing::set_slow_io(&path, Duration::ZERO);
         std::fs::remove_file(path).unwrap();
     }

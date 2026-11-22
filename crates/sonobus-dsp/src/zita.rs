@@ -74,29 +74,31 @@ struct St {
 #[derive(Debug, Clone)]
 pub struct Zita {
     // Controls (Faust zones).
-    level_db: f32,     // fVslider0
-    dry_wet: f32,      // fVslider1
-    eq2_freq: f32,     // fVslider2
-    eq2_level: f32,    // fVslider3
-    eq1_freq: f32,     // fVslider4
-    eq1_level: f32,    // fVslider5
-    mid_rt60: f32,     // fVslider6
-    hf_damping: f32,   // fVslider7
-    low_rt60: f32,     // fVslider8
-    lf_x: f32,         // fVslider9
-    in_delay_ms: f32,  // fVslider10
+    level_db: f32,    // fVslider0
+    dry_wet: f32,     // fVslider1
+    eq2_freq: f32,    // fVslider2
+    eq2_level: f32,   // fVslider3
+    eq1_freq: f32,    // fVslider4
+    eq1_level: f32,   // fVslider5
+    mid_rt60: f32,    // fVslider6
+    hf_damping: f32,  // fVslider7
+    low_rt60: f32,    // fVslider8
+    lf_x: f32,        // fVslider9
+    in_delay_ms: f32, // fVslider10
     // Constants.
     c1: f32,
     c4: f32,
     c7: f32,
-    cdecay: [f32; 8], // fConst3, 10, 15, 20, 25, 30, 35, 40
+    cdecay: [f32; 8],    // fConst3, 10, 15, 20, 25, 30, 35, 40
     idelay: [usize; 16], // iConst6, 8, 12, 13, 17, 18, 22, 23, 27, 28, 32, 33, 37, 38, 42, 43
     vec: [Box<[f32]>; 18],
     st: St,
 }
 
-const VEC_SIZES: [usize; 18] =
-    [16384, 16384, 32768, 4096, 16384, 4096, 16384, 4096, 16384, 2048, 32768, 4096, 16384, 2048, 32768, 2048, 16384, 4096];
+const VEC_SIZES: [usize; 18] = [
+    16384, 16384, 32768, 4096, 16384, 4096, 16384, 4096, 16384, 2048, 32768, 4096, 16384, 2048,
+    32768, 2048, 16384, 4096,
+];
 
 impl Zita {
     /// Faust `init(sample_rate)`: constants, controls at their Faust defaults, state cleared.
@@ -201,12 +203,35 @@ impl Zita {
             let t15 = 1.0 - g2;
             let t16 = t14 / t15;
             let t17 = cmax(0.0, (sq(t14) / sq(t15)) + -1.0).sqrt();
-            Branch { a: t16 - t17, b: g * (t17 + (1.0 - t16)), c: ((cd / slow20).exp() / g) + -1.0 }
+            Branch {
+                a: t16 - t17,
+                b: g * (t17 + (1.0 - t16)),
+                c: ((cd / slow20).exp() / g) + -1.0,
+            }
         });
         let slow89 = 0.0 - ((self.c1 * slow6).cos() * (slow9 + 1.0));
         let slow90 = 0.0 - ((self.c1 * slow2).cos() * (slow5 + 1.0));
         let ic = self.idelay;
-        let [v0, v1, v2, v3, v4, v5, v6, v7, v8, v9, v10, v11, v12, v13, v14, v15, v16, v17] = &mut self.vec;
+        let [
+            v0,
+            v1,
+            v2,
+            v3,
+            v4,
+            v5,
+            v6,
+            v7,
+            v8,
+            v9,
+            v10,
+            v11,
+            v12,
+            v13,
+            v14,
+            v15,
+            v16,
+            v17,
+        ] = &mut self.vec;
 
         let s = &mut self.st;
         for (o0, o1) in left.iter_mut().zip(right.iter_mut()) {
@@ -297,7 +322,11 @@ impl Zita {
                     + (r20
                         + (r24
                             + (rec29
-                                + (rec33 + (rec17 + (rec21 + (rec25 + (r36 + (r40 + (r28 + (r32 + temp15))))))))))));
+                                + (rec33
+                                    + (rec17
+                                        + (rec21
+                                            + (rec25
+                                                + (r36 + (r40 + (r28 + (r32 + temp15))))))))))));
             s.rec5[0] = (r16 + (r20 + (r24 + (rec33 + (rec17 + (rec21 + (rec25 + r32)))))))
                 - (r12 + (rec29 + (r36 + (r40 + (r28 + temp15)))));
             let temp16 = rec13 + rec37;
@@ -319,8 +348,9 @@ impl Zita {
             let temp19 = slow89 * s.rec3[1];
             s.rec3[0] = temp18 - (temp19 + (slow9 * s.rec3[2]));
             let temp20 = slow9 * s.rec3[0];
-            let temp21 =
-                0.5 * ((temp20 + (s.rec3[2] + (temp18 + temp19))) + (slow7 * ((temp20 + (temp19 + s.rec3[2])) - temp18)));
+            let temp21 = 0.5
+                * ((temp20 + (s.rec3[2] + (temp18 + temp19)))
+                    + (slow7 * ((temp20 + (temp19 + s.rec3[2])) - temp18)));
             let temp22 = slow90 * s.rec2[1];
             s.rec2[0] = temp21 - (temp22 + (slow5 * s.rec2[2]));
             let temp23 = slow5 * s.rec2[0];
@@ -335,7 +365,8 @@ impl Zita {
             s.rec45[0] = temp24 - (temp25 + (slow9 * s.rec45[2]));
             let temp26 = slow9 * s.rec45[0];
             let temp27 = 0.5
-                * ((temp26 + (s.rec45[2] + (temp24 + temp25))) + (slow7 * ((temp26 + (temp25 + s.rec45[2])) - temp24)));
+                * ((temp26 + (s.rec45[2] + (temp24 + temp25)))
+                    + (slow7 * ((temp26 + (temp25 + s.rec45[2])) - temp24)));
             let temp28 = slow90 * s.rec44[1];
             s.rec44[0] = temp27 - (temp28 + (slow5 * s.rec44[2]));
             let temp29 = slow5 * s.rec44[0];

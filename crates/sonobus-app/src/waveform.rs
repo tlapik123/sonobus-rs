@@ -22,7 +22,12 @@ pub type Peaks = Vec<[f32; 2]>;
 
 /// Decodes `frames` (all when `None`) from where the player stands, calling `f` with each
 /// chunk of real audio, channel by channel.
-fn pump(out: &mut PlayerOutput, finished: impl Fn() -> bool, frames: Option<u64>, mut f: impl FnMut(&[Vec<f32>], usize)) {
+fn pump(
+    out: &mut PlayerOutput,
+    finished: impl Fn() -> bool,
+    frames: Option<u64>,
+    mut f: impl FnMut(&[Vec<f32>], usize),
+) {
     let ch = out.channels().max(1);
     let mut bufs = vec![vec![0.0f32; BLOCK]; ch];
     let mut left = frames.unwrap_or(u64::MAX);
@@ -52,24 +57,31 @@ fn pump(out: &mut PlayerOutput, finished: impl Fn() -> bool, frames: Option<u64>
 pub fn compute_peaks(path: &Path, rate: u32) -> io::Result<Peaks> {
     let (player, mut out) = open_player(path, rate.max(1))?;
     let info = player.info();
-    let total = info.frames.map(|f| f * u64::from(rate.max(1)) / u64::from(info.sample_rate.max(1)));
+    let total = info
+        .frames
+        .map(|f| f * u64::from(rate.max(1)) / u64::from(info.sample_rate.max(1)));
     // fine slices first (a known length gives the final ones directly), merged below
     let per = total.map_or(BLOCK as u64, |t| (t / BUCKETS as u64).max(1));
     let mut fine: Peaks = Vec::new();
     let (mut cur, mut in_cur) = ([f32::MAX, f32::MIN], 0u64);
-    pump(&mut out, || player.is_finished(), total, |bufs, n| {
-        for i in 0..n {
-            for b in bufs {
-                cur[0] = cur[0].min(b[i]);
-                cur[1] = cur[1].max(b[i]);
+    pump(
+        &mut out,
+        || player.is_finished(),
+        total,
+        |bufs, n| {
+            for i in 0..n {
+                for b in bufs {
+                    cur[0] = cur[0].min(b[i]);
+                    cur[1] = cur[1].max(b[i]);
+                }
+                in_cur += 1;
+                if in_cur == per {
+                    fine.push(cur);
+                    (cur, in_cur) = ([f32::MAX, f32::MIN], 0);
+                }
             }
-            in_cur += 1;
-            if in_cur == per {
-                fine.push(cur);
-                (cur, in_cur) = ([f32::MAX, f32::MIN], 0);
-            }
-        }
-    });
+        },
+    );
     if in_cur > 0 {
         fine.push(cur);
     }
@@ -83,8 +95,11 @@ fn reduce(fine: &[[f32; 2]], n: usize) -> Peaks {
     }
     (0..n)
         .map(|i| {
-            let s = &fine[i * fine.len() / n..((i + 1) * fine.len() / n).max(i * fine.len() / n + 1)];
-            s.iter().fold([f32::MAX, f32::MIN], |a, p| [a[0].min(p[0]), a[1].max(p[1])])
+            let s =
+                &fine[i * fine.len() / n..((i + 1) * fine.len() / n).max(i * fine.len() / n + 1)];
+            s.iter().fold([f32::MAX, f32::MIN], |a, p| {
+                [a[0].min(p[0]), a[1].max(p[1])]
+            })
         })
         .collect()
 }
@@ -125,27 +140,43 @@ impl Waveforms {
 /// while it works; returns the new file.
 pub fn trim_to_new(path: &Path, rate: u32, start_secs: f64, len_secs: f64) -> io::Result<PathBuf> {
     let (player, mut out) = open_player(path, rate.max(1))?;
-    let ext = path.extension().map(|e| e.to_string_lossy().to_lowercase()).unwrap_or_default();
+    let ext = path
+        .extension()
+        .map(|e| e.to_string_lossy().to_lowercase())
+        .unwrap_or_default();
     let format = match ext.as_str() {
         "wav" => RecordFormat::Wav,
         "ogg" => RecordFormat::Ogg,
         _ => RecordFormat::Flac,
     };
-    let stem = path.file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    let stem = path
+        .file_stem()
+        .map(|s| s.to_string_lossy().into_owned())
+        .unwrap_or_default();
     let dest = path.with_file_name(format!("{stem}-trim.{}", format.extension()));
     let channels = out.channels().max(1);
-    let spec = RecordSpec { format, bits: 16, sample_rate: rate.max(1), channels };
+    let spec = RecordSpec {
+        format,
+        bits: 16,
+        sample_rate: rate.max(1),
+        channels,
+    };
     let (mut writer, rec) = start_recording(&dest, spec)?;
     let start = (start_secs.max(0.0) * f64::from(rate)) as u64;
     player.seek(start * u64::from(player.info().sample_rate) / u64::from(rate.max(1)));
     let frames = (len_secs.max(0.0) * f64::from(rate)).round() as u64;
-    pump(&mut out, || player.is_finished(), Some(frames), |bufs, n| {
-        let refs: Vec<&[f32]> = bufs.iter().map(|b| &b[..n]).collect();
-        // the disk thread is behind: wait, nothing may be dropped here
-        while !writer.write(&refs) {
-            std::thread::sleep(Duration::from_millis(2));
-        }
-    });
+    pump(
+        &mut out,
+        || player.is_finished(),
+        Some(frames),
+        |bufs, n| {
+            let refs: Vec<&[f32]> = bufs.iter().map(|b| &b[..n]).collect();
+            // the disk thread is behind: wait, nothing may be dropped here
+            while !writer.write(&refs) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+        },
+    );
     drop(writer);
     rec.stop()
 }

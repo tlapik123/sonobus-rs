@@ -72,7 +72,11 @@ fn ms_to_s(ms: f32) -> f32 {
 /// One-pole attack/release coefficient as Faust `an.amp_follower_ar` computes it.
 fn ar_coef(fconst0: f32, time_s: f32) -> f32 {
     let t = cmax(fconst0, time_s);
-    if t.abs() < 1.192_092_9e-7 { 0.0 } else { (0.0 - fconst0 / t).exp() }
+    if t.abs() < 1.192_092_9e-7 {
+        0.0
+    } else {
+        (0.0 - fconst0 / t).exp()
+    }
 }
 
 /// Upstream's enable handling: `if (_lastEnabled || enabled) compute(); _lastEnabled = enabled;`

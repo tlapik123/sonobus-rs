@@ -69,7 +69,12 @@ struct Dev {
 }
 impl Dev {
     fn new(clock: Clock, seed: u64) -> Self {
-        let mut d = Dev { clock, due: 0.0, k: 0, rng: Rng(seed) };
+        let mut d = Dev {
+            clock,
+            due: 0.0,
+            k: 0,
+            rng: Rng(seed),
+        };
         d.due = d.chunk() as f64 / d.actual_rate();
         d
     }
@@ -108,8 +113,12 @@ fn run(sim: Sim) -> Report {
     let monitors: Vec<InputMonitor> = producers.iter().map(ExternalInput::monitor).collect();
     let delays = duplex.input_delays();
 
-    let mut in_devs: Vec<Dev> =
-        sim.inputs.iter().enumerate().map(|(i, d)| Dev::new(d.clock.clone(), 7 + i as u64)).collect();
+    let mut in_devs: Vec<Dev> = sim
+        .inputs
+        .iter()
+        .enumerate()
+        .map(|(i, d)| Dev::new(d.clock.clone(), 7 + i as u64))
+        .collect();
     let mut phase = vec![0usize; n_in];
     let mut out_dev = sim.output.clone().map(|c| Dev::new(c, 99));
     let mut recorded: Vec<Vec<f32>> = vec![Vec::new(); out_ch];
@@ -141,7 +150,11 @@ fn run(sim: Sim) -> Report {
                 let s = m.stats();
                 println!(
                     "t={t:5.1} in{i} fill {:5} minslack {:5} ratio {:.6} under {} skip {}",
-                    s.fill_frames, s.min_slack_frames, s.drift_ratio, s.underflows, s.skipped_frames
+                    s.fill_frames,
+                    s.min_slack_frames,
+                    s.drift_ratio,
+                    s.underflows,
+                    s.skipped_frames
                 );
             }
         }
@@ -239,7 +252,13 @@ fn run(sim: Sim) -> Report {
 }
 
 fn clock(rate: u32, drift: f64, chunks: &[usize], jitter_ms: f64) -> Clock {
-    Clock { rate, drift, chunks: chunks.to_vec(), jitter: jitter_ms / 1000.0, pause: None }
+    Clock {
+        rate,
+        drift,
+        chunks: chunks.to_vec(),
+        jitter: jitter_ms / 1000.0,
+        pause: None,
+    }
 }
 
 fn mic(clock: Clock, freq: f64) -> InDev {
@@ -253,21 +272,43 @@ fn assert_clean(name: &str, r: &Report, i: usize, in_rate: u32) {
     println!(
         "{name}[{i}]: fill {}..{} avg {:.0} frames (~{lat_ms:.2} ms incl. resampler), \
          ratio {:.6}..{:.6} avg {:.6}, residual {:.2e}, underflows {}->{}, skipped {}->{}",
-        r.fill_min[i], r.fill_max[i], r.fill_avg[i], r.ratio_min[i], r.ratio_max[i], r.ratio_avg[i],
-        r.max_residual[i], c.underflows, s.underflows, c.skipped_frames, s.skipped_frames
+        r.fill_min[i],
+        r.fill_max[i],
+        r.fill_avg[i],
+        r.ratio_min[i],
+        r.ratio_max[i],
+        r.ratio_avg[i],
+        r.max_residual[i],
+        c.underflows,
+        s.underflows,
+        c.skipped_frames,
+        s.skipped_frames
     );
     assert!(s.running, "{name}: input not running at end");
-    assert_eq!(s.underflows, c.underflows, "{name}: underflow in steady state");
-    assert_eq!(s.skipped_frames, c.skipped_frames, "{name}: frames skipped in steady state");
+    assert_eq!(
+        s.underflows, c.underflows,
+        "{name}: underflow in steady state"
+    );
+    assert_eq!(
+        s.skipped_frames, c.skipped_frames,
+        "{name}: frames skipped in steady state"
+    );
     assert_eq!(s.overflow_frames, 0, "{name}: ring overflow");
-    assert!(r.max_residual[i] < 1e-3, "{name}: discontinuity, residual {}", r.max_residual[i]);
+    assert!(
+        r.max_residual[i] < 1e-3,
+        "{name}: discontinuity, residual {}",
+        r.max_residual[i]
+    );
 }
 
 #[test]
 fn drift_plus_minus_005_percent_three_minutes_jittery_callbacks() {
     for (d_in, d_out) in [(0.0005, -0.0005), (-0.0005, 0.0005)] {
         let r = run(Sim {
-            inputs: vec![mic(clock(48000, d_in, &[96, 160, 128, 64, 192, 128], 1.0), 440.0)],
+            inputs: vec![mic(
+                clock(48000, d_in, &[96, 160, 128, 64, 192, 128], 1.0),
+                440.0,
+            )],
             output: Some(clock(48000, d_out, &[128, 256, 100, 156, 128], 1.0)),
             engine_rate: 48000,
             block: 128,
@@ -278,7 +319,11 @@ fn drift_plus_minus_005_percent_three_minutes_jittery_callbacks() {
         // The controller holds input/output frame rates equal: ratio = out clock / in clock on
         // average. It wobbles (sub-cent) as the push/pull phase of the two patterns beats.
         let want = (1.0 + d_out) / (1.0 + d_in);
-        assert!((r.ratio_avg[0] - want).abs() < 3e-5, "avg ratio {} want {want}", r.ratio_avg[0]);
+        assert!(
+            (r.ratio_avg[0] - want).abs() < 3e-5,
+            "avg ratio {} want {want}",
+            r.ratio_avg[0]
+        );
         assert!((r.ratio_min[0] - want).abs() < 5e-4 && (r.ratio_max[0] - want).abs() < 5e-4);
         // Fill stays bounded: latency is jitter-limited, not drifting away.
         assert!(r.fill_max[0] < 1500, "fill grew to {}", r.fill_max[0]);
@@ -334,7 +379,13 @@ fn two_inputs_with_independent_clocks_stay_aligned_and_clean() {
 #[test]
 fn input_stall_feeds_silence_counts_and_recovers() {
     let r = run(Sim {
-        inputs: vec![mic(Clock { pause: Some((10.0, 11.0)), ..clock(48000, 0.0002, &[128], 0.5) }, 440.0)],
+        inputs: vec![mic(
+            Clock {
+                pause: Some((10.0, 11.0)),
+                ..clock(48000, 0.0002, &[128], 0.5)
+            },
+            440.0,
+        )],
         output: Some(clock(48000, 0.0, &[128], 0.5)),
         engine_rate: 48000,
         block: 128,
@@ -350,13 +401,20 @@ fn output_stall_drops_backlog_instead_of_growing_latency() {
     // The output device stops calling back for 300 ms while the input keeps capturing.
     let r = run(Sim {
         inputs: vec![mic(clock(48000, 0.0, &[128], 0.5), 440.0)],
-        output: Some(Clock { pause: Some((10.0, 10.3)), ..clock(48000, 0.0, &[128], 0.5) }),
+        output: Some(Clock {
+            pause: Some((10.0, 10.3)),
+            ..clock(48000, 0.0, &[128], 0.5)
+        }),
         engine_rate: 48000,
         block: 128,
         secs: 30.0,
         check_from: 20.0,
     });
-    assert!(r.stats_at_check[0].skipped_frames >= 10_000, "{:?}", r.stats_at_check[0]);
+    assert!(
+        r.stats_at_check[0].skipped_frames >= 10_000,
+        "{:?}",
+        r.stats_at_check[0]
+    );
     // Latency returns to the pre-stall level instead of keeping the backlog.
     assert!(r.fill_max[0] < 400, "fill {}", r.fill_max[0]);
     assert_clean("out-stall", &r, 0, 48000);

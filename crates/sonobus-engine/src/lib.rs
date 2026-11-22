@@ -80,9 +80,9 @@ pub use sonobus_core::state::{AppState, ChannelGroup};
 pub use sonobus_files::LocalTime;
 
 use legacy::{LinkCmd, Links, Session};
-use proto::Proto;
 use mixer::{DelayTarget, Garbage, MAX_CHANNELS, MAX_GROUPS, MAX_PEERS, MAX_VOICES, Meters, Mixer};
 use model::Model;
+use proto::Proto;
 use sonobus_core::valuetree::Var;
 
 /// Commands the audio thread applies per `process` call at most.
@@ -905,7 +905,6 @@ impl EngineAudio {
         }
     }
 
-
     /// One whole block from `inb` to `outb`. Returns whether any stream queued audio.
     fn run(&mut self, now: TimeTag, inow: Instant) -> bool {
         #[cfg(not(feature = "modern"))]
@@ -984,7 +983,9 @@ impl EngineAudio {
 /// outputs past `src` are silent.
 fn store(src: &[Vec<f32>], outputs: &mut [&mut [f32]], to: usize, at: usize, k: usize) {
     for (c, dst) in outputs.iter_mut().enumerate() {
-        let Some(dst) = dst.get_mut(to..to + k) else { continue };
+        let Some(dst) = dst.get_mut(to..to + k) else {
+            continue;
+        };
         match src.get(c) {
             Some(src) => dst.copy_from_slice(&src[at..at + k]),
             None => dst.fill(0.0),
@@ -1045,7 +1046,10 @@ fn send_loop(s: &Shared, sock: &UdpSocket, rate: u32) {
         // a recording that failed is finalized without holding `Core`
         let failed_note = failed.take().map(|st| {
             let (files, err) = st.finish();
-            (files, err.map_or_else(|| "recording failed".to_owned(), |e| e.to_string()))
+            (
+                files,
+                err.map_or_else(|| "recording failed".to_owned(), |e| e.to_string()),
+            )
         });
         {
             let mut c = lock(&s.core);
@@ -1586,8 +1590,16 @@ impl Engine {
     /// can get from us (`None`: no cap). Both protocols; persisted
     /// ([`options::MAX_SEND_QUALITY`]). Our own format choices are not capped.
     pub fn set_max_send_quality(&self, index: Option<usize>) {
-        let v = index.filter(|&i| i < formats::FORMATS.len()).map_or(-1, |i| i as i32);
-        self.with(|h, _| options::set(&mut h.model.state.extra, options::MAX_SEND_QUALITY, Var::Int(v)));
+        let v = index
+            .filter(|&i| i < formats::FORMATS.len())
+            .map_or(-1, |i| i as i32);
+        self.with(|h, _| {
+            options::set(
+                &mut h.model.state.extra,
+                options::MAX_SEND_QUALITY,
+                Var::Int(v),
+            )
+        });
     }
 
     pub fn max_send_quality(&self) -> Option<usize> {
@@ -1598,7 +1610,11 @@ impl Engine {
     /// requests are ignored. Persisted ([`options::HONOUR_QUALITY_REQUESTS`]).
     pub fn set_honour_quality_requests(&self, on: bool) {
         self.with(|h, _| {
-            options::set(&mut h.model.state.extra, options::HONOUR_QUALITY_REQUESTS, Var::Bool(on))
+            options::set(
+                &mut h.model.state.extra,
+                options::HONOUR_QUALITY_REQUESTS,
+                Var::Bool(on),
+            )
         });
     }
 
@@ -1883,7 +1899,11 @@ impl Engine {
     }
 
     fn store_sync_padding(h: &mut Host, padding_ms: f32) {
-        let ms = if padding_ms.is_finite() { padding_ms.clamp(0.0, 500.0) } else { 0.0 };
+        let ms = if padding_ms.is_finite() {
+            padding_ms.clamp(0.0, 500.0)
+        } else {
+            0.0
+        };
         let e = &mut h.model.state.extra;
         options::set(e, options::RECEIVE_SYNC_PADDING, Var::Double(f64::from(ms)));
     }
@@ -2227,7 +2247,12 @@ impl Engine {
     /// Endpoint ids blocked in this modern session ([`Self::block_peer`],
     /// [`Self::rotate_session_key`]); not persisted, the list ends with the session.
     pub fn blocked_endpoints(&self) -> Vec<[u8; 32]> {
-        self.with_core(|c| c.modern.as_ref().map(modern::Session::blocked).unwrap_or_default())
+        self.with_core(|c| {
+            c.modern
+                .as_ref()
+                .map(modern::Session::blocked)
+                .unwrap_or_default()
+        })
     }
 
     /// Let a blocked endpoint connect again (it still needs the current session key).
@@ -2584,10 +2609,16 @@ pub(crate) mod tests {
         }
         h.note(low());
         assert!(!h.notes.iter().any(Notification::is_low_priority));
-        assert_eq!(h.notes[0], Notification::RecordingDroppedFrames { frames: 0 });
+        assert_eq!(
+            h.notes[0],
+            Notification::RecordingDroppedFrames { frames: 0 }
+        );
         h.note(err.clone());
         assert_eq!(h.notes.back(), Some(&err));
-        assert_eq!(h.notes[0], Notification::RecordingDroppedFrames { frames: 1 });
+        assert_eq!(
+            h.notes[0],
+            Notification::RecordingDroppedFrames { frames: 1 }
+        );
     }
 
     #[test]
@@ -2649,7 +2680,10 @@ pub(crate) mod tests {
             flood(sonobus_net::Bytes::from_static(b"x"));
         }
         other(sonobus_net::Bytes::from_static(b"y"));
-        assert_eq!(drops.load(Ordering::Relaxed), 3000 - MODERN_QUEUE_PER_PEER as u64);
+        assert_eq!(
+            drops.load(Ordering::Relaxed),
+            3000 - MODERN_QUEUE_PER_PEER as u64
+        );
         let got: Vec<Received> = rx.try_iter().collect();
         assert_eq!(got.len(), MODERN_QUEUE_PER_PEER + 1);
         assert_eq!(got.last().unwrap().0, 2, "the other connection got in");
@@ -2658,6 +2692,9 @@ pub(crate) mod tests {
         flood(sonobus_net::Bytes::from_static(b"x"));
         flood(sonobus_net::Bytes::from_static(b"x"));
         assert_eq!(rx.try_iter().count(), 1);
-        assert_eq!(drops.load(Ordering::Relaxed), 3001 - MODERN_QUEUE_PER_PEER as u64);
+        assert_eq!(
+            drops.load(Ordering::Relaxed),
+            3001 - MODERN_QUEUE_PER_PEER as u64
+        );
     }
 }

@@ -35,11 +35,23 @@ fn sine_in_monitored_out_and_sample_rate_change() {
     assert!(h.out.iter().flatten().all(|x| x.is_finite()));
     // aux outputs are silent without peers
     assert!(h.out[2..].iter().flatten().all(|&x| x == 0.0));
-    h.plugin.session().engine().unwrap().update_state(|s| s.extra.last_username = "kept".into());
+    h.plugin
+        .session()
+        .engine()
+        .unwrap()
+        .update_state(|s| s.extra.last_username = "kept".into());
 
     // the host switches to 44.1 kHz with bigger blocks: engine rebuilt, state kept
     assert!(h.activate(44_100.0, 512, 0));
-    assert_eq!(h.plugin.session().engine().unwrap().audio_config().sample_rate, 44_100);
+    assert_eq!(
+        h.plugin
+            .session()
+            .engine()
+            .unwrap()
+            .audio_config()
+            .sample_rate,
+        44_100
+    );
     assert_eq!(h.plugin.session().state().extra.last_username, "kept");
     h.out.iter_mut().for_each(|r| r.clear());
     for _ in 0..200 {
@@ -94,7 +106,11 @@ fn state_is_upstreams_binary_tree_and_round_trips() {
     assert_eq!(st.input_groups.len(), 1, "input groups saved (full scope)");
     // byte-exact with the core model's writer
     let mut again = Vec::new();
-    a.plugin.session().state().to_tree_scoped(Scope::FULL).write(&mut again);
+    a.plugin
+        .session()
+        .state()
+        .to_tree_scoped(Scope::FULL)
+        .write(&mut again);
     assert_eq!(again, bytes);
 
     // restore into a fresh instance, before and after activation
@@ -106,7 +122,10 @@ fn state_is_upstreams_binary_tree_and_round_trips() {
     assert!(c.activate(SR, BLOCK as u32, 0));
     c.plugin.sb_params().state.set(saved);
     let s = c.plugin.session().state();
-    assert_eq!((s.extra.last_username.as_str(), s.params.def_send_qual), ("alice", 7));
+    assert_eq!(
+        (s.extra.last_username.as_str(), s.params.def_send_qual),
+        ("alice", 7)
+    );
     assert!(!s.params.met_enabled, "metronome never restored on");
     // garbage is ignored
     c.plugin.sb_params().state.set("not a state".into());
@@ -121,7 +140,11 @@ fn plugin_default_file_applies_without_input_groups() {
     st.params.wet = 0.7;
     st.params.def_send_qual = 2;
     st.extra.last_username = "bob".into();
-    std::fs::write(dir.join(PLUGIN_DEFAULT_FILE), files::save_plugin_default(&st)).unwrap();
+    std::fs::write(
+        dir.join(PLUGIN_DEFAULT_FILE),
+        files::save_plugin_default(&st),
+    )
+    .unwrap();
     let mut h = Host::with_dir(440.0, Some(dir.clone()));
     let p = h.plugin.sb_params();
     assert_eq!(p.wet.value(), 0.7);
@@ -156,15 +179,26 @@ fn metronome_follows_host_tempo_and_beat() {
         out.extend_from_slice(&h.main[0][..BLOCK]);
     }
     let onsets: Vec<usize> = (1..out.len())
-        .filter(|&i| out[i].abs() > 1e-6 && out[i.saturating_sub(400)..i].iter().all(|x| x.abs() <= 1e-6))
+        .filter(|&i| {
+            out[i].abs() > 1e-6
+                && out[i.saturating_sub(400)..i]
+                    .iter()
+                    .all(|x| x.abs() <= 1e-6)
+        })
         .collect();
     assert!(onsets.len() >= 2, "clicks: {onsets:?}");
     // beat n is at frame (n - 0.25) * 24000 at 120 bpm
     for &o in &onsets {
         let off = (o + 6_000) % 24_000;
-        assert!(off <= 2 || off >= 23_998, "click at {o}, not on a host beat: {onsets:?}");
+        assert!(
+            off <= 2 || off >= 23_998,
+            "click at {o}, not on a host beat: {onsets:?}"
+        );
     }
-    assert!(onsets.windows(2).all(|w| (w[1] - w[0]) % 24_000 <= 2), "{onsets:?}");
+    assert!(
+        onsets.windows(2).all(|w| (w[1] - w[0]) % 24_000 <= 2),
+        "{onsets:?}"
+    );
 }
 
 #[test]
@@ -178,7 +212,11 @@ fn bypass_passes_input_and_silences_aux() {
     let input = h.main[0][..BLOCK].to_vec();
     h.process(BLOCK, &mut |f| f());
     assert_eq!(&h.main[0][..BLOCK], &input[..]);
-    assert!(h.aux_out.iter().all(|c| c[..BLOCK].iter().all(|&x| x == 0.0)));
+    assert!(
+        h.aux_out
+            .iter()
+            .all(|c| c[..BLOCK].iter().all(|&x| x == 0.0))
+    );
 }
 
 #[test]
@@ -199,7 +237,8 @@ fn two_instances_through_a_local_server() {
     a.join(srv.local_addr(), "alice", "plug");
     b.join(srv.local_addr(), "bob", "plug");
     assert!(
-        run_until(&mut [&mut a, &mut b], 15.0, |h| h[0].receiving() == 1 && h[1].receiving() == 1),
+        run_until(&mut [&mut a, &mut b], 15.0, |h| h[0].receiving() == 1
+            && h[1].receiving() == 1),
         "peers did not connect"
     );
     let ok = |h: &mut [&mut Host], f: &dyn Fn(&[&mut Host]) -> bool| {
@@ -212,11 +251,25 @@ fn two_instances_through_a_local_server() {
         false
     };
     // b hears a on its main output and, alone, on "Aux 1 Out" (a is b's peer slot 0)
-    assert!(ok(&mut [&mut a, &mut b], &|h| h[1].tone(0, 440.0) > 0.05), "b hears a: {}", b.tone(0, 440.0));
-    assert!(ok(&mut [&mut a, &mut b], &|h| h[1].tone(2, 440.0) > 0.05), "aux 1: {}", b.tone(2, 440.0));
+    assert!(
+        ok(&mut [&mut a, &mut b], &|h| h[1].tone(0, 440.0) > 0.05),
+        "b hears a: {}",
+        b.tone(0, 440.0)
+    );
+    assert!(
+        ok(&mut [&mut a, &mut b], &|h| h[1].tone(2, 440.0) > 0.05),
+        "aux 1: {}",
+        b.tone(2, 440.0)
+    );
     assert!(b.tone(2, 660.0) < 0.005, "own input not on the peer bus");
-    assert!(b.out[4..].iter().flatten().all(|&x| x == 0.0), "other aux outs silent");
-    assert!(ok(&mut [&mut a, &mut b], &|h| h[0].tone(0, 660.0) > 0.05), "a hears b");
+    assert!(
+        b.out[4..].iter().flatten().all(|&x| x == 0.0),
+        "other aux outs silent"
+    );
+    assert!(
+        ok(&mut [&mut a, &mut b], &|h| h[0].tone(0, 660.0) > 0.05),
+        "a hears b"
+    );
 
     // b's host changes the sample rate: engine rebuilt, session rejoined, audio flows again
     // (96 kHz with 512-frame blocks keeps the lockstep pacing real time)
@@ -225,8 +278,12 @@ fn two_instances_through_a_local_server() {
     b.out.iter_mut().for_each(|r| r.clear());
     a.out.iter_mut().for_each(|r| r.clear());
     assert!(
-        run_until(&mut [&mut a, &mut b], 20.0, |h| h[0].receiving() == 1 && h[1].receiving() == 1),
+        run_until(&mut [&mut a, &mut b], 20.0, |h| h[0].receiving() == 1
+            && h[1].receiving() == 1),
         "b did not rejoin"
     );
-    assert!(ok(&mut [&mut a, &mut b], &|h| h[0].tone(0, 660.0) > 0.05), "a hears b again");
+    assert!(
+        ok(&mut [&mut a, &mut b], &|h| h[0].tone(0, 660.0) > 0.05),
+        "a hears b again"
+    );
 }

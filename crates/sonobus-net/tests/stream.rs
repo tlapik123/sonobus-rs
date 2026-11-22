@@ -279,7 +279,8 @@ impl Sim {
                     Msg::Back(b) => match Datagram::decode(&b).unwrap() {
                         Datagram::Nack(n) => {
                             let net = &mut self.net;
-                            self.tx.handle_nack_at(now, SUB, &n, |_, d| net.audio(t, d, true));
+                            self.tx
+                                .handle_nack_at(now, SUB, &n, |_, d| net.audio(t, d, true));
                         }
                         Datagram::Report(r) => self.reports.push(r),
                         d => panic!("{d:?}"),

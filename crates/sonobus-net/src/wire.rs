@@ -1824,14 +1824,27 @@ pub(crate) mod tests {
             formats: vec![],
             mode,
         };
-        let w = enc(|o| Frame::Welcome(welcome(SessionMode::Broadcast)).encode(o).unwrap());
-        assert_eq!((&w[..3], &w[3..35], &w[35..]), (&[36, 0, T_WELCOME][..], &[4; 32][..], &[0, 0, 0, 1][..]));
-        assert_eq!(decode_frame(&b), Ok((Frame::Welcome(welcome(SessionMode::Mesh)), 38)));
+        let w = enc(|o| {
+            Frame::Welcome(welcome(SessionMode::Broadcast))
+                .encode(o)
+                .unwrap()
+        });
+        assert_eq!(
+            (&w[..3], &w[3..35], &w[35..]),
+            (&[36, 0, T_WELCOME][..], &[4; 32][..], &[0, 0, 0, 1][..])
+        );
+        assert_eq!(
+            decode_frame(&b),
+            Ok((Frame::Welcome(welcome(SessionMode::Mesh)), 38))
+        );
         // a later version's longer body decodes; an unknown mode is refused, not read as mesh
         let mut long = w.clone();
         long.extend_from_slice(&[0xee; 2]);
         long[0] = 38;
-        assert_eq!(decode_frame(&long), Ok((Frame::Welcome(welcome(SessionMode::Broadcast)), 41)));
+        assert_eq!(
+            decode_frame(&long),
+            Ok((Frame::Welcome(welcome(SessionMode::Broadcast)), 41))
+        );
         assert!(Frame::decode_body(T_WELCOME, &[&w[3..38], [2].as_slice()].concat()).is_err());
         // an explicit mesh byte (a later version with more after it) is a mesh
         let mesh = Frame::decode_body(T_WELCOME, &[&w[3..38], [0, 0xee].as_slice()].concat());
@@ -1843,13 +1856,25 @@ pub(crate) mod tests {
         assert_eq!(enc(|o| Frame::Bye.encode(o).unwrap()), [0, 0, T_BYE]);
         let b = enc(|o| Frame::KeyProof([9; 32]).encode(o).unwrap());
         assert_eq!((&b[..3], b.len()), (&[32, 0, T_KEY_PROOF][..], 35));
-        assert_eq!(enc(|o| Frame::Close(2).encode(o).unwrap()), [1, 0, T_CLOSE, 2]);
+        assert_eq!(
+            enc(|o| Frame::Close(2).encode(o).unwrap()),
+            [1, 0, T_CLOSE, 2]
+        );
         // a longer CLOSE body (a later version) still decodes; unknown reasons map to none
-        assert_eq!(decode_frame(&[2, 0, T_CLOSE, 1, 7]), Ok((Frame::Close(1), 5)));
-        assert_eq!(decode_frame(&[17, 0, T_CLOSE]).map(|x| x.0), Err(Error::Truncated));
+        assert_eq!(
+            decode_frame(&[2, 0, T_CLOSE, 1, 7]),
+            Ok((Frame::Close(1), 5))
+        );
+        assert_eq!(
+            decode_frame(&[17, 0, T_CLOSE]).map(|x| x.0),
+            Err(Error::Truncated)
+        );
         assert_eq!(max_body(T_CLOSE), CLOSE_BODY_MAX);
         assert_eq!(CloseReason::from_u8(1), Some(CloseReason::Removed));
-        assert_eq!(CloseReason::from_u8(4).map(CloseReason::as_str), Some("session full"));
+        assert_eq!(
+            CloseReason::from_u8(4).map(CloseReason::as_str),
+            Some("session full")
+        );
         assert_eq!(CloseReason::from_u8(9), None);
 
         let p = Playout {
@@ -1862,7 +1887,9 @@ pub(crate) mod tests {
         let b = enc(|o| Frame::Playout(p).encode(o).unwrap());
         assert_eq!(
             b,
-            [16, 0, T_PLAYOUT, 0, 2, 4, 3, 2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 0x96, 0]
+            [
+                16, 0, T_PLAYOUT, 0, 2, 4, 3, 2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 0x96, 0
+            ]
         );
         // a later version's longer body decodes (the tail is ignored); bad ids are refused
         let mut long = b.clone();
@@ -1870,8 +1897,17 @@ pub(crate) mod tests {
         long[0] = 20;
         assert_eq!(decode_frame(&long), Ok((Frame::Playout(p), 23)));
         assert!(Frame::decode_body(T_PLAYOUT, &[[8].as_slice(), &b[4..]].concat()).is_err());
-        assert!(Frame::decode_body(T_PLAYOUT, &[&b[3..4], [32].as_slice(), &b[5..]].concat()).is_err());
-        assert!(Frame::Playout(Playout { generation: 32, ..p }).encode(&mut vec![]).is_err());
+        assert!(
+            Frame::decode_body(T_PLAYOUT, &[&b[3..4], [32].as_slice(), &b[5..]].concat()).is_err()
+        );
+        assert!(
+            Frame::Playout(Playout {
+                generation: 32,
+                ..p
+            })
+            .encode(&mut vec![])
+            .is_err()
+        );
     }
 
     #[test]
