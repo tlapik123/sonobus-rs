@@ -694,6 +694,15 @@ fn engine_drop_finalizes_a_recording() {
     let path = e.start_recording(&dir, "take").unwrap();
     let x = vec![0.25f32; BLOCK];
     let (mut l, mut r) = (vec![0.0f32; BLOCK], vec![0.0f32; BLOCK]);
+    // The writers reach the audio side from the send thread once the command ring is empty:
+    // on a slow Windows runner that took more than 10 of 40 blocks. Count from the first
+    // recorded block.
+    let t0 = std::time::Instant::now();
+    while e.recording_status().unwrap().elapsed_secs == 0.0 {
+        assert!(t0.elapsed().as_secs() < 5, "recording never started");
+        audio.process(&[&x[..]], &mut [&mut l[..], &mut r[..]]);
+        std::thread::sleep(std::time::Duration::from_millis(2));
+    }
     for _ in 0..40 {
         audio.process(&[&x[..]], &mut [&mut l[..], &mut r[..]]);
         std::thread::sleep(std::time::Duration::from_millis(2));

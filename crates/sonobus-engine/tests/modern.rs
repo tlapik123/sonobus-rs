@@ -644,10 +644,9 @@ fn induced_loss_is_repaired_and_adaptation_reacts() {
         r1 - r0,
         d1 - d0
     );
-    // (a shared macOS runner does not always keep the test's audio loop at real-time pace:
-    // 45 repaired in "3 s" there)
-    let enough = if cfg!(target_os = "macos") { 25 } else { 50 };
-    assert!(r1 - r0 > enough && d1 - d0 < 10, "NACK repairs it");
+    // (shared CI runners do not always keep the test's audio loop at real-time pace: 45
+    // repaired in "3 s" on macOS, 48 on Windows; what counts is that few are concealed)
+    assert!(r1 - r0 > 25 && d1 - d0 < 10, "NACK repairs it");
     assert!(near(b.tone(0, 440.0), CENTRE, 0.15));
     assert_eq!(level(&a), Some((0, 0)), "nothing left for the adaptation");
 
