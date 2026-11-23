@@ -6139,6 +6139,7 @@ dependencies = [
  "sonobus-dsp",
  "sonobus-files",
  "sonobus-net",
+ "tokio",
 ]
 
 [[package]]

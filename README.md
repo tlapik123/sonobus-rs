@@ -13,7 +13,7 @@ joined by invite link, name and password, or PIN). The decisions behind this are
 Linux, inside the dev shell (`devenv shell`, or direnv), which provides Rust and every library:
 
 ```sh
-cargo test --workspace
+cargo nextest run --workspace                   # or the slower: cargo test --workspace
 cargo run --release -p sonobus-app              # desktop app; --help, --headless
 ```
 
