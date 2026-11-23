@@ -25,11 +25,18 @@ fn set_params(h: &Host, f: impl FnOnce(&mut sonobus_core::state::Params)) {
         p.set_from_core(&c);
         let want = p.to_core();
         std::thread::sleep(std::time::Duration::from_millis(30));
-        let arrived = h.plugin.session().engine().is_none_or(|e| e.state().params == want);
+        let arrived = h
+            .plugin
+            .session()
+            .engine()
+            .is_none_or(|e| e.state().params == want);
         if arrived && p.to_core() == want {
             break;
         }
-        assert!(start.elapsed().as_secs() < 10, "the parameters never reached the engine");
+        assert!(
+            start.elapsed().as_secs() < 10,
+            "the parameters never reached the engine"
+        );
     }
 }
 
