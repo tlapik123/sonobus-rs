@@ -1,0 +1,8 @@
+# The engine and plugin integration tests drive audio against the wall clock: each one stands
+# in for an audio device and needs the machine to itself. Under `cargo test` a lock ran them
+# one at a time and nothing else ran beside them; nextest runs every test in its own process,
+# so the same is asked for here: such a test takes every test slot. On a macOS CI runner three
+# of them failed while running side by side.
+[[profile.default.overrides]]
+filter = '(package(sonobus-engine) | package(sonobus-plugin)) & kind(test)'
+threads-required = 'num-test-threads'
