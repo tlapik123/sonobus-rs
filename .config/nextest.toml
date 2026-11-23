@@ -1,8 +1,14 @@
-# The engine and plugin integration tests drive audio against the wall clock: each one stands
-# in for an audio device and needs the machine to itself. Under `cargo test` a lock ran them
-# one at a time and nothing else ran beside them; nextest runs every test in its own process,
-# so the same is asked for here: such a test takes every test slot. On a macOS CI runner three
-# of them failed while running side by side.
+# Several hundred tests here depend on real time, and shared CI runners stall unpredictably:
+# over ten CI runs a different one failed each time. A test that fails and then passes is
+# reported as FLAKY and does not fail the run; one that fails three times does.
+[profile.default]
+retries = 2
+
+# The engine and plugin tests drive audio against the wall clock: each one stands in for an
+# audio device and needs the machine to itself. Under `cargo test` a lock ran them one at a
+# time and nothing else ran beside them; nextest runs every test in its own process, so the
+# same is asked for here: such a test takes every test slot. On a macOS CI runner three of
+# them failed while running side by side.
 [[profile.default.overrides]]
-filter = '(package(sonobus-engine) | package(sonobus-plugin)) & kind(test)'
+filter = 'package(sonobus-engine) | package(sonobus-plugin)'
 threads-required = 'num-test-threads'
