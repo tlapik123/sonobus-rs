@@ -664,3 +664,8 @@ countries: ja
 "Toggles whether sound samples can be played using default numeric hotkeys." = "デフォルトの数値ホットキーを使用してサウンドサンプルを再生できるかどうかを切り替えます."
 "Soundboard volume" = "サウンドボードボリューム"
 "Send Soundboard Playback to All" = "サウンドボード再生を全員に送信"
+"You were removed from the session" = "セッションから削除されました"
+"A member blocked you" = "メンバーにブロックされました"
+"The host ended the session" = "ホストがセッションを終了しました"
+"The session is full" = "セッションは満員です"
+"The session ended" = "セッションが終了しました"

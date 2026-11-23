@@ -457,7 +457,7 @@ pub(crate) trait Proto {
     fn send_peer_info(&mut self, h: &Host, i: usize) {
         let block_ms = f64::from(h.cfg.block_ms());
         let info = PeerInfo {
-            jitbuf_ms: Some(f64::from(self.peer(i).jitter.buffer_ms).max(block_ms)),
+            jitbuf_ms: Some(f64::from(self.peer(i).jitter.effective_ms(block_ms as f32))),
             in_latency_ms: Some(block_ms),
             out_latency_ms: Some(block_ms),
             recording: Some(h.rec.is_recording()),

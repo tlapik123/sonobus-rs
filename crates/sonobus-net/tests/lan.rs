@@ -24,6 +24,7 @@ fn found(b: &mut LanBrowser, host: &[u8; 32], within: Duration) -> Option<Discov
 }
 
 #[test]
+#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
 fn discover_join_with_pin_and_withdraw() {
     let host = simple(Config {
         role: Role::Host,

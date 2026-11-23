@@ -17,7 +17,18 @@
 //! - PulseAudio: sinks cannot be opened for input (`host/pulseaudio/mod.rs:326`); every sink has
 //!   a `<sink name>.monitor` source, listed among the inputs, which is what we open.
 //! - ALSA, JACK, ASIO, AAudio: none.
+//!
+//! Per-application capture ([`InputSource::App`]): PipeWire only (cargo feature `pipewire`).
+//! cpal lists every `Stream/Output/Audio` node (an application's playback stream) as an
+//! output-only device (`host/pipewire/device.rs:920`). An input stream built on one is a
+//! capture stream with `target.object` = that node's serial and `DONT_RECONNECT`
+//! (`device.rs:171`, `stream.rs:1039`): the session manager links it to the application's
+//! output ports, and when the application's stream goes away cpal reports `DeviceNotAvailable`
+//! (`stream.rs:266`) instead of falling back to the default source. No `supports_input` check
+//! stands in the way (`traits.rs:273`). The capture runs on the PipeWire host whatever host
+//! the session uses: every input has its own stream and clock anyway.
 
+use std::cell::RefCell;
 use std::collections::HashSet;
 use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -39,6 +50,19 @@ const STANDARD_RATES: [u32; 11] =
 /// Audio backends compiled in and usable on this system.
 pub fn hosts() -> Vec<HostId> {
     cpal::available_hosts()
+}
+
+/// The host "System default" means. cpal prefers PipeWire whenever its feature is compiled in
+/// and a daemon runs (`platform/mod.rs:833`); SonoBus keeps the default it had without it
+/// (PulseAudio if compiled in and running, else ALSA on Linux; the platform host elsewhere), so
+/// saved `alsa:` device ids keep working. PipeWire stays selectable, and per-application capture
+/// uses it whatever the session host is.
+pub fn default_host() -> HostId {
+    let hosts = cpal::available_hosts();
+    ["PulseAudio", "ALSA"]
+        .into_iter()
+        .find_map(|n| hosts.iter().copied().find(|h| h.name() == n))
+        .unwrap_or_else(|| cpal::default_host().id())
 }
 
 /// One device as the UI lists it. Inputs are devices with `input_channels > 0`, outputs those
@@ -70,6 +94,9 @@ pub fn devices(host: HostId) -> Result<Vec<DeviceInfo>, Error> {
     let mut out = Vec::new();
     for dev in host.devices()? {
         let Ok(id) = dev.id() else { continue };
+        if is_app_stream(host.id(), &dev) {
+            continue; // an application's playback, not a device: see `app_sources`
+        }
         let ins: Vec<_> = dev.supported_input_configs().map(Iterator::collect).unwrap_or_default();
         let outs: Vec<_> = dev.supported_output_configs().map(Iterator::collect).unwrap_or_default();
         let all = || ins.iter().chain(&outs);
@@ -103,6 +130,112 @@ fn loopback_capable(host: HostId, dev: &Device) -> bool {
         "CoreAudio" => dev.supports_output() && !dev.supports_input(),
         _ => false,
     }
+}
+
+/// One application's playback that [`InputSource::App`] can capture.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AppSource {
+    /// Persist it; stable across runs (the PipeWire `node.name`, usually the application name).
+    pub id: String,
+    pub name: String,
+}
+
+/// The PipeWire host, if compiled in (cargo feature `pipewire`) and a daemon is running.
+fn pipewire_host() -> Option<HostId> {
+    cpal::available_hosts().into_iter().find(|h| h.name() == "PipeWire")
+}
+
+/// Whether single applications can be captured here (PipeWire). Cheap: no daemon round trip.
+pub fn app_capture_supported() -> bool {
+    pipewire_host().is_some()
+}
+
+/// Applications playing right now, ours excluded (capturing them would loop our output back).
+/// Empty when [`app_capture_supported`] is false. Talks to the daemon: not on the UI thread.
+/// Every call is a daemon round trip (a new cpal PipeWire host binds every node, up to 2 s on a
+/// stuck daemon); the next [`InputSource::App`] opened on this thread within [`APP_REUSE`] uses
+/// this listing instead of making another.
+pub fn app_sources() -> Vec<AppSource> {
+    let streams = list_app_streams();
+    let nodes = streams.iter().filter_map(|d| {
+        let id = d.id().ok()?.id().to_owned();
+        let desc = d.description().map(|x| x.name().to_owned()).unwrap_or_default();
+        Some((id, desc))
+    });
+    let out = app_list(nodes, &own_names());
+    LAST_APPS.with(|l| *l.borrow_mut() = Some((Instant::now(), streams)));
+    out
+}
+
+/// How long an [`app_sources`] listing is reused for opening an application.
+pub const APP_REUSE: Duration = Duration::from_secs(3);
+
+thread_local! {
+    /// The application streams behind this thread's last [`app_sources`] call.
+    static LAST_APPS: RefCell<Option<(Instant, Vec<Device>)>> = const { RefCell::new(None) };
+}
+
+fn list_app_streams() -> Vec<Device> {
+    let Some(host) = pipewire_host().and_then(|h| cpal::host_from_id(h).ok()) else { return Vec::new() };
+    let Ok(devs) = host.devices() else { return Vec::new() };
+    devs.filter(|d| is_app_stream(host.id(), d)).collect()
+}
+
+/// The stream of application `app`: from this thread's last listing if recent, else a new one.
+fn find_app_stream(app: &str) -> Option<Device> {
+    let is = |d: &Device| d.id().is_ok_and(|i| i.id() == app);
+    let recent = LAST_APPS.with(|l| {
+        let l = l.borrow();
+        let (_, devs) = l.as_ref().filter(|(at, _)| at.elapsed() < APP_REUSE)?;
+        devs.iter().find(|d| is(d)).cloned()
+    });
+    recent.or_else(|| list_app_streams().into_iter().find(is))
+}
+
+/// A PipeWire `Stream/Output/Audio` node: the only output-only devices but cpal's synthetic
+/// default output (sinks are listed as duplex, `host/pipewire/device.rs:916`).
+fn is_app_stream(host: HostId, dev: &Device) -> bool {
+    host.name() == "PipeWire"
+        && dev.supports_output()
+        && !dev.supports_input()
+        && dev.id().is_ok_and(|id| id.id() != "output_default")
+}
+
+/// Names our own streams' nodes get. A native PipeWire stream (session on the PipeWire host) is
+/// named after `application.name`, which defaults to the program name (`pw_stream_new`,
+/// stream.c), with cpal's stream name (`cpal-playback-<pid>`) as the last fallback; a stream
+/// through pipewire-alsa (session on the ALSA host) is `alsa_playback.<program name>`.
+// ponytail: by name, so other processes of the same program are hidden too; matching
+// `application.process.id` needs node properties cpal does not expose (a direct pipewire-rs
+// registry listener).
+fn own_names() -> Vec<String> {
+    let base = |p: std::path::PathBuf| p.file_name().map(|n| n.to_string_lossy().into_owned());
+    let exe = std::env::current_exe().ok().and_then(base);
+    let arg0 = std::env::args_os().next().map(std::path::PathBuf::from).and_then(base);
+    exe.into_iter()
+        .chain(arg0)
+        .flat_map(|n| [format!("alsa_playback.{n}"), format!("alsa_capture.{n}"), n])
+        .collect()
+}
+
+/// `(node.name, node.description)` of application streams to the list: ours dropped, one entry
+/// per name (opening picks the first stream of that name).
+// ponytail: keyed by node.name, so two streams of one app (two browser tabs) are one entry;
+// key by object.serial too if users need to pick between them.
+fn app_list(nodes: impl Iterator<Item = (String, String)>, own: &[String]) -> Vec<AppSource> {
+    let mut out: Vec<AppSource> = Vec::new();
+    for (id, desc) in nodes {
+        if id.starts_with("cpal-") || own.contains(&id) || out.iter().any(|a| a.id == id) {
+            continue;
+        }
+        let name = match desc.as_str() {
+            "" | "unknown" => id.clone(),
+            d if d == id => id.clone(),
+            d => format!("{id}: {d}"),
+        };
+        out.push(AppSource { id, name });
+    }
+    out
 }
 
 /// Polls a host's device list and reports what appeared or disappeared (cpal has no hot-plug
@@ -149,9 +282,9 @@ pub enum InputSource {
     Device(DeviceId),
     /// What an output device plays ("share system sound"); see [`DeviceInfo::loopback`].
     Loopback(DeviceId),
-    /// Reserved: one application's audio (a PipeWire node target, a Windows process id for
-    /// process loopback, an Android UID for playback capture). Needs platform code that is not
-    /// written yet; opening it fails with `UnsupportedOperation`.
+    /// One application's playback, by [`AppSource::id`] (see [`app_sources`]). PipeWire only;
+    /// elsewhere opening it fails with `UnsupportedOperation`. When the application stops its
+    /// stream the session reports a `DeviceNotAvailable` [`StreamEvent`], as for a lost device.
     App(String),
     /// Audio pushed by the application through [`Session::take_external_input`], e.g. Android
     /// playback capture arriving from a Java `AudioRecord` thread via JNI.
@@ -314,11 +447,21 @@ fn resolve_input(
 ) -> Result<Option<Resolved>, Error> {
     let r = match &ic.source {
         InputSource::External { .. } => return Ok(None),
-        InputSource::App(_) => {
-            return Err(Error::with_message(
-                ErrorKind::UnsupportedOperation,
-                "per-application capture is not implemented yet",
-            ));
+        InputSource::App(app) => {
+            if !app_capture_supported() {
+                return Err(Error::with_message(
+                    ErrorKind::UnsupportedOperation,
+                    "per-application capture needs PipeWire",
+                ));
+            }
+            let dev = find_app_stream(app).ok_or_else(|| {
+                Error::with_message(ErrorKind::DeviceNotAvailable, format!("application {app} is not playing"))
+            })?;
+            // Its output side tells the rate; PipeWire converts channels for the capture stream,
+            // so the requested count stands even when the application plays mono or 5.1.
+            let mut r = resolve(dev, false, rate, None, buffer, false)?;
+            r.config.channels = ic.channels.unwrap_or(r.config.channels);
+            r
         }
         InputSource::Device(id) => resolve(find(host, id)?, true, rate, ic.channels, buffer, false)?,
         InputSource::Loopback(id) => match host.id().name() {
@@ -596,6 +739,23 @@ impl<F: FnMut(&mut AudioBlock<'_>) + Send + 'static> Session<F> {
         &self.input_channels
     }
 
+    /// The stream whose callback runs the engine: the output, else the first device input.
+    pub fn driver(&self) -> Option<StreamRole> {
+        self.streams.first().map(|s| s.0)
+    }
+
+    /// Stops input `index`'s stream (e.g. a captured application that went away); that input
+    /// delivers silence from then on, the other streams run on. Refused (false) for the
+    /// [`driver`](Self::driver): reopen instead.
+    pub fn close_input(&mut self, index: usize) -> bool {
+        let role = StreamRole::Input(index);
+        if self.driver() == Some(role) {
+            return false;
+        }
+        self.streams.retain(|s| s.0 != role);
+        true
+    }
+
     /// Xruns reported by any stream of this session.
     pub fn xruns(&self) -> u64 {
         self.xruns.load(Relaxed)
@@ -681,6 +841,48 @@ mod tests {
         let change = diff(&mut known, [id("b"), id("c")].into()).unwrap();
         assert_eq!(change, DeviceChange { added: vec![id("c")], removed: vec![id("a")] });
         assert_eq!(diff(&mut known, [id("b"), id("c")].into()), None);
+    }
+
+    #[test]
+    fn app_list_drops_own_streams_and_duplicates() {
+        let nodes = [
+            ("Firefox", "unknown"),
+            ("sonobus", "unknown"),
+            ("cpal-playback-42", ""),
+            ("mpv", "mpv"),
+            ("Firefox", "Firefox"),
+            ("spotify", "Spotify Premium"),
+        ]
+        .map(|(a, b)| (a.to_owned(), b.to_owned()));
+        let got = app_list(nodes.into_iter(), &["sonobus".to_owned()]);
+        let ids: Vec<_> = got.iter().map(|a| (a.id.as_str(), a.name.as_str())).collect();
+        assert_eq!(ids, [("Firefox", "Firefox"), ("mpv", "mpv"), ("spotify", "spotify: Spotify Premium")]);
+        // whatever this binary is called, its own streams are excluded
+        assert!(!own_names().is_empty());
+        let own = own_names();
+        let exe = own.iter().find(|n| !n.starts_with("alsa_")).unwrap().clone();
+        let ours = [exe.clone(), format!("alsa_playback.{exe}"), format!("alsa_capture.{exe}")];
+        assert!(app_list(ours.map(|n| (n, String::new())).into_iter(), &own).is_empty());
+    }
+
+    #[test]
+    fn default_host_is_not_pipewire() {
+        // "System default" keeps meaning what it did before the pipewire feature existed
+        #[cfg(all(target_os = "linux", not(feature = "pulseaudio")))]
+        assert_eq!(default_host(), HostId::Alsa);
+        assert_ne!(default_host().name(), "PipeWire");
+    }
+
+    #[test]
+    fn app_input_without_pipewire_is_unsupported() {
+        if app_capture_supported() {
+            return; // a PipeWire daemon is running: covered by the manual test
+        }
+        assert!(app_sources().is_empty());
+        let host = cpal::default_host();
+        let ic = InputConfig { source: InputSource::App("Firefox".into()), channels: Some(2) };
+        let err = resolve_input(&host, &ic, None, None).err().expect("no PipeWire: error");
+        assert_eq!(err.kind(), ErrorKind::UnsupportedOperation);
     }
 
     #[test]

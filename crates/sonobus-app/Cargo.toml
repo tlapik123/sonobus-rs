@@ -14,7 +14,12 @@ required-features = ["desktop"]
 default = ["desktop"]
 # The desktop window (eframe/winit). Off for the plugin, which draws the same UI through its
 # host's window (nice-plug-egui).
-desktop = ["dep:eframe"]
+#
+# Also turns on cpal's PipeWire backend (system sound and per-app capture). cpal only pulls
+# libpipewire in on Linux/BSD, so this is a no-op on Windows, macOS and Android. The plugin
+# built alone (`-p sonobus-plugin`, no `desktop`) does not link it; in a `--workspace` build
+# cargo unifies features, so it does there (as it already did with eframe).
+desktop = ["dep:eframe", "sonobus-audio/pipewire"]
 
 [dependencies]
 aoo = { path = "../aoo" }

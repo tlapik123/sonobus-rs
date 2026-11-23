@@ -678,3 +678,8 @@ countries: ru
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Определяет, можно ли воспроизводить образцы звука с помощью стандартных цифровых горячих клавиш."
 "Soundboard volume" = "Громкость деки"
 "Send Soundboard Playback to All" = "Отправляйте воспроизведение на звуковой панели всем"
+"You were removed from the session" = "Вас удалили из сессии"
+"A member blocked you" = "Участник заблокировал вас"
+"The host ended the session" = "Хост завершил сессию"
+"The session is full" = "Сессия заполнена"
+"The session ended" = "Сессия завершена"

@@ -10,8 +10,10 @@ cpal = "0.18.2"
 rtrb = "0.4.1"
 rubato = { version = "5.1.0", default-features = false }
 
-# Optional cpal backends. Default build: ALSA (Linux), WASAPI (Windows), CoreAudio (macOS),
-# AAudio (Android).
+# Optional cpal backends. Without them: ALSA (Linux), WASAPI (Windows), CoreAudio (macOS),
+# AAudio (Android). sonobus-app's `desktop` feature turns `pipewire` on (Linux/BSD only; a no-op
+# elsewhere): it adds the PipeWire host, selectable explicitly and used for per-application
+# capture, but `default_host()` ("System default") stays ALSA (PulseAudio with `pulseaudio`).
 [features]
 jack = ["cpal/jack"]
 pipewire = ["cpal/pipewire"]

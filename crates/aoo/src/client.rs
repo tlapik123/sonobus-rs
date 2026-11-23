@@ -162,8 +162,8 @@ pub(crate) fn unmap(a: SocketAddr) -> SocketAddr {
 /// `a` in the address family of a UDP socket bound to `local`: IPv4 becomes IPv4-mapped IPv6 on
 /// an IPv6 socket, since BSD-derived stacks reject IPv4 destinations there (Linux accepts them).
 /// Addresses are kept unmapped everywhere else and only converted right before `send_to`.
-/// ponytail: on Windows an IPv6 socket is v6-only unless IPV6_V6ONLY=0, which std cannot set, so
-/// mapped destinations still fail there; bind IPv4 (`0.0.0.0`) unless IPv6 peers matter.
+/// The socket must be dual-stack (IPV6_V6ONLY off): Windows defaults to v6-only, std cannot
+/// change it, so bind IPv6 sockets through `socket2` as `server::run_with` does.
 pub(crate) fn to_family(a: SocketAddr, local: SocketAddr) -> SocketAddr {
     match (a, local) {
         (SocketAddr::V4(v4), SocketAddr::V6(_)) => {

@@ -40,7 +40,8 @@ cloud VMs) or with a DNS name, set `--public-addr rdv.example.org:10999` so the 
 is what users can reach.
 
 The endpoint id derives from the secret key in `--key-file`. The file is created on first start
-(`create_new`, mode 0600, 64 hex digits) and reused afterwards: **back it up**; losing it changes
+(`create_new`, mode 0600 on Unix, 64 hex digits; on Windows it only inherits the directory's
+access rights) and reused afterwards: **back it up**; losing it changes
 the address every user has. A corrupt file is an error, never silently replaced. The key is never
 logged.
 
@@ -87,8 +88,8 @@ Durations: `250ms`, `10s`, `5m` or plain seconds. Rates: `burst/per_sec`.
   password_too_long`. Modern: `global_cap per_ip_cap handshake register_timeout register_rate
   tag_full id_mismatch protocol idle_timeout`.
 * Signals: SIGINT/SIGTERM stop gracefully (all threads joined, exit 0); SIGUSR1 prints a stats
-  line (without moving the periodic schedule). On Windows there is no signal handling: Ctrl-C
-  just ends the process.
+  line (without moving the periodic schedule). On Windows Ctrl-C stops gracefully and there is
+  no stats signal.
 * Exit codes: 0 after a graceful stop, 1 when a service cannot start (port taken, bad key
   file: the message names it), 2 for usage errors.
 * Run it as an unprivileged user: all default ports are above 1024. Dropping privileges is not

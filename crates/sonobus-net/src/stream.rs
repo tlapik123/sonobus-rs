@@ -23,7 +23,7 @@
 
 use std::collections::VecDeque;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use aoo::codec::{
@@ -76,6 +76,55 @@ const QUEUE_BUDGET: usize = 8 << 20;
 const MAX_EVENTS: usize = 256;
 /// Largest jitter buffer target.
 pub const MAX_BUFFER_MS: f32 = 2000.0;
+/// Playout anchor: share of each callback's time estimate in the smoothed one, and the
+/// deviation (s) taken as a real jump instead.
+const ANCHOR_SMOOTH: f64 = 0.05;
+const ANCHOR_JUMP: f64 = 0.020;
+/// Playout sync: early by more than this (s), silence is inserted at once; less, the resampling
+/// slows down by at most [`SYNC_MAX_STEER`], proportionally ([`SYNC_GAIN`] per second of
+/// error). Late is left alone (sync only ever adds latency); a target that moves earlier by more
+/// than this restarts buffering.
+pub const SYNC_HARD: f64 = 0.010;
+pub const SYNC_MAX_STEER: f64 = 0.002;
+const SYNC_GAIN: f64 = 1.0;
+/// Time constant (s) of the smoothed error (callback times are jittery).
+const SYNC_SMOOTH: f64 = 0.2;
+/// No new correction this long after a hard one (the audio half applies it first).
+const SYNC_HOLD: Duration = Duration::from_millis(100);
+/// Playout sync keeps the least headroom of arriving blocks per second for this many seconds
+/// (going late looks at the last one to two, and at whether it went late before in them).
+const LOWS: usize = 10;
+/// How long the most the audio half took between two `drain`s counts.
+const PULL_HOLD: Duration = Duration::from_secs(10);
+/// Unsynced playout: after raising its buffer for late blocks, it ignores more of them for
+/// this long (one late episode, one raise).
+const LIFT_HOLD: Duration = Duration::from_secs(1);
+/// Unsynced playout raises its buffer for blocks that came after their playout time once this
+/// many came within [`LATE_WINDOW`].
+const LATE_MIN: u32 = 4;
+const LATE_WINDOW: Duration = Duration::from_secs(5);
+/// Playout sync: the most it adds beyond the deficit when it has to go late again (s).
+const SYNC_LATE_STEP: f64 = 0.030;
+/// Playout sync's error reading counts as current while a block arrived within this.
+const SYNC_STALE: Duration = Duration::from_millis(200);
+
+/// `t - epoch` in seconds, negative when `t` is earlier.
+fn secs(t: Instant, epoch: Instant) -> f64 {
+    match t.checked_duration_since(epoch) {
+        Some(d) => d.as_secs_f64(),
+        None => -epoch.duration_since(t).as_secs_f64(),
+    }
+}
+
+/// `epoch + secs` (negative: earlier).
+fn at(epoch: Instant, secs: f64) -> Instant {
+    let d = Duration::from_secs_f64(secs.abs().min(1e9));
+    if secs >= 0.0 {
+        epoch + d
+    } else {
+        epoch.checked_sub(d).unwrap_or(epoch)
+    }
+}
 
 // ---------------------------------------------------------------------------------------------
 // Format
@@ -543,6 +592,10 @@ pub struct TxStream {
     encodes: u64,
     /// Current Opus bit rate per encoding ([`Self::set_bitrate`]); 0 for PCM.
     bitrates: [u32; MAX_ENCODINGS],
+    /// Time base of [`Self::playout_anchor`].
+    epoch: Instant,
+    /// When frame 0 of this generation entered the audio half, s since `epoch` (smoothed).
+    base: Option<f64>,
 }
 
 impl TxStream {
@@ -583,6 +636,8 @@ impl TxStream {
             subs: Vec::new(),
             encodes: 0,
             bitrates: [0; MAX_ENCODINGS],
+            epoch: Instant::now(),
+            base: None,
         };
         s.apply_format()?;
         Ok((s, audio))
@@ -596,6 +651,7 @@ impl TxStream {
         self.samples = samples;
         self.records = records;
         self.t0 = None;
+        self.base = None;
         self.reset_resampler();
         self.discontinuity = true;
         audio
@@ -656,6 +712,7 @@ impl TxStream {
 
     fn restart(&mut self) {
         self.generation = (self.generation + 1) % 32;
+        self.base = None;
         self.seq = 0;
         self.discontinuity = true;
         self.history.clear();
@@ -747,6 +804,15 @@ impl TxStream {
         self.encodes
     }
 
+    /// Playout sync: `(generation, seq, t)`, block `seq` (the next one to be sent) has its
+    /// first frame entering the audio half at `t` (callback times, smoothed). `None` before
+    /// the first callback of a generation (and after a device change).
+    pub fn playout_anchor(&self) -> Option<(u8, u32, Instant)> {
+        let b = self.base?;
+        let t = b + f64::from(self.seq) * self.format.block_secs();
+        Some((self.generation, self.seq, at(self.epoch, t)))
+    }
+
     /// Drain the audio ring: encode every complete block and hand each subscriber its
     /// datagrams (`out(subscriber, datagram)`; subscribers of one encoding and redundancy get
     /// clones of the same [`Bytes`]). Returns the number of blocks sent.
@@ -787,6 +853,15 @@ impl TxStream {
                 self.mapped
                     .extend((0..snch).map(|c| frame.get(c).copied().unwrap_or(0.0)));
             }
+            // this record's first frame becomes stream frame `x` of the generation
+            let x = f64::from(self.seq) * f64::from(self.format.block_size)
+                + (self.resampler.read_available() / snch) as f64;
+            let est = secs(rec.t, self.epoch) - x / f64::from(self.format.sample_rate);
+            self.base = Some(match self.base {
+                // callback jitter is smoothed; a jump (dropped callbacks) is taken at once
+                Some(b) if (est - b).abs() < ANCHOR_JUMP => b + (est - b) * ANCHOR_SMOOTH,
+                _ => est,
+            });
             let mut pos = 0;
             while pos < self.mapped.len() {
                 let take = (self.mapped.len() - pos).min(self.resampler.write_available());
@@ -1024,6 +1099,18 @@ pub enum RxEvent {
     BlocksGap { count: u32 },
 }
 
+/// Synchronised playout target of an [`RxStream`] ([`RxStream::set_playout`]).
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Playout {
+    pub generation: u8,
+    /// Block `seq` of `generation` is due at the audio half's output at `due` (local clock);
+    /// the others at the nominal block rate from there.
+    pub seq: u32,
+    pub due: Instant,
+    /// Audio the buffer must hold beyond its jitter target to meet it (the playout delay).
+    pub span: Duration,
+}
+
 #[derive(Debug, Default)]
 struct Shared {
     playing: AtomicBool,
@@ -1031,6 +1118,8 @@ struct Shared {
     /// f64 bits: sender block rate (stream rate corrected by its drift).
     sender_rate: AtomicU64,
     dynamic: AtomicBool,
+    /// Playout sync: the sender rate scaled by `1 + steer_ppm * 1e-6`.
+    steer_ppm: AtomicI32,
 }
 
 /// Audio-thread state of one format/buffer configuration.
@@ -1041,6 +1130,13 @@ struct Slot {
     resampler: Resampler,
     scratch: Vec<f32>,
     playing: bool,
+    /// Frames taken from the ring so far.
+    read: u64,
+    /// f64 bits, published every callback: the ring frame at the output at `epoch`
+    /// (extrapolated at the stream rate `rate`).
+    pos: Arc<AtomicU64>,
+    epoch: Instant,
+    rate: f64,
 }
 
 impl Slot {
@@ -1051,8 +1147,14 @@ impl Slot {
         from: f64,
         to: f64,
         shared: &Shared,
+        now: Instant,
     ) -> bool {
         let want = n * self.nch;
+        // the callback's ratio before filling: filled at the previous one and then given a
+        // smaller one (the sender's rate estimate rising, sync's slowing down ending), the
+        // resampler comes up a frame short with the ring full: an underrun that keeps the stream
+        // a callback later
+        self.resampler.update(from, to);
         while want > self.resampler.read_available()
             && self.resampler.write_available() >= self.nsamples
         {
@@ -1063,8 +1165,18 @@ impl Slot {
             self.resampler.write(a);
             self.resampler.write(b);
             chunk.commit_all();
+            self.read += (self.nsamples / self.nch) as u64;
         }
-        self.resampler.update(from, to);
+        // the next frame out is the oldest one the resampler holds, now; when it cannot play
+        // this callback, at the next one
+        let ratio = if from == to { 1.0 } else { to / from };
+        let held = self.resampler.read_available() as f64 / (self.nch as f64 * ratio);
+        let mut t = secs(now, self.epoch);
+        if self.resampler.read_available() < want {
+            t += n as f64 / to;
+        }
+        let pos = self.read as f64 - held - t * self.rate;
+        self.pos.store(pos.to_bits(), Ordering::Release);
         if self.resampler.read_available() < want {
             if self.playing {
                 self.playing = false;
@@ -1135,9 +1247,10 @@ impl RxAudio {
             .first()
             .map_or(0, |o| o.len())
             .min(self.device.block_size);
-        let from = f64::from_bits(self.shared.sender_rate.load(Ordering::Relaxed));
+        let steer = f64::from(self.shared.steer_ppm.load(Ordering::Relaxed)) * 1e-6;
+        let from = f64::from_bits(self.shared.sender_rate.load(Ordering::Relaxed)) * (1.0 + steer);
         match &mut self.slot {
-            Some(slot) if n > 0 => slot.process(out, n, from, own, &self.shared),
+            Some(slot) if n > 0 => slot.process(out, n, from, own, &self.shared, now),
             _ => false,
         }
     }
@@ -1183,9 +1296,10 @@ struct Jb {
 }
 
 impl Jb {
-    fn insert(&mut self, seq: u64, data: &[u8], primary: bool, c: &mut Counters) {
+    /// Whether it took the data: queued, or the first copy of a block already played (late).
+    fn insert(&mut self, seq: u64, data: &[u8], primary: bool, c: &mut Counters) -> bool {
         if data.is_empty() || data.len() > self.max_bytes {
-            return;
+            return false;
         }
         let next = *self.next.get_or_insert(seq);
         if seq < next {
@@ -1193,19 +1307,20 @@ impl Jb {
             if primary && back <= 64 && self.played & (1 << (back - 1)) == 0 {
                 self.played |= 1 << (back - 1);
                 c.late += 1;
+                return true;
             }
-            return;
+            return false;
         }
         let i = (seq - next) as usize;
         if i >= self.window {
-            return;
+            return false;
         }
         while self.queue.len() <= i {
             self.queue.push_back(Entry::default());
         }
         let e = &mut self.queue[i];
         if e.have {
-            return;
+            return false;
         }
         e.have = true;
         e.data.clear();
@@ -1217,6 +1332,7 @@ impl Jb {
         } else if self.highest.is_some_and(|h| seq < h) {
             c.reordered += 1;
         }
+        true
     }
 }
 
@@ -1233,10 +1349,28 @@ struct Active {
     block_frames: usize,
     /// Blocks the ring holds right after (re)buffering.
     prefill: usize,
-    /// Fill (frames) at which a hole is concealed.
+    /// Fill (frames) at which a hole is concealed at most: a block and two device callbacks.
     margin: usize,
+    /// Frames the audio half took from the ring by the last `drain`, and the most it took
+    /// between two of them recently (since `pull_at`).
+    read_at: u64,
+    pull: usize,
+    pull_at: Option<Instant>,
     /// Push silence up to `prefill` before the next block (start, underrun, flush).
     rebuffer: bool,
+    /// Buffering restarts with the whole batch of datagrams handled at this time (on the tick
+    /// that follows it, or a datagram that comes later): we learnt then that the audio half ran
+    /// dry, or datagrams came again after an outage (what was sent meanwhile comes at once).
+    rebuffer_at: Option<Instant>,
+    /// Unsynced: silence added for late blocks (frames), at most `lift_cap()`; it stays until
+    /// buffering restarts (an underrun, a new buffer, a flush). When it was last added; blocks
+    /// that came after their playout time in the current [`LATE_WINDOW`] (count, the most they
+    /// lacked, window start).
+    lifted: f64,
+    /// The round trip (frames) while unsynced playout asks for resends, else 0.
+    nack_rtt: f64,
+    lift_at: Option<Instant>,
+    late: (u32, f64, Option<Instant>),
     scratch: Vec<f32>,
     zeros: Vec<f32>,
     /// Arrival time of the first datagram (jitter time base).
@@ -1244,6 +1378,28 @@ struct Active {
     last_transit: Option<f64>,
     /// RFC 3550 interarrival jitter, s.
     jitter: f64,
+    /// Frames pushed into the ring so far (blocks and silence): where the next block goes.
+    pushed: u64,
+    /// The audio half's output position ([`Slot::pos`]).
+    pos: Arc<AtomicU64>,
+    epoch: Instant,
+    /// Playout sync: smoothed error (frames, positive = early) and when it was updated.
+    sync_err: Option<(f64, Instant)>,
+    /// Playout sync: the latest error (frames) while the stream plays against a target and
+    /// blocks arrive; else `None`.
+    reported: Option<f64>,
+    sync_hold: Option<Instant>,
+    /// Playout sync: the target moved; start the smoothed error afresh.
+    retarget: bool,
+    /// Playout sync's view of the jitter buffer since it last (re)started: per second `s` of
+    /// `epoch` time, in slot `s % LOWS`, `(s, the least headroom an arriving block had, sync
+    /// went late)` (headroom: frames that play before it, ring fill plus the blocks queued
+    /// ahead of it). Sync's own corrections shift them, so they stay comparable with what
+    /// arrives now.
+    lows: [(u64, f64, bool); LOWS],
+    /// The resampling offset in effect since `steer_at` (ppm), to shift `lows` by.
+    steer_ppm: f64,
+    steer_at: Option<Instant>,
 }
 
 impl Active {
@@ -1276,28 +1432,348 @@ impl Active {
             c.lost += 1;
         }
         let _ = self.ring.push_entire_slice(&self.scratch);
+        self.pushed += self.block_frames as u64;
         self.jb.next = Some(next + 1);
         self.jb.played = self.jb.played << 1 | u64::from(ok);
         true
     }
 
-    /// Move playable blocks into the ring; conceal a hole only when a later block is here and
-    /// the ring is about to run dry.
-    fn drain(&mut self, c: &mut Counters) {
-        if self.rebuffer && self.jb.queue.front().is_some() {
-            self.rebuffer = false;
-            let have = self.fill_frames() / self.block_frames;
-            for _ in have + 1..self.prefill {
-                if self.ring.push_entire_slice(&self.zeros).is_err() {
-                    break;
-                }
+    /// Up to `frames` of silence into the ring (as much as fits). Returns the frames pushed.
+    fn push_zeros(&mut self, frames: usize) -> usize {
+        let mut left = frames.saturating_mul(self.nch).min(self.ring.slots());
+        let mut done = 0;
+        while left > 0 {
+            let k = left.min(self.zeros.len());
+            let _ = self.ring.push_entire_slice(&self.zeros[..k]);
+            self.pushed += (k / self.nch) as u64;
+            done += k / self.nch;
+            left -= k;
+        }
+        done
+    }
+
+    /// Playout sync error in frames (positive: the output is early), once the audio half has
+    /// reported its position.
+    fn sync_error(&self, p: &Playout) -> Option<f64> {
+        if p.generation != self.generation {
+            return None;
+        }
+        let next = self.jb.next?;
+        let a = f64::from_bits(self.pos.load(Ordering::Acquire));
+        if !a.is_finite() {
+            return None;
+        }
+        // the frame at the output when the next block is due, against where that block goes
+        let sr = f64::from(self.format.sample_rate);
+        let due = secs(p.due, self.epoch)
+            + (next as f64 - f64::from(p.seq)) * self.format.block_secs();
+        let e = a + due * sr - self.pushed as f64;
+        // an honest target is due at most `span` after now: anything later is no target
+        let span = p.span.as_secs_f64().min(f64::from(MAX_BUFFER_MS) * 1e-3);
+        (e.is_finite() && e <= (span + SYNC_HARD) * sr).then_some(e)
+    }
+
+    /// The headroom block `seq` would arrive with now (frames that play before it: ring fill
+    /// and the blocks queued ahead), if its data is not here yet (the original, or a resend of
+    /// a NACKed one: whichever comes first; not a duplicate) and we are not (re)buffering. One
+    /// that missed its turn (concealed) by at most the jitter target has it negative: what it
+    /// lacked; a straggler later than that sets no requirement.
+    fn arrival_headroom(&self, seq: u64) -> Option<f64> {
+        let next = self.jb.next.filter(|_| !self.rebuffer)?;
+        let fill = self.fill_frames() as f64;
+        if seq < next {
+            let behind = seq.abs_diff(next) as usize;
+            let new = self.jb.played & (1 << (behind - 1).min(63)) == 0;
+            return (new && behind <= self.prefill).then(|| fill - (behind * self.block_frames) as f64);
+        }
+        let i = (seq - next) as usize;
+        let first = self.jb.queue.get(i).is_none_or(|e| !e.have);
+        first.then(|| fill + (i * self.block_frames) as f64)
+    }
+
+    /// Unsynced: the first copy of block `seq < next` came, after it was concealed. The frames
+    /// that would have played before it had it not been (negative: how late it came after its
+    /// playout time), if we are not (re)buffering and it is at most 64 blocks back.
+    fn late_headroom(&self, seq: u64) -> Option<f64> {
+        let next = self.jb.next.filter(|&n| !self.rebuffer && seq < n)?;
+        let behind = (next - seq) as usize;
+        let new = behind <= 64 && self.jb.played & (1 << (behind - 1)) == 0;
+        new.then(|| self.fill_frames() as f64 - (behind * self.block_frames) as f64)
+    }
+
+    /// Unsynced: a concealed block came `h` frames before it would have played (see
+    /// `late_headroom`). Silence now (at most up to `lift_cap` in all) gives a block as late
+    /// more than the concealment margin, so that it plays:
+    /// - at once when it came by its playout time (`h >= 0`): it was lost to the margin, not
+    ///   to the network (unsynced playout started on an early block thus moves to the jitter
+    ///   the link really has);
+    /// - when [`LATE_MIN`] came after it within [`LATE_WINDOW`] (a recurring lateness the
+    ///   jitter buffer does not cover), by the most they lacked, as a restart after running dry
+    ///   would.
+    ///
+    /// One raise per [`LIFT_HOLD`]; one that would not fit under the cap is not made (the
+    /// buffer is too small for that lateness). Each raise is a gap: counted as a lost block.
+    fn late_block(&mut self, now: Instant, h: f64, c: &mut Counters) {
+        if self.lift_at.is_some_and(|t| now.saturating_duration_since(t) < LIFT_HOLD) {
+            return;
+        }
+        // what it lacked, and a block and the reordering hold more (the callback's phase moves
+        // what the next one lacks; a resend asked for when the hole shows comes as late as this
+        // one did after concealment)
+        let sr = f64::from(self.format.sample_rate);
+        let must = (self.conceal_at() + 1) as f64 - h;
+        let slack = self.block_frames as f64 + 2.0 * self.jitter * sr;
+        let room = self.lift_cap() - self.lifted;
+        let must = if h >= 0.0 {
+            must
+        } else {
+            let (n, most, at) = &mut self.late;
+            if at.is_none_or(|t| now.saturating_duration_since(t) > LATE_WINDOW) {
+                (*n, *most, *at) = (0, 0.0, Some(now));
             }
+            if must <= room {
+                *n += 1;
+                *most = most.max(must);
+            }
+            if *n < LATE_MIN {
+                return;
+            }
+            *most
+        };
+        if must <= 0.0 || must > room {
+            return;
+        }
+        let need = (must + slack).min(room);
+        let added = self.push_zeros(need.ceil() as usize);
+        self.lifted += added as f64;
+        self.lift_at = Some(now);
+        self.late = (0, 0.0, None);
+        c.lost = c.lost.saturating_add(1);
+    }
+
+    /// The most unsynced playout raises its buffer by: twice the concealment margin (once for
+    /// what the margin takes from the jitter buffer, once for jitter the buffer does not
+    /// cover), and the round trip while it asks for resends (so that a resend comes before its
+    /// block is concealed).
+    fn lift_cap(&self) -> f64 {
+        (2 * self.margin) as f64 + self.nack_rtt
+    }
+
+    /// The second of `epoch` time that `now` falls in.
+    fn second(&self, now: Instant) -> u64 {
+        now.saturating_duration_since(self.epoch).as_secs()
+    }
+
+    /// A block arrived at `now` with headroom `h` (frames).
+    fn note_headroom(&mut self, now: Instant, h: f64) {
+        let s = self.second(now);
+        let slot = &mut self.lows[s as usize % LOWS];
+        *slot = if slot.0 == s {
+            (s, slot.1.min(h), slot.2)
+        } else {
+            (s, h, false)
+        };
+    }
+
+    /// The least headroom of this second and the one before (`None` without arrivals).
+    fn recent_headroom(&self, now: Instant) -> Option<f64> {
+        let s = self.second(now);
+        (s.saturating_sub(1)..=s)
+            .filter_map(|t| Some(self.lows[t as usize % LOWS]).filter(|x| x.0 == t))
+            .map(|x| x.1)
+            .reduce(f64::min)
+    }
+
+    /// Sync went late in the last [`LOWS`] seconds, before the last two (which one event, a
+    /// latency step, spans).
+    fn went_late(&self, now: Instant) -> bool {
+        let s = self.second(now);
+        let ago = |at: u64| s.saturating_sub(at);
+        self.lows.iter().any(|&(at, _, late)| late && (2..LOWS as u64).contains(&ago(at)))
+    }
+
+    /// Our own correction moved what plays before any later block by `d` frames.
+    fn shift_lows(&mut self, d: f64) {
+        for (_, h, _) in &mut self.lows {
+            *h += d;
+        }
+    }
+
+    fn clear_lows(&mut self) {
+        self.lows = [(u64::MAX, f64::INFINITY, false); LOWS];
+    }
+
+    /// Playout sync, on the timer. It only ever adds latency:
+    /// - going late: when a block arrived in the last one to two seconds with less headroom
+    ///   than unsynced playout restarts with (the jitter target less the block it restarts on;
+    ///   at least a block over the margin, measured) by more than a block or device callback (the
+    ///   measuring granularity), silence brings it up to that, as unsynced playout would
+    ///   restart after running dry; if it went late already in the last [`LOWS`] seconds (not
+    ///   just now), by up to [`SYNC_LATE_STEP`] more;
+    /// - early by more than [`SYNC_HARD`]: silence;
+    /// - early by less: the resampling slows down, proportionally;
+    /// - late: nothing. The stream stays late (and says so) until its buffering restarts: after
+    ///   an underrun, or when the target moves earlier ([`RxStream::set_playout`]).
+    fn steer(&mut self, p: Option<&Playout>, now: Instant, shared: &Shared, playing: bool) {
+        let sr = f64::from(self.format.sample_rate);
+        let dt = self.steer_at.map_or(0.0, |t| secs(now, t).max(0.0));
+        // the slower resampling since the last call moved what plays before the next block
+        self.shift_lows(-self.steer_ppm * 1e-6 * sr * dt);
+        self.steer_at = Some(now);
+        // a reading is current while the stream plays and blocks arrive
+        let live = playing
+            && !self.rebuffer
+            && now.saturating_duration_since(self.jb.highest_at) < SYNC_STALE;
+        if !live {
+            self.reported = None;
+        }
+        let e = p.filter(|_| !self.rebuffer).and_then(|p| self.sync_error(p));
+        let Some(e) = e else {
+            self.reported = None;
+            self.sync_err = None;
+            self.set_steer(0.0, shared);
+            return;
+        };
+        if std::mem::take(&mut self.retarget) {
+            (self.sync_err, self.sync_hold) = (None, None);
+        }
+        if self.sync_hold.is_some_and(|t| now < t) {
+            return;
+        }
+        let mut err = match self.sync_err {
+            Some((x, t)) => x + (e - x) * (secs(now, t) / SYNC_SMOOTH).clamp(0.0, 1.0),
+            None => e,
+        };
+        // what unsynced playout restarts with, and at least a block over the margin: below it
+        // `drain` conceals every block that comes after its successor (unsynced playout gets
+        // there with a device callback large against the jitter target too; sync does not
+        // follow it there)
+        let callback = (self.margin - self.block_frames) / 2;
+        let granularity = self.block_frames.max(callback);
+        let restart = self.prefill.saturating_sub(1) * self.block_frames;
+        let need = restart.max(self.margin + self.block_frames + granularity) as f64;
+        let low = need - granularity as f64;
+        let mut added = 0.0;
+        if let Some(h) = self.recent_headroom(now).filter(|&h| h < low) {
+            // still getting later (a ramp, a heavier tail): more, rather than many small cuts
+            let more = if self.went_late(now) {
+                let step = (SYNC_LATE_STEP * sr) as usize;
+                (self.prefill * self.block_frames).min(step)
+            } else {
+                0
+            };
+            added = self.push_zeros((need - h).ceil() as usize + more) as f64;
+            let s = self.second(now);
+            if let Some(slot) = self.lows.iter_mut().find(|x| x.0 <= s && s - x.0 <= 1) {
+                slot.2 = true;
+            }
+        } else if err > SYNC_HARD * sr {
+            // all of it at once: the smoothed error crosses the threshold before it settles
+            added = self.push_zeros(err.max(e) as usize) as f64;
+        }
+        if added > 0.0 {
+            self.shift_lows(added);
+            // measure afresh once the audio half plays it
+            self.sync_err = None;
+            self.sync_hold = Some(now + SYNC_HOLD);
+            err -= added;
+        } else {
+            self.sync_err = Some((err, now));
+        }
+        if live {
+            self.reported = Some(err);
+        }
+        // early: slower (never faster for sync)
+        let ppm = (-err / sr * SYNC_GAIN).clamp(-SYNC_MAX_STEER, 0.0) * 1e6;
+        self.set_steer(ppm.round(), shared);
+    }
+
+    fn set_steer(&mut self, ppm: f64, shared: &Shared) {
+        self.steer_ppm = ppm;
+        shared.steer_ppm.store(ppm as i32, Ordering::Relaxed);
+    }
+
+    /// Fill at which a hole is concealed: what the audio half may take before the next `drain`,
+    /// judged by the most it took between two in the last [`PULL_HOLD`] (callbacks in pairs, a
+    /// late session thread), at least a block and a device callback, at most [`Self::margin`].
+    fn conceal_at(&self) -> usize {
+        let callback = (self.margin - self.block_frames) / 2;
+        self.pull.clamp(self.block_frames + callback, self.margin)
+    }
+
+    /// Move playable blocks into the ring; conceal a hole only when a later block is here and
+    /// the ring is about to run dry. With playout sync, (re)buffering starts the next block
+    /// when it is due (if the jitter target allows).
+    /// `ask`: unsynced with resend requests on, (stream id, round trip, NACKs to send): a hole
+    /// concealed before it was asked for is asked for still when a resend can come before it
+    /// would have played (it then raises the buffer, `late_block`, so that the next one plays).
+    fn drain(
+        &mut self,
+        c: &mut Counters,
+        p: Option<&Playout>,
+        now: Instant,
+        tick: bool,
+        mut ask: Option<Ask>,
+    ) {
+        let sr = f64::from(self.format.sample_rate);
+        self.nack_rtt = ask.as_ref().map_or(0.0, |a| a.1.as_secs_f64() * sr);
+        let read = self.pushed - self.fill_frames() as u64;
+        let pulled = (read - self.read_at) as usize;
+        self.read_at = read;
+        let expired = self.pull_at.is_none_or(|t| now.saturating_duration_since(t) > PULL_HOLD);
+        if pulled >= self.pull || expired {
+            self.pull = pulled;
+            self.pull_at = Some(now);
+        }
+        // playout sync restarts when the next block is due instead
+        let synced = p.is_some_and(|p| p.generation == self.generation);
+        if self.rebuffer && !tick && !synced && self.rebuffer_at == Some(now) {
+            return;
+        }
+        if self.rebuffer && self.jb.queue.front().is_some() {
+            let sync = p.and_then(|p| self.sync_error(p));
+            if sync.is_none()
+                && p.is_some_and(|p| p.generation == self.generation)
+                && !f64::from_bits(self.pos.load(Ordering::Acquire)).is_finite()
+            {
+                return; // the audio half has not reported its position yet
+            }
+            self.rebuffer = false;
+            self.rebuffer_at = None;
+            // the blocks waiting count, holes among them too (after an outage or a late session
+            // thread they come all at once, a little out of order)
+            let run = if synced {
+                1
+            } else {
+                self.jb.queue.iter().rposition(|e| e.have).map_or(1, |i| i + 1)
+            };
+            let have = self.fill_frames() / self.block_frames + run;
+            let normal = self.prefill.saturating_sub(have) * self.block_frames;
+            let early = sync.map_or(0.0, |e| e.max(0.0));
+            self.push_zeros(normal.max(early as usize));
+            // a new jitter buffer: watch it afresh
+            self.clear_lows();
+            self.sync_err = None;
+            (self.lifted, self.late) = (0.0, (0, 0.0, None));
         }
         while let Some(front) = self.jb.queue.front() {
-            let go = front.have
-                || (self.fill_frames() <= self.margin
+            let (have, tries) = (front.have, front.tries);
+            let go = have
+                || (self.fill_frames() <= self.conceal_at()
                     && self.jb.queue.iter().skip(1).any(|e| e.have));
-            if !go || !self.play_front(c) {
+            if !go {
+                break;
+            }
+            if let Some((stream, rtt, out)) = ask.as_mut()
+                && !have
+                && tries == 0
+                && self.fill_secs() > rtt.as_secs_f64()
+                && out.len() < MAX_NACK
+                && let Some(next) = self.jb.next
+            {
+                ask_for(&mut self.reasm, now, *stream, self.generation, next as u32, out);
+            }
+            if !self.play_front(c) {
                 break;
             }
         }
@@ -1369,13 +1845,17 @@ impl Active {
         now: Instant,
         rtt: Duration,
         retries: u8,
+        sync: bool,
         out: &mut Vec<(u32, u8)>,
     ) {
         let Some(next) = self.jb.next else { return };
         let high = self.jb.highest.unwrap_or(next);
         let block = self.format.block_secs();
-        // time left before the front block is concealed
-        let slack = self.fill_secs() - self.margin as f64 / f64::from(self.format.sample_rate);
+        // time left before the front block plays (unsynced: a resend that comes after it was
+        // concealed but before it would have played raises the buffer, see `late_block`), or
+        // with sync before it is concealed
+        let conceal = if sync { self.conceal_at() } else { 0 };
+        let slack = (self.fill_frames() as f64 - conceal as f64) / f64::from(self.format.sample_rate);
         let rtt_s = rtt.as_secs_f64();
         let retry = rtt.saturating_add(Duration::from_secs_f64(block));
         // reordering tolerance before the first NACK
@@ -1399,13 +1879,26 @@ impl Active {
             }
             e.tries += 1;
             e.last_nack = Some(now);
-            // A partly received block: only its missing fragments.
-            let seq = s as u32;
-            match self.reasm.missing(now, stream, self.generation, seq) {
-                Some(frags) => out.extend(frags.map(|f| (seq, f))),
-                None => out.push((seq, NACK_ALL)),
-            }
+            ask_for(&mut self.reasm, now, stream, self.generation, s as u32, out);
         }
+    }
+}
+
+/// Unsynced playout asking for resends: stream id, round trip, the NACKs to send.
+type Ask<'a> = (u8, Duration, &'a mut Vec<(u32, u8)>);
+
+/// A NACK for block `seq`: only the missing fragments of a partly received one, else all.
+fn ask_for(
+    reasm: &mut Reassembler,
+    now: Instant,
+    stream: u8,
+    generation: u8,
+    seq: u32,
+    out: &mut Vec<(u32, u8)>,
+) {
+    match reasm.missing(now, stream, generation, seq) {
+        Some(frags) => out.extend(frags.map(|f| (seq, f))),
+        None => out.push((seq, NACK_ALL)),
     }
 }
 
@@ -1427,6 +1920,9 @@ pub struct RxStream {
     report_lost: u32,
     report_late: u32,
     report_at: Option<Instant>,
+    playout: Option<Playout>,
+    /// Ring room for playout sync beyond the jitter target, ms.
+    span_ms: f32,
 }
 
 fn rx_audio(
@@ -1479,6 +1975,8 @@ impl RxStream {
             report_lost: 0,
             report_late: 0,
             report_at: None,
+            playout: None,
+            span_ms: 0.0,
         };
         (s, audio)
     }
@@ -1517,8 +2015,19 @@ impl RxStream {
         self.st.as_ref().map(|s| &s.format)
     }
 
+    /// The jitter buffer in effect, ms: the target ([`Self::set_buffer_ms`]) and what unsynced
+    /// playout added for late blocks ([`Self::lift_ms`]).
     pub fn buffer_ms(&self) -> f32 {
-        self.opts.buffer_ms
+        self.opts.buffer_ms + self.lift_ms()
+    }
+
+    /// Unsynced playout: silence added for late blocks, ms (the receiver's latency is that much
+    /// over its jitter buffer target). It stays until buffering restarts (an underrun,
+    /// [`Self::set_buffer_ms`], [`Self::flush`]).
+    pub fn lift_ms(&self) -> f32 {
+        self.st
+            .as_ref()
+            .map_or(0.0, |st| (st.lifted * 1e3 / f64::from(st.format.sample_rate)) as f32)
     }
 
     /// New jitter buffer target. As the legacy sink, this restarts buffering (queued audio is
@@ -1539,6 +2048,60 @@ impl RxStream {
     /// Drop everything queued and buffered; playback restarts with the next block.
     pub fn flush(&mut self) {
         self.rebuild();
+    }
+
+    /// Synchronised playout: play the blocks of `p.generation` when they are due instead of as
+    /// soon as the jitter target is buffered. (Re)buffering waits for the due time; sync only
+    /// ever adds latency: early by more than [`SYNC_HARD`] it inserts silence, by less it
+    /// slows the resampling; it goes late when the jitter buffer is not met; late, it does
+    /// nothing until buffering restarts (after an underrun). The host lowering the delay
+    /// (`span`) restarts buffering (one gap); raising it is early (silence). A due time that
+    /// moves for any other reason (the anchor's jitter, a new clock offset) is only early or
+    /// late. A `span` larger than the ring has room for (half as much again as the largest
+    /// before), or turning sync off, restarts buffering (off: with the ring of a stream that
+    /// never synced). Without a target (and for other generations) nothing changes.
+    pub fn set_playout(&mut self, p: Option<Playout>) {
+        let span = p.map_or(0.0, |p| (p.span.as_secs_f32() * 1e3).min(MAX_BUFFER_MS));
+        let off = p.is_none() && self.playout.is_some();
+        let mut lowered = false;
+        if let (Some(st), Some(new), Some(old)) = (&mut self.st, p, self.playout) {
+            if new.generation != old.generation || new.span != old.span {
+                st.retarget = true;
+            }
+            lowered = new.generation == old.generation && new.span < old.span;
+        }
+        // sync starting over a buffer unsynced playout raised: from the jitter target instead
+        let syncs = |p: Option<Playout>, st: &Active| p.is_some_and(|p| p.generation == st.generation);
+        let raised = self
+            .st
+            .as_ref()
+            .is_some_and(|st| st.lifted > 0.0 && syncs(p, st) && !syncs(self.playout, st));
+        self.playout = p;
+        if span > self.span_ms || off || lowered || raised {
+            // off: the ring as if sync had never been on; else room for half as much again, so
+            // that a target moving later does not drop the buffered audio
+            if off || span > self.span_ms {
+                self.span_ms = if off { 0.0 } else { (span * 1.5).min(MAX_BUFFER_MS) };
+            }
+            self.shared.steer_ppm.store(0, Ordering::Relaxed);
+            self.rebuild();
+        }
+    }
+
+    /// Playout sync: how early (positive) or late the output is against the target, ms; `None`
+    /// unless the stream plays against a target (sync off, another generation, an absurd
+    /// target, (re)buffering) with blocks arriving (none for [`SYNC_STALE`]: a paused sender,
+    /// an outage).
+    pub fn playout_error_ms(&self) -> Option<f32> {
+        let st = self.st.as_ref()?;
+        let e = st.reported.filter(|_| self.playout.is_some())?;
+        Some((e * 1e3 / f64::from(st.format.sample_rate)) as f32)
+    }
+
+    /// Playout sync's resampling offset now, ppm (never positive: sync only slows down).
+    #[doc(hidden)]
+    pub fn playout_steer_ppm(&self) -> i32 {
+        self.shared.steer_ppm.load(Ordering::Relaxed)
     }
 
     /// Ring fill relative to the target, 0..=1 (`aoo_opt_buffer_fill_ratio`).
@@ -1574,7 +2137,11 @@ impl RxStream {
             (self.device.block_size as f64 * sr / f64::from(self.device.sample_rate.max(1))).ceil();
         let target = (f64::from(self.opts.buffer_ms) * 1e-3 * sr).max(dev_block);
         let prefill = ((target / block as f64).ceil() as usize).max(1);
-        let cap = prefill + prefill.max(8);
+        let span = (f64::from(self.span_ms) * 1e-3 * sr / block as f64).ceil() as usize;
+        let margin = block + 2 * dev_block as usize;
+        // unsynced playout raises its buffer for late blocks by at most the margin: room for
+        // that and the margin itself
+        let cap = prefill + prefill.max(8).max(2 * margin.div_ceil(block)) + span;
         let (ring, samples) = RingBuffer::new(cap * nsamples);
         let max_bytes = format.max_block_bytes();
         let mut resampler = Resampler::default();
@@ -1582,6 +2149,8 @@ impl RxStream {
         self.shared
             .sender_rate
             .store(sr.to_bits(), Ordering::Relaxed);
+        let pos = Arc::new(AtomicU64::new(f64::NAN.to_bits()));
+        let epoch = Instant::now();
         self.pending = Some(Box::new(Slot {
             samples,
             nsamples,
@@ -1589,6 +2158,10 @@ impl RxStream {
             resampler,
             scratch: vec![0.0; self.device.block_size.max(1) * nch],
             playing: false,
+            read: 0,
+            pos: pos.clone(),
+            epoch,
+            rate: sr,
         }));
         self.flush_pending();
         let timeout = Duration::from_secs_f64((2e-3 * f64::from(self.opts.buffer_ms)).max(0.2));
@@ -1613,13 +2186,31 @@ impl RxStream {
             nsamples,
             block_frames: block,
             prefill,
-            margin: block + 2 * dev_block as usize,
+            margin,
+            read_at: 0,
+            pull: 0,
+            pull_at: None,
             rebuffer: true,
+            rebuffer_at: None,
+            lifted: 0.0,
+            nack_rtt: 0.0,
+            lift_at: None,
+            late: (0, 0.0, None),
             scratch: vec![0.0; nsamples],
             zeros: vec![0.0; nsamples],
             t_base: None,
             last_transit: None,
             jitter: 0.0,
+            pushed: 0,
+            pos,
+            epoch,
+            sync_err: None,
+            reported: None,
+            sync_hold: None,
+            retarget: false,
+            lows: [(u64::MAX, f64::INFINITY, false); LOWS],
+            steer_ppm: 0.0,
+            steer_at: None,
             format,
         })
     }
@@ -1633,13 +2224,14 @@ impl RxStream {
     }
 
     /// Reclaim old audio state and pick up what the audio half reported.
-    fn service(&mut self) {
+    fn service(&mut self, now: Instant) {
         while self.garbage.pop().is_ok() {}
         self.flush_pending();
         if self.shared.underrun.swap(false, Ordering::AcqRel)
             && let Some(st) = &mut self.st
         {
             st.rebuffer = true;
+            st.rebuffer_at = Some(now);
         }
         let playing = self.shared.playing.load(Ordering::Acquire);
         if playing != self.playing {
@@ -1679,7 +2271,7 @@ impl RxStream {
 
     /// One AUDIO datagram of this stream (any order, duplicates and garbage tolerated).
     pub fn handle_audio(&mut self, now: Instant, a: &Audio) {
-        self.service();
+        self.service(now);
         let nack = self.nack_enabled();
         let Some(st) = &mut self.st else { return };
         let h = a.header;
@@ -1689,6 +2281,13 @@ impl RxStream {
         let c = &mut self.c;
         let seq = u64::from(h.seq);
         let newest = st.jb.highest.is_none_or(|x| seq > x);
+        let target = Duration::from_secs_f64(st.prefill as f64 * st.format.block_secs());
+        if st.rebuffer
+            && st.jb.highest.is_some()
+            && now.saturating_duration_since(st.jb.highest_at) > target
+        {
+            st.rebuffer_at = Some(now);
+        }
         if newest {
             if h.discontinuity {
                 if st.jb.next.is_some_and(|n| n != seq) {
@@ -1707,12 +2306,20 @@ impl RxStream {
                 .store(rate.to_bits(), Ordering::Relaxed);
         }
         st.make_room(seq, c);
+        let sync = self.playout.is_some_and(|p| p.generation == st.generation);
+        let late = st.late_headroom(seq).filter(|_| !sync);
+        let headroom = st.arrival_headroom(seq);
         let data = match a.fragment {
             None => Some(a.payload),
             Some((i, n)) => st.reasm.push(now, &h, i, n, a.payload),
         };
-        if let Some(d) = data {
-            st.jb.insert(seq, d, true, c);
+        // only data it took counts (not a duplicate, an empty or oversized payload)
+        let took = data.is_some_and(|d| st.jb.insert(seq, d, true, c));
+        if let Some(h) = headroom.filter(|_| took && self.playout.is_some()) {
+            st.note_headroom(now, h);
+        }
+        if let Some(h) = late.filter(|_| took) {
+            st.late_block(now, h, c);
         }
         let k = a.redundant.len() as u64;
         for (j, b) in a.redundant.iter().enumerate() {
@@ -1732,13 +2339,15 @@ impl RxStream {
             }
             st.last_transit = Some(transit);
         }
-        st.drain(c);
+        let ask = (nack && !sync).then_some((self.stream, self.rtt, &mut self.nacks));
+        st.drain(c, self.playout.as_ref(), now, false, ask);
         if nack {
             st.scan_nacks(
                 self.stream,
                 now,
                 self.rtt,
                 self.opts.nack_retries,
+                sync,
                 &mut self.nacks,
             );
         }
@@ -1749,13 +2358,16 @@ impl RxStream {
     /// due, NACK missing and overdue blocks (only while the buffer target exceeds `rtt`).
     pub fn tick(&mut self, now: Instant, rtt: Duration) {
         self.rtt = rtt;
-        self.service();
+        self.service(now);
         let enabled = self.nack_enabled();
         if let Some(st) = &mut self.st {
-            st.drain(&mut self.c);
+            let sync = self.playout.is_some_and(|p| p.generation == st.generation);
+            let ask = (enabled && !sync).then_some((self.stream, rtt, &mut self.nacks));
+            st.drain(&mut self.c, self.playout.as_ref(), now, true, ask);
+            st.steer(self.playout.as_ref(), now, &self.shared, self.playing);
             if enabled {
                 st.expect_tail(now);
-                st.scan_nacks(self.stream, now, rtt, self.opts.nack_retries, &mut self.nacks);
+                st.scan_nacks(self.stream, now, rtt, self.opts.nack_retries, sync, &mut self.nacks);
             }
         }
         self.flush_counters();
@@ -1781,13 +2393,15 @@ impl RxStream {
         }
         self.report_at = Some(now);
         let ms = |s: f64| (s * 1e3).round().clamp(0.0, f64::from(u16::MAX)) as u16;
+        let queued = st.jb.queue.iter().filter(|e| e.have).count();
         let r = Report {
             stream: self.stream,
             highest_seq: high as u32,
             lost: std::mem::take(&mut self.report_lost).min(u32::from(u16::MAX)) as u16,
             late: std::mem::take(&mut self.report_late).min(u32::from(u16::MAX)) as u16,
             jitter_ms: ms(st.jitter),
-            buffer_ms: ms(st.fill_secs()),
+            // decoded, and waiting for its turn (or for buffering to start)
+            buffer_ms: ms(st.fill_secs() + queued as f64 * st.format.block_secs()),
         };
         r.encode(&mut out).ok()?;
         Some(out.into())

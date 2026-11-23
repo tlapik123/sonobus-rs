@@ -76,6 +76,10 @@ pub struct Jitter {
     pub latency_matched: bool,
     /// `resetSafetyMuted`: received audio is muted until the stream looks stable.
     pub safety_muted: bool,
+    /// What the receive stream added on top of `buffer_ms` for late blocks (modern unsynced
+    /// playout, `RxStream::lift_ms`; 0 otherwise). Shown and reported with the buffer; setting
+    /// a buffer drops it.
+    pub lift_ms: f32,
     pub dropped: i64,
     pub resent: i64,
     last_drop: Option<f64>,
@@ -142,12 +146,13 @@ impl Jitter {
             fast_drop_rate,
             fill: Cumulant::default(),
             fill_slow: Cumulant::default(),
+            lift_ms: 0.0,
         }
     }
 
     /// Buffer the sink actually uses, and what upstream reports (`getRemotePeerBufferTime`).
     pub fn effective_ms(&self, block_ms: f32) -> f32 {
-        self.buffer_ms.max(block_ms)
+        self.buffer_ms.max(block_ms) + self.lift_ms
     }
 
     fn clear_drops(&mut self, now: f64) {

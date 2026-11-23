@@ -19,11 +19,15 @@ in
     pkg-config
     libopus # aoo links the system libopus (opusic-sys)
     alsa-lib # cpal's default Linux backend
+    pipewire # cpal's PipeWire backend (sonobus-audio feature `pipewire`): libpipewire-0.3
     cmake # opus-bundled (Android) builds libopus from source
     cargo-ndk
+    cargo-nextest # test runner: one process per test, test binaries in parallel
   ] ++ guiLibs;
 
   env.LD_LIBRARY_PATH = lib.makeLibraryPath guiLibs;
+  # bindgen in libspa-sys / pipewire-sys (feature `pipewire`)
+  env.LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
 
   languages.rust = {
     enable = true;

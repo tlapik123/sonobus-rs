@@ -42,7 +42,13 @@ struct Run {
     src: Source,
     lis: Listener,
     start: Instant,
+    /// The time both sides are stepped with, and when it was last advanced: see [`Run::run`].
+    clock: Instant,
+    stepped: Instant,
 }
+
+/// The most the clock advances in one step of [`Run::run`].
+const MAX_STEP: Duration = Duration::from_millis(10);
 
 fn setup(format: StreamFormat, opts: RxOptions, drop: DropFn, delay: Duration) -> Run {
     let (hs, h_in) = channel_sinks();
@@ -74,15 +80,26 @@ fn setup(format: StreamFormat, opts: RxOptions, drop: DropFn, delay: Duration) -
         src,
         lis,
         start: now,
+        clock: now,
+        stepped: now,
     }
 }
 
 impl Run {
     /// Step both sides until `secs` after the start or until `stop` holds.
+    ///
+    /// Source and listener share this thread and its clock. When the thread stalled for
+    /// longer than the listener's buffer (a busy CI runner), the real clock made the listener
+    /// play past blocks the source had only just sent: 83 blocks "lost" with no loss at all.
+    /// So the clock follows real time but advances by at most [`MAX_STEP`] per step: a stall
+    /// makes the run take longer, it does not make time jump.
     fn run(&mut self, secs: f64, stop: impl Fn(&Run) -> bool) {
         let end = self.start + Duration::from_secs_f64(secs);
-        while Instant::now() < end && !stop(self) {
-            let now = Instant::now();
+        while self.clock < end && !stop(self) {
+            let real = Instant::now();
+            self.clock += real.duration_since(self.stepped).min(MAX_STEP);
+            self.stepped = real;
+            let now = self.clock;
             self.src.step(now);
             while let Ok((c, d)) = self.h_in.try_recv() {
                 self.src.on_datagram(c, now, &d);
@@ -204,7 +221,7 @@ fn report_drives_adapt_to_redundancy() {
     r.run(15.0, |r| !r.src.changes.is_empty());
     let (_, d) = *r.src.changes.first().expect("adapt never changed the subscription");
     assert_eq!((d.level, d.redundancy), (0, 1));
-    let (t0, switched) = (r.start, Instant::now());
+    let (t0, switched) = (r.start, r.clock);
     let lost_before = r.lis.count(r.start, lost);
     assert!(lost_before > 0 && r.src.reports.iter().any(|(_, x)| x.lost > 0));
     r.start = switched;

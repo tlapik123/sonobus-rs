@@ -403,7 +403,7 @@ pub fn utc_time(secs: u64) -> LocalTime {
 /// device input's channels (what [`AudioManager`] lays out, device or null driver).
 fn source_starts(s: &DeviceSetup) -> (Option<i32>, Option<i32>) {
     let dev = i32::from(s.device_input_channels());
-    let sys = s.system_sound.is_some().then_some(dev);
+    let sys = s.shares_sound().then_some(dev);
     let ext = s.external.map(|_| dev + sys.map_or(0, |_| i32::from(SYSTEM_SOUND_CHANNELS)));
     (sys, ext)
 }
@@ -1320,6 +1320,7 @@ impl AppController {
         o.lan = if f.lan { self.net_place.lan } else { LanScope::Off };
         o.rendezvous = f.rendezvous_here;
         o.max_listeners = (f.broadcast && f.max_listeners > 0).then_some(f.max_listeners as usize);
+        o.playout_ms = self.vm.secure_prefs.playout().filter(|_| f.broadcast);
         // a remembered session hosted again keeps its invite link (its seed, our identity)
         o.seed = self
             .vm
@@ -1382,7 +1383,12 @@ impl AppController {
     /// first if given. Returns the new link.
     pub fn rotate_invite(&mut self, remove: Option<PeerId>) -> Option<String> {
         let who = remove.and_then(|id| self.vm.snapshot.peers.iter().find(|p| p.id == id)).map(|p| p.user.clone());
-        let link = self.engine().rotate_session_key(remove)?;
+        let Some(link) = self.engine().rotate_session_key(remove) else {
+            if remove.is_some() {
+                self.set_status(tr("Nobody was removed: that connection is gone. Try again from the current list.").to_owned(), true);
+            }
+            return None;
+        };
         let msg = match who {
             Some(u) => format!("{u}: {}", tr("removed from the session. The invite link changed: earlier links no longer work. If the session has a password or PIN, change it too: they still know it.")),
             None => tr("New invite link: earlier links no longer work.").to_owned(),
@@ -1398,6 +1404,16 @@ impl AppController {
             self.vm.pin_invalidated = None;
             self.vm.secure = self.engine().session_status();
         }
+    }
+
+    /// "Sync listeners" (hosting "Share sound"): remembered, and applied at once to a session
+    /// we host (the engine ignores it otherwise).
+    pub fn set_playout_sync(&mut self, on: bool, ms: u16) {
+        let p = &mut self.vm.secure_prefs;
+        (p.playout_sync, p.playout_ms) = (on, secure::clamp_playout_ms(ms));
+        let playout = p.playout();
+        self.save_secure_prefs();
+        self.engine().set_playout_sync(playout);
     }
 
     pub fn set_secure_relay(&mut self, relay: RelayChoice) {
@@ -1708,7 +1724,7 @@ impl AppController {
         let (old_setup, new_setup) = (self.setup.clone(), setup.clone());
         if old_setup.device_input_channels() != new_setup.device_input_channels()
             || old_setup.extra_input_channels() != new_setup.extra_input_channels()
-            || old_setup.system_sound.is_some() != new_setup.system_sound.is_some()
+            || old_setup.shares_sound() != new_setup.shares_sound()
         {
             self.edit(move |s| {
                 if fit_input_groups(&mut s.input_groups, &old_setup, &new_setup) {

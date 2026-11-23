@@ -105,6 +105,42 @@ fn settings_persist_through_controller() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// Desktop app sound (one application's playback, PipeWire) is plumbed like system sound: on
+/// mid-session it takes the reserved channels behind the mic (no engine rebuild: same UDP
+/// port) with a stereo, unmonitored "System Sound" group and a stereo send; it survives a
+/// restart; switching to a system-sound device keeps the group where it is; off drops it.
+#[test]
+fn app_sound_takes_the_system_sound_channels() {
+    use sonobus_app::audio::DeviceSetup;
+    let dir = std::env::temp_dir().join(format!("sonobus-app-appsound-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let open = || AppController::new(ControllerConfig { settings_dir: Some(dir.clone()), use_devices: false }).unwrap();
+    let sound_groups = |c: &AppController| {
+        let st = &c.vm().state;
+        st.input_groups.iter().filter(|g| g.name == "System Sound").map(|g| (g.chan_start, g.num_channels, g.monitor)).collect::<Vec<_>>()
+    };
+    {
+        let mut c = open();
+        until(&mut [&mut c], 10, "engine snapshot", |c| c[0].vm().snapshot.udp_port != 0);
+        let udp_port = c.vm().snapshot.udp_port;
+        c.set_audio_setup(DeviceSetup { app_sound: Some("Firefox".into()), ..c.audio_setup().clone() }).unwrap();
+        c.tick();
+        assert_eq!(c.vm().snapshot.udp_port, udp_port);
+        assert_eq!(sound_groups(&c), [(2, 2, 0.0)]);
+        assert_eq!(c.vm().state.params.send_channels, 2);
+        c.shutdown();
+    }
+    let mut c = open();
+    assert_eq!(c.audio_setup().app_sound.as_deref(), Some("Firefox"));
+    assert_eq!(sound_groups(&c), [(2, 2, 0.0)]);
+    let sys = DeviceSetup { app_sound: None, system_sound: Some("pipewire:sink".into()), ..c.audio_setup().clone() };
+    c.set_audio_setup(sys.clone()).unwrap();
+    assert_eq!(sound_groups(&c), [(2, 2, 0.0)]);
+    c.set_audio_setup(DeviceSetup { system_sound: None, ..sys }).unwrap();
+    assert!(sound_groups(&c).is_empty());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn command_line_hosts_and_links_fill_the_form() {
     let mut c = controller();

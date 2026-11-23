@@ -681,3 +681,8 @@ countries: pt
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Alterna se as amostras de som podem ser reproduzidas utilizando teclas de atalho numéricas predefinidas."
 "Soundboard volume" = "Volume da placa de som"
 "Send Soundboard Playback to All" = "Enviar Reprodução do Soundboard a Todos"
+"You were removed from the session" = "Foi removido da sessão"
+"A member blocked you" = "Um membro bloqueou-o"
+"The host ended the session" = "O anfitrião terminou a sessão"
+"The session is full" = "A sessão está cheia"
+"The session ended" = "A sessão terminou"

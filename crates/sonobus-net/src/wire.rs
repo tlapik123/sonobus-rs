@@ -687,7 +687,7 @@ pub const T_FORMAT: u8 = 6;
 pub const T_SUBSCRIBE: u8 = 7;
 pub const T_QUALITY_REQ: u8 = 8;
 pub const T_APP_OSC: u8 = 9;
-/// Reserved for playout sync; decoded as [`Frame::Unknown`] for now.
+/// Playout sync (broadcast host to listener): [`Playout`].
 pub const T_PLAYOUT: u8 = 10;
 pub const T_BYE: u8 = 11;
 /// Session key rotation (host to members, after authentication).
@@ -721,6 +721,8 @@ pub const REKEY_BODY: usize = 32 + 4 + 32;
 pub const KEY_PROOF_BODY: usize = 32;
 /// CLOSE: the reason byte (longer bodies are accepted, the rest is ignored).
 pub const CLOSE_BODY_MAX: usize = 16;
+/// PLAYOUT: 16 bytes now; longer bodies (later extensions) are accepted up to this.
+pub const PLAYOUT_BODY_MAX: usize = 64;
 
 /// Largest body a valid frame of type `ty` can have: readers check the header against it
 /// before reading (or allocating) the body. Unknown types get [`MAX_BODY`].
@@ -735,6 +737,7 @@ pub fn max_body(ty: u8) -> usize {
         T_REKEY => REKEY_BODY,
         T_KEY_PROOF => KEY_PROOF_BODY,
         T_CLOSE => CLOSE_BODY_MAX,
+        T_PLAYOUT => PLAYOUT_BODY_MAX,
         _ => MAX_BODY,
     }
 }
@@ -865,6 +868,11 @@ pub struct Welcome {
     pub key: Option<[u8; 64]>,
     pub roster: Vec<PeerEntry>,
     pub formats: Vec<Format>,
+    /// The acceptor's session mode (trailing byte, sent only for [`SessionMode::Broadcast`]:
+    /// absent or 0 = mesh, 2..=255 refused; a peer from before this field ignores it). A
+    /// broadcast hub's WELCOME tells the joiner whose authority it is that it joins as a
+    /// listener.
+    pub mode: SessionMode,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -905,6 +913,20 @@ pub struct QualityReq {
     pub preferred_format: u8,
 }
 
+/// Synchronised playout of one stream (PLAYOUT, broadcast host to listener): block `seq` of
+/// `generation` was captured at `time_us` on the sender's clock (the clock of its PONGs); every
+/// listener plays it `delay_ms` later on that clock. `delay_ms == 0` turns sync off. Body:
+/// `u8 stream | u8 generation | u32 seq | u64 time_us | u16 delay_ms` (16 bytes; trailing bytes
+/// ignored).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Playout {
+    pub stream: u8,
+    pub generation: u8,
+    pub seq: u32,
+    pub time_us: u64,
+    pub delay_ms: u16,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Frame {
     Hello(Hello),
@@ -924,6 +946,7 @@ pub enum Frame {
     KeyProof([u8; 32]),
     /// Reason byte of a closing peer ([`CloseReason`] values; others are possible).
     Close(u8),
+    Playout(Playout),
     /// A frame type this version does not know (body skipped).
     Unknown(u8),
 }
@@ -1010,6 +1033,7 @@ impl Frame {
             Frame::Rekey(_) => T_REKEY,
             Frame::KeyProof(_) => T_KEY_PROOF,
             Frame::Close(_) => T_CLOSE,
+            Frame::Playout(_) => T_PLAYOUT,
             Frame::Unknown(t) => *t,
         }
     }
@@ -1056,6 +1080,9 @@ impl Frame {
                 put_roster(out, &w.roster)?;
                 put_count(out, w.formats.len(), MAX_FORMATS)?;
                 w.formats.iter().try_for_each(|f| put_format(out, f))?;
+                if w.mode != SessionMode::Mesh {
+                    out.push(w.mode as u8);
+                }
             }
             Frame::Roster(r) => put_roster(out, r)?,
             Frame::Format(f) => put_format(out, f)?,
@@ -1079,6 +1106,15 @@ impl Frame {
             }
             Frame::KeyProof(m) => out.extend_from_slice(m),
             Frame::Close(r) => out.push(*r),
+            Frame::Playout(p) => {
+                if p.stream >= 8 || p.generation >= 32 {
+                    return Err(Error::Invalid);
+                }
+                out.extend_from_slice(&[p.stream, p.generation]);
+                out.extend_from_slice(&p.seq.to_le_bytes());
+                out.extend_from_slice(&p.time_us.to_le_bytes());
+                out.extend_from_slice(&p.delay_ms.to_le_bytes());
+            }
             Frame::Bye | Frame::Unknown(_) => {}
         }
         Ok(())
@@ -1121,11 +1157,17 @@ impl Frame {
                 let formats = (0..n)
                     .map(|_| get_format(&mut r))
                     .collect::<Result<_, _>>()?;
+                let mode = match r.0.first() {
+                    None | Some(0) => SessionMode::Mesh,
+                    Some(1) => SessionMode::Broadcast,
+                    Some(_) => return Err(Error::Invalid),
+                };
                 Frame::Welcome(Welcome {
                     mac,
                     key,
                     roster,
                     formats,
+                    mode,
                 })
             }
             T_ROSTER => Frame::Roster(get_roster(&mut r)?),
@@ -1149,6 +1191,20 @@ impl Frame {
             T_BYE => Frame::Bye,
             T_KEY_PROOF => Frame::KeyProof(r.arr()?),
             T_CLOSE => Frame::Close(r.u8()?),
+            T_PLAYOUT => {
+                let stream = stream_id(r.u8()?)?;
+                let generation = r.u8()?;
+                if generation >= 32 {
+                    return Err(Error::Invalid);
+                }
+                Frame::Playout(Playout {
+                    stream,
+                    generation,
+                    seq: r.u32()?,
+                    time_us: r.u64()?,
+                    delay_ms: r.u16()?,
+                })
+            }
             T_REKEY => Frame::Rekey(Rekey {
                 key: r.arr()?,
                 grace_ms: r.u32()?,
@@ -1601,12 +1657,14 @@ pub(crate) mod tests {
                 key: Some([5; 64]),
                 roster: vec![entry()],
                 formats: vec![format()],
+                mode: SessionMode::Broadcast,
             }),
             Frame::Welcome(Welcome {
                 mac: [4; 32],
                 key: None,
                 roster: vec![],
                 formats: vec![],
+                mode: SessionMode::Mesh,
             }),
             Frame::Roster(vec![
                 entry(),
@@ -1639,6 +1697,13 @@ pub(crate) mod tests {
                 key: [8; 32],
                 grace_ms: 0,
                 evicted: Some([5; 32]),
+            }),
+            Frame::Playout(Playout {
+                stream: 1,
+                generation: 31,
+                seq: u32::MAX,
+                time_us: u64::MAX - 1,
+                delay_ms: 150,
             }),
         ]
     }
@@ -1742,6 +1807,7 @@ pub(crate) mod tests {
                 key: None,
                 roster: vec![],
                 formats: vec![],
+                mode: SessionMode::Mesh,
             })
             .encode(o)
             .unwrap()
@@ -1750,6 +1816,26 @@ pub(crate) mod tests {
             (b.len(), &b[..3], &b[35..]),
             (38, &[35, 0, T_WELCOME][..], &[0, 0, 0][..])
         );
+        // a broadcast hub's WELCOME: one trailing mode byte; a WELCOME without it is a mesh
+        let welcome = |mode| Welcome {
+            mac: [4; 32],
+            key: None,
+            roster: vec![],
+            formats: vec![],
+            mode,
+        };
+        let w = enc(|o| Frame::Welcome(welcome(SessionMode::Broadcast)).encode(o).unwrap());
+        assert_eq!((&w[..3], &w[3..35], &w[35..]), (&[36, 0, T_WELCOME][..], &[4; 32][..], &[0, 0, 0, 1][..]));
+        assert_eq!(decode_frame(&b), Ok((Frame::Welcome(welcome(SessionMode::Mesh)), 38)));
+        // a later version's longer body decodes; an unknown mode is refused, not read as mesh
+        let mut long = w.clone();
+        long.extend_from_slice(&[0xee; 2]);
+        long[0] = 38;
+        assert_eq!(decode_frame(&long), Ok((Frame::Welcome(welcome(SessionMode::Broadcast)), 41)));
+        assert!(Frame::decode_body(T_WELCOME, &[&w[3..38], [2].as_slice()].concat()).is_err());
+        // an explicit mesh byte (a later version with more after it) is a mesh
+        let mesh = Frame::decode_body(T_WELCOME, &[&w[3..38], [0, 0xee].as_slice()].concat());
+        assert_eq!(mesh, Ok(Frame::Welcome(welcome(SessionMode::Mesh))));
         assert_eq!(
             enc(|o| Frame::AppOsc(vec![1, 2]).encode(o).unwrap()),
             [2, 0, T_APP_OSC, 1, 2]
@@ -1765,6 +1851,27 @@ pub(crate) mod tests {
         assert_eq!(CloseReason::from_u8(1), Some(CloseReason::Removed));
         assert_eq!(CloseReason::from_u8(4).map(CloseReason::as_str), Some("session full"));
         assert_eq!(CloseReason::from_u8(9), None);
+
+        let p = Playout {
+            stream: 0,
+            generation: 2,
+            seq: 0x0102_0304,
+            time_us: 0x0a09_0807_0605_0403,
+            delay_ms: 0x0096,
+        };
+        let b = enc(|o| Frame::Playout(p).encode(o).unwrap());
+        assert_eq!(
+            b,
+            [16, 0, T_PLAYOUT, 0, 2, 4, 3, 2, 1, 3, 4, 5, 6, 7, 8, 9, 10, 0x96, 0]
+        );
+        // a later version's longer body decodes (the tail is ignored); bad ids are refused
+        let mut long = b.clone();
+        long.extend_from_slice(&[0xee; 4]);
+        long[0] = 20;
+        assert_eq!(decode_frame(&long), Ok((Frame::Playout(p), 23)));
+        assert!(Frame::decode_body(T_PLAYOUT, &[[8].as_slice(), &b[4..]].concat()).is_err());
+        assert!(Frame::decode_body(T_PLAYOUT, &[&b[3..4], [32].as_slice(), &b[5..]].concat()).is_err());
+        assert!(Frame::Playout(Playout { generation: 32, ..p }).encode(&mut vec![]).is_err());
     }
 
     #[test]
@@ -1798,8 +1905,9 @@ pub(crate) mod tests {
                         };
                         vec![len(bare) - 1, len(no_relay)]
                     }
-                    // REKEY's evicted id is optional too
+                    // REKEY's evicted id is optional too, and WELCOME's mode
                     Frame::Rekey(r) if r.evicted.is_some() => vec![36],
+                    Frame::Welcome(w) if w.mode != SessionMode::Mesh => vec![b.len() - 4],
                     _ => vec![],
                 };
                 for n in 0..b.len() - 3 {
@@ -1814,9 +1922,9 @@ pub(crate) mod tests {
             // Every valid frame fits the per-type cap readers enforce before reading the body.
             assert!(b.len() - 3 <= max_body(b[2]), "{f:?}");
         }
-        // Unknown and reserved types are skipped by length.
-        let b = [2, 0, T_PLAYOUT, 1, 2, 0, 0, T_BYE];
-        assert_eq!(decode_frame(&b), Ok((Frame::Unknown(T_PLAYOUT), 5)));
+        // Unknown types are skipped by length.
+        let b = [2, 0, 200, 1, 2, 0, 0, T_BYE];
+        assert_eq!(decode_frame(&b), Ok((Frame::Unknown(200), 5)));
         assert_eq!(decode_frame(&b[5..]), Ok((Frame::Bye, 3)));
     }
 

@@ -678,3 +678,8 @@ countries: de
 "Toggles whether sound samples can be played using default numeric hotkeys." = "Schaltet um, ob Klangbeispiele mit standardmäßigen numerischen Hotkeys abgespielt werden können."
 "Soundboard volume" = "Soundboard-Lautstärke"
 "Send Soundboard Playback to All" = "Soundboard-Wiedergabe an alle senden"
+"You were removed from the session" = "Sie wurden aus der Sitzung entfernt"
+"A member blocked you" = "Ein Mitglied hat Sie gesperrt"
+"The host ended the session" = "Der Host hat die Sitzung beendet"
+"The session is full" = "Die Sitzung ist voll"
+"The session ended" = "Die Sitzung wurde beendet"

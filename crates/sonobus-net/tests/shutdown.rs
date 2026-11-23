@@ -10,6 +10,7 @@ use sonobus_net::{Config, Event, Join, Net, Sink};
 
 static PANICS: AtomicUsize = AtomicUsize::new(0);
 
+#[cfg(target_os = "linux")]
 fn threads() -> usize {
     std::fs::read_dir("/proc/self/task")
         .map(|d| d.count())
@@ -46,6 +47,7 @@ fn clean_shutdown_when_peer_vanishes() {
         PANICS.fetch_add(1, Ordering::Relaxed);
         hook(i)
     }));
+    #[cfg(target_os = "linux")] // counted from /proc
     let before = threads();
     let a = start("a");
     let b = start("b");
@@ -66,6 +68,7 @@ fn clean_shutdown_when_peer_vanishes() {
     // The PeerTx outliving the Net is harmless.
     let _ = atx.send(Bytes::from_static(b"x"));
     drop(atx);
+    #[cfg(target_os = "linux")]
     assert_eq!(threads(), before, "threads left behind");
     assert_eq!(PANICS.load(Ordering::Relaxed), 0);
 }

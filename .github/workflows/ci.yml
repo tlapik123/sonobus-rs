@@ -1,0 +1,75 @@
+# Build and test on Linux, Windows (msvc) and macOS (arm64). No bundles, signing or installers.
+name: CI
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+  RUST_BACKTRACE: 1
+
+jobs:
+  build-test:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # system libopus through pkg-config, as in the dev shell (devenv.nix)
+          - os: ubuntu-latest
+            features: ""
+          # no system libopus: build it from source (cmake is preinstalled)
+          - os: windows-latest
+            features: --features aoo/opus-bundled
+          - os: macos-latest
+            features: --features aoo/opus-bundled
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Rust stable
+        run: |
+          rustup toolchain install stable --profile minimal --component clippy
+          rustup default stable
+
+      # alsa: cpal's default backend; pipewire + libclang: cpal's PipeWire backend (bindgen).
+      # The GUI libraries (X11, Wayland, GL, xkbcommon, fontconfig) are dlopen'ed at run time,
+      # so building and the headless UI tests need none of them.
+      - name: Linux packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libopus-dev libasound2-dev libpipewire-0.3-dev libclang-dev
+
+      # MSVC environment for the cmake build of libopus (opusic-sys picks Ninja when it is on
+      # PATH, which needs cl.exe on PATH too).
+      - name: MSVC environment
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --workspace --all-targets ${{ matrix.features }}
+
+      - uses: taiki-e/install-action@nextest
+
+      # nextest runs the test binaries in parallel (cargo test: one after another)
+      - name: Test
+        run: cargo nextest run --workspace --no-fail-fast ${{ matrix.features }}
+
+      - name: Clippy
+        if: runner.os == 'Linux'
+        run: cargo clippy --workspace --all-targets -- -D warnings

@@ -113,6 +113,7 @@ fn non_reading_peer_is_disconnected_and_queue_is_bounded() {
 /// Finding 2: unauthenticated connections are capped per source address and refused before
 /// TLS; other addresses still get in.
 #[test]
+#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
 fn pending_connections_are_capped_per_address() {
     let host = simple(cfg("host", Some(K), None));
     let to = host.local_addr().clone();
@@ -221,6 +222,7 @@ fn outward_failures_are_opaque() {
 
 /// Finding 3: HELLOs that never send PAKE3 have tested no guess and do not kill the PIN.
 #[test]
+#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
 fn abandoned_pin_attempts_do_not_invalidate_the_pin() {
     let host = host_pw("123456", true);
     let to = host.local_addr().clone();
@@ -241,6 +243,7 @@ fn abandoned_pin_attempts_do_not_invalidate_the_pin() {
 
 /// Finding 3: completed wrong guesses do invalidate the PIN (with an event); a new PIN works.
 #[test]
+#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
 fn completed_wrong_guesses_invalidate_the_pin() {
     let host = host_pw("123456", true);
     let to = host.local_addr().clone();
@@ -263,6 +266,7 @@ fn completed_wrong_guesses_invalidate_the_pin() {
 
 /// Finding 3: invite-link (KEY) joins are never subject to the lockout.
 #[test]
+#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
 fn key_joins_are_unaffected_by_lockout() {
     let host = host_pw("right", false);
     let to = host.local_addr().clone();

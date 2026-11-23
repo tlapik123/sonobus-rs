@@ -109,6 +109,29 @@ fn broadcast_host_and_two_listeners() {
     assert!(peers(&l1) == 1 && peers(&l2) == 1, "listeners never learn of each other");
 }
 
+fn sync_error(c: &AppController) -> Option<f32> {
+    c.vm().snapshot.peers.first()?.net.as_ref()?.playout_error_ms
+}
+
+/// "Sync listeners" on before hosting reaches the listener (it reports its sync error); turned
+/// off mid-session it stops; the choice is remembered.
+#[test]
+fn broadcast_sync_listeners_setting() {
+    let (mut h, mut l) = (controller(), controller());
+    h.set_playout_sync(true, 5);
+    assert_eq!((h.vm().secure_prefs.playout_sync, h.vm().secure_prefs.playout_ms), (true, sonobus_app::secure::MIN_PLAYOUT_MS), "clamped");
+    h.set_playout_sync(true, 200);
+    let link = host(&mut h, HostForm { broadcast: true, ..form("synced") });
+    l.join_secure("l", JoinMethod::Invite(link), false);
+    metronome_to_peers(&mut h);
+    until(&mut [&mut h, &mut l], 20, "listener in sync", |c| sync_error(c[1]).is_some());
+    h.set_playout_sync(false, 200);
+    until(&mut [&mut h, &mut l], 10, "sync off", |c| sync_error(c[1]).is_none());
+    assert_eq!(h.vm().secure_prefs.playout(), None);
+    h.set_playout_sync(true, 200);
+    until(&mut [&mut h, &mut l], 10, "sync on again mid-session", |c| sync_error(c[1]).is_some());
+}
+
 fn run(ctrls: &mut [&mut AppController], secs: f64) {
     let t = Instant::now();
     while t.elapsed().as_secs_f64() < secs {

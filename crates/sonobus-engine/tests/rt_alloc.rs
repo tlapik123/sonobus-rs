@@ -111,7 +111,7 @@ impl Rig {
             }
             next += Duration::from_secs_f64(BLOCK as f64 / SR as f64);
             match next.checked_duration_since(Instant::now()) {
-                Some(d) => std::thread::sleep(d),
+                Some(_) => sleep_until(next),
                 None => next = Instant::now(),
             }
         }
@@ -286,7 +286,7 @@ fn odd_sizes_and_channel_counts_do_not_allocate() {
         }
         next += Duration::from_secs_f64(n as f64 / SR as f64);
         match next.checked_duration_since(Instant::now()) {
-            Some(d) => std::thread::sleep(d),
+            Some(_) => sleep_until(next),
             None => next = Instant::now(),
         }
     }

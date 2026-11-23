@@ -182,3 +182,106 @@ fn listeners_stay_private_cannot_publish_and_are_capped() {
     other.connect(l2, Join::Key);
     failed(other);
 }
+
+/// A password joiner (here by name, through a rendezvous server) starts as a mesh peer; the
+/// hub's WELCOME makes it a listener: `JoinedBroadcast` before `Connected`, it leaves the
+/// rendezvous (later joiners are not pointed at it) and refuses every connection, by password
+/// or by key. A mesh host's WELCOME says nothing of the kind.
+#[test]
+fn password_joiner_of_a_hub_becomes_a_listener() {
+    const PW: &str = "open sesame";
+    let server = sonobus_net::RendezvousServer::start(
+        lo(1).into(),
+        0,
+        None,
+        sonobus_net::RelayChoice::None,
+        sonobus_net::rdv::Limits::default(),
+    )
+    .unwrap();
+    let regs = |n: usize| {
+        let end = Instant::now() + WAIT;
+        while server.counts().registrations != n {
+            assert!(Instant::now() < end, "{:?}", server.counts());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+    };
+    let host = simple(Config {
+        bind_ip: lo(2).into(),
+        role: Role::Host,
+        mode: SessionMode::Broadcast,
+        ..cfg("host", Some(K), Some(PW))
+    });
+    host.register_by_name(server.addr());
+    regs(1);
+    let j = simple(Config {
+        bind_ip: lo(3).into(),
+        session: "elsewhere".into(),
+        ..cfg("j", None, None)
+    });
+    j.join_by_name(server.addr(), SESSION, PW).unwrap();
+    let mut seen = vec![];
+    wait(&j, |e| {
+        seen.push(kind(&e));
+        matches!(e, Event::Connected { .. }).then_some(())
+    });
+    let at = |k: &str| seen.iter().position(|s| s.starts_with(k));
+    assert!(at("JoinedBroadcast").is_some_and(|b| Some(b) < at("Connected")), "{seen:?}");
+    assert_eq!(seen.iter().filter(|s| *s == "JoinedBroadcast").count(), 1, "{seen:?}");
+    assert_eq!(j.authority(), Some(host.local_addr().id));
+    // it left the rendezvous: only the host is listed
+    regs(1);
+
+    let ja = j.local_addr();
+    let by_pw = simple(cfg("by password", None, None));
+    by_pw.connect(ja.clone(), Join::Password(PW.into()));
+    failed(&by_pw);
+    let by_key = simple(cfg("by key", Some(K), None));
+    by_key.connect(ja, Join::Key);
+    failed(&by_key);
+    assert_eq!(incoming_failed(&j), "broadcast listeners accept no connections");
+
+    // a mesh host's password joiner stays a mesh peer
+    let mesh = simple(Config {
+        bind_ip: lo(4).into(),
+        role: Role::Host,
+        ..cfg("mesh host", Some(K), Some(PW))
+    });
+    let m = simple(cfg("m", None, None));
+    m.connect(mesh.local_addr(), Join::Password(PW.into()));
+    let mut seen = vec![];
+    wait(&m, |e| {
+        seen.push(kind(&e));
+        matches!(e, Event::Connected { .. }).then_some(())
+    });
+    assert!(!seen.iter().any(|s| s == "JoinedBroadcast"), "{seen:?}");
+}
+
+/// A KEY joiner configured as a mesh peer (a mesh invite for the hub's key, e.g. one minted
+/// before the host hosted the same session as a broadcast) is made a listener by its invite
+/// host's WELCOME, and then refuses connections.
+#[test]
+fn mesh_invite_joiner_of_a_hub_becomes_a_listener() {
+    let host = simple(Config {
+        role: Role::Host,
+        mode: SessionMode::Broadcast,
+        ..cfg("host", Some(K), None)
+    });
+    let hid = host.local_addr().id;
+    let j = simple(Config {
+        bind_ip: lo(3).into(),
+        host: Some(hid),
+        ..cfg("j", Some(K), None)
+    });
+    j.connect(host.local_addr(), Join::Key);
+    let mut seen = vec![];
+    wait(&j, |e| {
+        seen.push(kind(&e));
+        matches!(e, Event::Connected { .. }).then_some(())
+    });
+    let at = |k: &str| seen.iter().position(|s| s.starts_with(k));
+    assert!(at("JoinedBroadcast").is_some_and(|b| Some(b) < at("Connected")), "{seen:?}");
+    let by_key = simple(cfg("by key", Some(K), None));
+    by_key.connect(j.local_addr(), Join::Key);
+    failed(&by_key);
+    assert_eq!(incoming_failed(&j), "broadcast listeners accept no connections");
+}

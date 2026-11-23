@@ -5,4 +5,4 @@ Development happens in a Linux sandbox, so only Linux (app, plugin, server) and 
 ## Consequences
 
 - Nothing platform-specific for Windows or macOS has been compiled yet. `sonobus-plugin/bundle.sh` has untested branches for both.
-- Per-application sound capture on desktop (PipeWire, Windows process loopback) is not built; `InputSource::App` exists for it.
+- Per-application sound capture on desktop is built for Linux (PipeWire, `InputSource::App`, on in the default desktop build). Windows process loopback and macOS are not built.

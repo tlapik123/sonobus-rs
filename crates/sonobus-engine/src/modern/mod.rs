@@ -1,6 +1,8 @@
 //! Protocol v2 sessions over `sonobus_net` (iroh/QUIC): hosting (mesh or broadcast), joining by
 //! invite link, by a LAN-discovered session plus PIN/password, or by name plus password through
 //! a rendezvous server. The engine owns a [`Net`] only while such a session is active.
+//! A password/PIN/LAN/name joiner (or one with a mesh invite) learns from the host's WELCOME
+//! whether it reached a broadcast hub, and is then a listener exactly as by a broadcast invite.
 //!
 //! Audio: one shared [`TxStream`] (stream [`MAIN_STREAM`], two encodings: main and low) carries
 //! our send mix to every peer that subscribes: each block is encoded once per encoding and the
@@ -64,6 +66,26 @@
 //!   (`Engine::poll_session_event`, [`SessionEvent`]); per peer, `PeerStatus::net`;
 //! - peers still raise the ordinary `Event::PeerJoined` / `PeerLeft` / `PeerChanged` / `Chat`.
 //!
+//! Synchronised playout (broadcast only, [`HostOptions::playout_ms`] /
+//! `Engine::set_playout_sync`): every listener plays each host sample at the same moment,
+//! the host's capture time plus the host's delay. The host sends PLAYOUT on the control stream
+//! (its stream's block index ↔ its clock, and the delay) once per [`PLAYOUT_INTERVAL_MS`]; a
+//! listener that got one estimates its clock offset to the host from PING/PONG datagrams
+//! (NTP-style, the sample with the smallest round trip of the last [`CLOCK_SAMPLES`]; an
+//! asymmetric path skews it by half the asymmetry) and gives its receive stream the due time
+//! minus its own output latency (one block: the device's is not known) to steer to
+//! (`RxStream::set_playout`). A listener whose jitter buffer needs more than the delay plays
+//! late, as without sync; one without PLAYOUT (an older host, sync off) is unchanged.
+//! Latency Match / Receive Sync still set the listener's jitter buffer: a buffer above what the
+//! delay leaves makes it late, below it changes nothing audible.
+//! Whose PLAYOUT counts (`Session::playout_source`): only a broadcast listener's, and only
+//! from the host it joined (its key authority: the invite's host, or the hub a password, PIN,
+//! LAN or name join reached, whose WELCOME made us a listener). Mesh members ignore PLAYOUT.
+//! Re-checked every tick; when it stops counting, sync is off and the clock samples are
+//! dropped. The offset is used once [`CLOCK_SAMPLES`] samples at most [`CLOCK_MAX_AGE_MS`] old
+//! are in. A PLAYOUT only changes how we play its sender's own stream, by at most
+//! [`MAX_PLAYOUT_MS`], and makes us ping that sender; nobody else's audio.
+//!
 //! Not in modern sessions: the measured latency test (`Engine::start_latency_test` returns
 //! false; the latency estimate from RTT, buffers and codec is shown instead), legacy IP block
 //! lists (blocking is by endpoint id, for the session: `Engine::blocked_endpoints`), the
@@ -88,7 +110,9 @@ use sonobus_net::rt::{CloseReason, PeerInfo};
 use sonobus_net::stream::{
     CODEC_OPUS, Device, Encoding, RxEvent, RxOptions, RxStream, StreamFormat, TxOptions, TxStream,
 };
-use sonobus_net::wire::{Datagram, Frame, QualityReq, Role, Subscribe};
+use sonobus_net::wire::{
+    Datagram, Frame, KIND_AUDIO, Ping, Playout, Pong, QualityReq, Role, Subscribe,
+};
 use sonobus_net::{Bytes, ConnId, Event as NetEvent, Net, PathInfo, PeerTx};
 
 pub(crate) use links::{LinkCmd, Links};
@@ -130,6 +154,24 @@ pub const FALLBACK_MIN_MS: f64 = 60_000.0;
 const SEND_BUFFER_LOW: usize = sonobus_net::rt::DATAGRAM_SEND_BUFFER / 4;
 /// Lowest rung of a bit-rate ladder, per channel.
 const LADDER_FLOOR: u32 = 8000;
+/// Playout sync: a sensible delay for a host to turn it on with, and the largest accepted.
+pub const DEFAULT_PLAYOUT_MS: u16 = 150;
+pub const MAX_PLAYOUT_MS: u16 = 1000;
+/// The host repeats PLAYOUT this often.
+const PLAYOUT_INTERVAL_MS: f64 = 1000.0;
+/// A synced listener pings the host this often; the first [`SYNC_PINGS_FAST`] go every
+/// [`SYNC_PING_FIRST_MS`] (until it has [`CLOCK_SAMPLES`]), so that an answer within
+/// [`MAX_PING_RTT_US`] always finds its PING still outstanding ([`PINGS_OUTSTANDING`]).
+const SYNC_PING_MS: f64 = 1000.0;
+const SYNC_PING_FIRST_MS: f64 = 200.0;
+const SYNC_PINGS_FAST: u32 = 16;
+const PINGS_OUTSTANDING: usize = 16;
+const CLOCK_SAMPLES: usize = 8;
+/// Clock samples older than this (ms) no longer count (pinging paused, sync was off).
+const CLOCK_MAX_AGE_MS: f64 = 15_000.0;
+/// PONGs with a longer round trip, or held longer by the host, are not clock samples (µs).
+const MAX_PING_RTT_US: i128 = 2_000_000;
+const MAX_PONG_HOLD_US: i128 = 1_000_000;
 /// [`SessionEvent::Ended`] reasons.
 pub const END_REMOVED: &str = "removed";
 pub const END_BLOCKED: &str = "blocked";
@@ -187,6 +229,9 @@ pub struct HostOptions {
     pub max_listeners: Option<usize>,
     /// Stay registered under the session name at this rendezvous server.
     pub register_at: Option<PeerAddr>,
+    /// Broadcast: synchronised playout across listeners with this delay, ms (at most
+    /// [`MAX_PLAYOUT_MS`]; [`DEFAULT_PLAYOUT_MS`] suits most links). `None`: off.
+    pub playout_ms: Option<u16>,
 }
 
 impl HostOptions {
@@ -201,6 +246,7 @@ impl HostOptions {
             rendezvous: false,
             max_listeners: None,
             register_at: None,
+            playout_ms: None,
         }
     }
 }
@@ -209,7 +255,9 @@ impl HostOptions {
 pub enum SessionRole {
     Host,
     Member,
-    /// Broadcast listener: receives the host only, sends nothing.
+    /// Broadcast listener: receives the host only, sends nothing. By a broadcast invite, or by
+    /// a password, PIN, LAN or name join (or a mesh invite) that reached a broadcast hub (until
+    /// its WELCOME says so, such a joiner shows as [`SessionRole::Member`] of a mesh).
     Listener,
 }
 
@@ -498,6 +546,150 @@ impl Sub {
     }
 }
 
+/// A listener's clock offset to its host (host minus ours, µs) from PING/PONG: the sample with
+/// the smallest round trip of the last [`CLOCK_SAMPLES`].
+#[derive(Debug, Default)]
+struct Clock {
+    /// `(round trip µs, offset µs, when: the engine's ms)`.
+    samples: [(u64, i64, f64); CLOCK_SAMPLES],
+    n: usize,
+    ping_id: u16,
+    last_ping_ms: f64,
+    /// Our PINGs still unanswered: `(id, t1)`.
+    sent: [Option<(u16, u64)>; PINGS_OUTSTANDING],
+    /// PINGs sent so far.
+    pings: u32,
+    /// When the last refill burst of fast PINGs began (the engine's ms).
+    burst_ms: Option<f64>,
+}
+
+impl Clock {
+    /// PINGs go fast while the window is short of samples: the first [`SYNC_PINGS_FAST`], and
+    /// later (lost PONGs let samples age out) a refill burst as long as those take, at most one
+    /// per [`CLOCK_MAX_AGE_MS`] and only while answers come (an answer within the burst's
+    /// length). So a host that does not answer, or answers too little to fill the window, is
+    /// pinged at most about twice a second on average.
+    fn fast(&self, ms: f64) -> bool {
+        let burst = f64::from(SYNC_PINGS_FAST) * SYNC_PING_FIRST_MS;
+        self.fresh(ms).count() < CLOCK_SAMPLES
+            && (self.pings < SYNC_PINGS_FAST
+                || self.fresh(ms).any(|x| ms - x.2 < burst)
+                    && self
+                        .burst_ms
+                        .is_none_or(|b| ms - b < burst || ms - b >= CLOCK_MAX_AGE_MS))
+    }
+
+    /// Time (`ms`, the engine's clock) for the next PING ([`Self::fast`] or one a second).
+    fn ping_due(&self, ms: f64) -> bool {
+        let every = if self.fast(ms) { SYNC_PING_FIRST_MS } else { SYNC_PING_MS };
+        ms - self.last_ping_ms >= every
+    }
+
+    /// The next PING, sent at `t1` (our clock) and `ms` (the engine's).
+    fn ping(&mut self, t1: u64, ms: f64) -> Ping {
+        let new_burst = self.burst_ms.is_none_or(|b| ms - b >= CLOCK_MAX_AGE_MS);
+        if self.pings >= SYNC_PINGS_FAST && new_burst && self.fast(ms) {
+            self.burst_ms = Some(ms);
+        }
+        self.last_ping_ms = ms;
+        self.pings = self.pings.saturating_add(1);
+        self.ping_id = self.ping_id.wrapping_add(1);
+        self.sent[usize::from(self.ping_id) % self.sent.len()] = Some((self.ping_id, t1));
+        Ping {
+            id: self.ping_id,
+            t1,
+        }
+    }
+
+    /// A PONG received at `t4` (our clock), `ms` (the engine's). Only the answer to an
+    /// outstanding PING of ours (once), with a plausible round trip and hold time, counts.
+    fn on_pong(&mut self, p: &Pong, t4: u64, ms: f64) {
+        let Some(slot) = self.sent.iter_mut().find(|s| **s == Some((p.id, p.t1))) else {
+            return;
+        };
+        *slot = None;
+        let (t1, t2, t3, t4) = (p.t1 as i128, p.t2 as i128, p.t3 as i128, t4 as i128);
+        let rtt = (t4 - t1) - (t3 - t2);
+        if t1 > t4 || t2 > t3 || !(0..=MAX_PING_RTT_US).contains(&rtt) || t3 - t2 > MAX_PONG_HOLD_US
+        {
+            return;
+        }
+        let off = ((t2 - t1) + (t3 - t4)) / 2;
+        let off = off.clamp(i64::MIN.into(), i64::MAX.into()) as i64;
+        self.samples[self.n % CLOCK_SAMPLES] = (rtt as u64, off, ms);
+        self.n += 1;
+    }
+
+    /// Samples at most [`CLOCK_MAX_AGE_MS`] old at `ms`.
+    fn fresh(&self, ms: f64) -> impl Iterator<Item = &(u64, i64, f64)> {
+        let s = &self.samples[..self.n.min(CLOCK_SAMPLES)];
+        s.iter().filter(move |x| ms - x.2 <= CLOCK_MAX_AGE_MS)
+    }
+
+    /// The offset once a whole window of [`CLOCK_SAMPLES`] fresh samples is in: acting on the
+    /// first few (one may have queued both ways) and correcting later would be heard.
+    fn offset(&self, ms: f64) -> Option<i64> {
+        if self.fresh(ms).count() < CLOCK_SAMPLES {
+            return None;
+        }
+        self.fresh(ms).min_by_key(|x| x.0).map(|x| x.1)
+    }
+}
+
+/// When a host sample captured at `time_us` (host clock) is due at our output: on our clock
+/// (`us = time since epoch + skew`, host = ours + `off`), plus `delay`, less our output
+/// latency. `None` when out of range (a hostile or broken host: no target).
+fn due_at(
+    epoch: Instant,
+    skew: u64,
+    time_us: u64,
+    off: i64,
+    delay: Duration,
+    out_latency: Duration,
+) -> Option<Instant> {
+    let since_epoch = i128::from(time_us) - i128::from(off) - i128::from(skew);
+    let d = Duration::from_micros(u64::try_from(since_epoch.unsigned_abs()).ok()?);
+    let t = if since_epoch >= 0 {
+        epoch.checked_add(d)?
+    } else {
+        epoch.checked_sub(d)?
+    };
+    t.checked_add(delay)?.checked_sub(out_latency)
+}
+
+/// The PLAYOUT a broadcast host sends for `stream` with sync at `delay_ms` (`None`: off) and
+/// the stream's anchor `(generation, seq, time_us)`: on needs the anchor, off does not.
+fn playout_frame(
+    delay_ms: Option<u16>,
+    stream: u8,
+    anchor: Option<(u8, u32, u64)>,
+) -> Option<Playout> {
+    let off = Playout {
+        stream,
+        generation: 0,
+        seq: 0,
+        time_us: 0,
+        delay_ms: 0,
+    };
+    match (delay_ms, anchor) {
+        (None, _) => Some(off),
+        (Some(delay_ms), Some((generation, seq, time_us))) => Some(Playout {
+            generation,
+            seq,
+            time_us,
+            delay_ms,
+            ..off
+        }),
+        (Some(_), None) => None,
+    }
+}
+
+/// A host's PLAYOUT as we act on it: the delay capped at [`MAX_PLAYOUT_MS`]; `None` = off.
+fn accept_playout(pl: Playout) -> Option<Playout> {
+    let delay_ms = pl.delay_ms.min(MAX_PLAYOUT_MS);
+    (delay_ms > 0).then_some(Playout { delay_ms, ..pl })
+}
+
 /// A shared encoder's Opus expected loss from its subscribers': the lower median, so one
 /// receiver's bad path does not set it for everyone.
 fn shared_loss(mut v: Vec<u8>) -> u8 {
@@ -531,6 +723,9 @@ pub(crate) struct Peer {
     playing: bool,
     last_rtt_ms: f64,
     last_ping_ms: f64,
+    /// Listener: the host's latest PLAYOUT (sync on) and our clock offset to it.
+    playout: Option<Playout>,
+    clock: Clock,
 }
 
 impl Peer {
@@ -570,6 +765,17 @@ pub(crate) struct Session {
     loss_seed: u32,
     /// Received datagrams dropped because their connection's queue was full.
     pub dropped: Arc<AtomicU64>,
+    /// Time base of PING/PONG and PLAYOUT times.
+    epoch: Instant,
+    /// Test hook: our PING/PONG/PLAYOUT clock reads this much ahead (µs).
+    pub clock_skew_us: u64,
+    /// Broadcast host: the playout sync delay (ms); PLAYOUT due to everyone (a change).
+    playout_ms: Option<u16>,
+    playout_due: bool,
+    last_playout_ms: f64,
+    /// Test hook: hold received AUDIO datagrams this long.
+    pub rx_delay: Duration,
+    delayed: std::collections::VecDeque<(Instant, ConnId, Bytes)>,
 }
 
 /// How a session starts.
@@ -629,11 +835,13 @@ impl Session {
         let (mut seed, mut mode, mut role) = (None, SessionMode::Mesh, SessionRole::Member);
         let session: String;
         let (mut pin, mut lan, mut rendezvous, mut dials) = (None, None, false, Vec::new());
+        let mut playout_ms = None;
         match start {
             Start::Host(o) => {
                 // the key `config` derived must come from this seed: regenerate both here
                 seed = o.seed;
                 mode = o.mode;
+                playout_ms = o.playout_ms;
                 role = SessionRole::Host;
                 session = o.session.clone();
                 if o.pin {
@@ -716,7 +924,15 @@ impl Session {
             loss_pct: 0,
             loss_seed: 0x1234_5678,
             dropped: Arc::default(),
+            epoch: Instant::now(),
+            clock_skew_us: 0,
+            playout_ms: None,
+            playout_due: false,
+            last_playout_ms: f64::NEG_INFINITY,
+            rx_delay: Duration::ZERO,
+            delayed: Default::default(),
         };
+        s.set_playout_ms(playout_ms);
         s.refresh_addr(h, true);
         Ok(s)
     }
@@ -749,6 +965,90 @@ impl Session {
 
     pub fn invite(&self) -> Option<String> {
         self.invite.clone()
+    }
+
+    /// Broadcast host: playout sync with this delay (ms, capped at [`MAX_PLAYOUT_MS`]), or off;
+    /// the listeners hear of it right away. Ignored elsewhere.
+    pub fn set_playout_ms(&mut self, ms: Option<u16>) {
+        if self.role != SessionRole::Host || self.mode != SessionMode::Broadcast {
+            return;
+        }
+        let ms = ms.filter(|&m| m > 0).map(|m| m.min(MAX_PLAYOUT_MS));
+        self.playout_due |= ms != self.playout_ms;
+        self.playout_ms = ms;
+    }
+
+    /// Our PING/PONG/PLAYOUT clock: µs since [`Self::epoch`] (plus the test skew).
+    fn us(&self, t: Instant) -> u64 {
+        (t.saturating_duration_since(self.epoch).as_micros() as u64).saturating_add(self.clock_skew_us)
+    }
+
+    /// Broadcast host: PLAYOUT to every listener, for the stream it gets (no anchor yet:
+    /// skipped until the next round). Turning sync off needs no anchor: everyone gets it.
+    fn send_playout(&self) {
+        for (i, p) in self.peers.iter().enumerate() {
+            let (stream, t) = match &p.private {
+                Some(t) => (PRIVATE_STREAM, Some(t)),
+                None => (MAIN_STREAM, self.main.as_ref()),
+            };
+            let anchor = t
+                .and_then(|t| t.lock().playout_anchor())
+                .map(|(g, seq, at)| (g, seq, self.us(at)));
+            if let Some(f) = playout_frame(self.playout_ms, stream, anchor) {
+                self.peers[i].send_control(&self.net, Frame::Playout(f));
+            }
+        }
+    }
+
+    /// Peer `i` is our broadcast host, so its PLAYOUT counts: we are a broadcast listener
+    /// and it is the host we joined, our key authority (the host our invite named, or the hub
+    /// our password join reached). Re-checked every tick. It steers only how we play its own
+    /// stream.
+    fn playout_source(&self, i: usize) -> bool {
+        self.role == SessionRole::Listener && self.net.authority() == Some(self.peers[i].info.id)
+    }
+
+    /// Listener: ping the host while it asks for sync, and steer the receive stream to its
+    /// target once the clock offset is known.
+    fn sync_playout(&mut self, h: &Host, i: usize, now: Instant) {
+        let ms = h.now_ms();
+        let out_latency = Duration::from_secs_f32(h.cfg.block_ms() * 1e-3);
+        let t1 = self.us(now);
+        let (epoch, skew) = (self.epoch, self.clock_skew_us);
+        let source = self.playout_source(i);
+        let p = &mut self.peers[i];
+        if !source && p.playout.is_some() {
+            // no longer our host's: as if it turned sync off
+            p.playout = None;
+            p.clock = Clock::default();
+        }
+        let Some(pl) = p.playout else {
+            if let Some(r) = &mut p.rx {
+                r.rx.set_playout(None);
+            }
+            return;
+        };
+        if p.clock.ping_due(ms) {
+            let mut b = Vec::new();
+            p.clock.ping(t1, ms).encode(&mut b);
+            p.c.bytes_sent += b.len() as u64;
+            let _ = p.tx.send(b.into());
+        }
+        let (Some(off), Some(r)) = (p.clock.offset(ms), &mut p.rx) else {
+            return;
+        };
+        if r.stream != pl.stream {
+            r.rx.set_playout(None);
+            return;
+        }
+        let delay = Duration::from_millis(pl.delay_ms.into());
+        let due = due_at(epoch, skew, pl.time_us, off, delay, out_latency);
+        r.rx.set_playout(due.map(|due| sonobus_net::stream::Playout {
+            generation: pl.generation,
+            seq: pl.seq,
+            due,
+            span: delay,
+        }));
     }
 
     /// Our address changed (relay URL now known): new invite link, new LAN advertisement.
@@ -807,9 +1107,15 @@ impl Session {
     }
 
     /// Host: remove `evict` (if any) everywhere, then rotate the session key so that it cannot
-    /// come back with the old one. Returns the new invite link.
+    /// come back with the old one. Returns the new invite link; `None`, with nothing changed,
+    /// when `evict` is not a current peer.
     pub fn rotate_key(&mut self, h: &mut Host, evict: Option<PeerId>) -> Option<String> {
         if self.role != SessionRole::Host {
+            return None;
+        }
+        // A member that is gone under this id (left, or reconnected under a new one) is not
+        // turned into a plain key change: that would hand it the new key and block nobody.
+        if evict.is_some_and(|id| self.peer_index(id).is_none()) {
             return None;
         }
         let mut evict_id = None;
@@ -951,7 +1257,7 @@ impl Session {
                     self.remove_peer_at(h, i, false);
                     // the reasons a peer sends (`CloseReason`); local reasons never match
                     let reason = match reason.as_str() {
-                        r @ (END_REMOVED | END_BLOCKED) if host || self.peers.is_empty() => Some(r),
+                        r @ (END_REMOVED | END_BLOCKED | END_FULL) if host || self.peers.is_empty() => Some(r),
                         _ if self.role == SessionRole::Listener && host => Some(END_HOST_LEFT),
                         _ => None,
                     };
@@ -980,6 +1286,17 @@ impl Session {
                 }
             }
             NetEvent::SessionKey(_) => h.session_event(SessionEvent::SessionKeyChanged),
+            // the host we joined through (password join, or a mesh invite) is a broadcast hub:
+            // a listener from now on, as by a broadcast invite
+            // (the transport refuses connections and dials nobody; it comes before Connected,
+            // so no peer has subscribed to our send stream)
+            NetEvent::JoinedBroadcast if self.role == SessionRole::Member => {
+                (self.mode, self.role) = (SessionMode::Broadcast, SessionRole::Listener);
+                if self.main.take().is_some() {
+                    h.tx.send(AudioCmd::Modern(LinkCmd::Main(None)));
+                }
+            }
+            NetEvent::JoinedBroadcast => {}
             NetEvent::JoinFailed { failed_total } => {
                 self.failed_joins = failed_total;
                 h.session_event(SessionEvent::PasswordJoinFailed { failed_total });
@@ -1048,7 +1365,11 @@ impl Session {
             playing: false,
             last_rtt_ms: now_ms,
             last_ping_ms: now_ms,
+            playout: None,
+            clock: Clock::default(),
         });
+        // a new listener gets the playout target right away
+        self.playout_due |= self.playout_ms.is_some();
         let i = self.peers.len() - 1;
         self.peer_added(h, i);
         self.route(h, i);
@@ -1098,6 +1419,14 @@ impl Session {
                 self.resubscribe(i);
             }
             Frame::AppOsc(raw) => self.on_app_osc(h, i, &raw),
+            Frame::Playout(pl) if self.playout_source(i) => {
+                let p = &mut self.peers[i];
+                p.playout = accept_playout(pl);
+                if p.playout.is_none() {
+                    // off: the next time starts from fresh clock samples
+                    p.clock = Clock::default();
+                }
+            }
             // the roster mesh is the transport's
             _ => {}
         }
@@ -1424,6 +1753,14 @@ impl Session {
     // ---- datagrams and timers ------------------------------------------------------------------
 
     pub fn on_datagram(&mut self, h: &mut Host, conn: ConnId, d: &Bytes, now: Instant) {
+        if !self.rx_delay.is_zero() && d.first().is_some_and(|k| k & 0x0f == KIND_AUDIO) {
+            self.delayed.push_back((now + self.rx_delay, conn, d.clone()));
+            return;
+        }
+        self.handle_datagram(h, conn, d, now);
+    }
+
+    fn handle_datagram(&mut self, h: &mut Host, conn: ConnId, d: &Bytes, now: Instant) {
         let Some(i) = self.find_conn(conn) else {
             return;
         };
@@ -1483,6 +1820,25 @@ impl Session {
                     self.try_fallback(h, i);
                 }
             }
+            Ok(Datagram::Ping(ping)) if self.role == SessionRole::Host => {
+                let t = self.us(now);
+                let mut b = Vec::new();
+                Pong {
+                    id: ping.id,
+                    t1: ping.t1,
+                    t2: t,
+                    t3: self.us(Instant::now()).max(t),
+                }
+                .encode(&mut b);
+                let p = &mut self.peers[i];
+                p.c.bytes_sent += b.len() as u64;
+                let _ = p.tx.send(b.into());
+            }
+            Ok(Datagram::Pong(pong)) => {
+                let t4 = self.us(now);
+                let ms = h.now_ms();
+                self.peers[i].clock.on_pong(&pong, t4, ms);
+            }
             _ => {}
         }
     }
@@ -1490,6 +1846,12 @@ impl Session {
     /// Timer work, every few ms: receive streams (concealment, NACK, REPORT, events → jitter
     /// controller), RTT samples, ping estimate, stats, layouts, the peer cache, FORMAT changes.
     pub fn tick(&mut self, h: &mut Host, blocks: u64, now: Instant) {
+        while let Some(&(t, conn, _)) = self.delayed.front()
+            && t <= now
+        {
+            let (_, _, d) = self.delayed.pop_front().expect("front");
+            self.handle_datagram(h, conn, &d, now);
+        }
         let ms = h.now_ms();
         let block_ms = h.cfg.block_ms();
         let thresh = h.model.state.extra.auto_drop_rate_thresh;
@@ -1497,6 +1859,9 @@ impl Session {
         self.last_blocks = blocks;
         for i in 0..self.peers.len() {
             self.apply_request(h, i);
+            if self.role != SessionRole::Host {
+                self.sync_playout(h, i, now);
+            }
             let p = &mut self.peers[i];
             let rtt = p.path.as_ref().map_or(Duration::from_millis(1), |x| x.rtt);
             let mut change = Change::None;
@@ -1528,6 +1893,7 @@ impl Session {
                         | RxEvent::BlocksGap { .. } => {}
                     }
                 }
+                p.c.jitter.lift_ms = r.rx.lift_ms();
                 if let Some(f) = r.rx.buffer_fill_ratio() {
                     for _ in 0..new_blocks {
                         p.c.jitter.push_fill(f);
@@ -1582,6 +1948,14 @@ impl Session {
         }
         // a send stream that changed format announces it to everyone who may subscribe
         let main_change = self.main.as_ref().and_then(|t| t.lock().take_format_change());
+        // a new generation needs a new anchor
+        let due = self.playout_ms.is_some()
+            && (main_change.is_some() || ms - self.last_playout_ms >= PLAYOUT_INTERVAL_MS);
+        if self.playout_due || due {
+            self.playout_due = false;
+            self.last_playout_ms = ms;
+            self.send_playout();
+        }
         for i in 0..self.peers.len() {
             let private = self.peers[i].private.as_ref().map(|t| t.lock().take_format_change());
             match private {
@@ -1841,6 +2215,7 @@ impl Proto for Session {
                 .as_ref()
                 .filter(|_| p.c.send_active)
                 .map(|s| (s.decision.level, s.k(self.red_floor))),
+            playout_error_ms: p.rx.as_ref().and_then(|r| r.rx.playout_error_ms()),
         })
     }
 
@@ -1904,6 +2279,196 @@ mod tests {
         assert_eq!(shared_loss(vec![100, 0]), 0);
         assert_eq!(shared_loss(vec![0, 100, 3]), 3);
         assert_eq!(shared_loss(vec![100, 5, 10, 100]), 10);
+    }
+
+    /// NTP offset from PONGs: the least-delayed sample of the window wins, a queued (slow,
+    /// asymmetric) one does not skew it; used only once a whole window of fresh samples is in;
+    /// only answers to our own outstanding PINGs count, once, with plausible times; samples
+    /// age out.
+    #[test]
+    fn clock_offset_takes_the_fastest_round_trip() {
+        let mut c = Clock::default();
+        // host clock = ours + 5000 µs; `up`/`down` one-way delays; `ms` the engine's clock
+        let exchange = |c: &mut Clock, t1: u64, up: u64, down: u64| {
+            let id = c.ping(t1, 0.0).id;
+            let t2 = t1 + up + 5000;
+            let p = Pong { id, t1, t2, t3: t2 + 10 };
+            c.on_pong(&p, t2 + 10 - 5000 + down, t1 as f64 / 1000.0);
+            p
+        };
+        let ms = |c: &Clock| c.samples[(c.n - 1) % CLOCK_SAMPLES].2;
+        // 9 ms stuck on the way back: offset off by 4.5 ms, but a longer round trip
+        exchange(&mut c, 100, 1000, 9000);
+        let first = exchange(&mut c, 100_000, 1000, 1000);
+        for k in 2..CLOCK_SAMPLES as u64 - 1 {
+            exchange(&mut c, k * 100_000, 3000, 9000);
+            assert_eq!(c.offset(ms(&c)), None, "not before a whole window");
+        }
+        exchange(&mut c, 800_000, 3000, 9000);
+        assert_eq!((c.n, c.offset(ms(&c))), (CLOCK_SAMPLES, Some(5000)));
+        // the window forgets: eight slow samples later the fast one is gone
+        for k in 0..CLOCK_SAMPLES as u64 {
+            exchange(&mut c, 1_000_000 * (k + 1), 1000, 3000);
+        }
+        assert_eq!(c.offset(ms(&c)), Some(4000));
+        exchange(&mut c, 9_000_000, 1000, 5000);
+        assert_eq!(c.offset(ms(&c)), Some(4000), "a slower sample does not win");
+        let n = c.n;
+        // and by time: 15 s without answers (sync off, pinging paused) and none counts
+        assert_eq!(c.offset(ms(&c) + 1000.0), Some(4000));
+        assert_eq!(c.offset(ms(&c) + CLOCK_MAX_AGE_MS + 1.0), None);
+
+        // forged or broken PONGs change nothing:
+        // a replay of an answered one, one for a PING never sent, one with the wrong echo
+        let at = ms(&c);
+        c.on_pong(&first, 10_000_000, at);
+        c.on_pong(&Pong { id: 999, t1: 1, t2: u64::MAX / 2, t3: u64::MAX / 2 }, 1, at);
+        let id = c.ping(20_000_000, 0.0).id;
+        c.on_pong(&Pong { id, t1: 20_000_001, t2: 1, t3: 1 }, 20_000_001, at);
+        // zero round trip, but a hold time beyond reason; a round trip beyond reason
+        let id = c.ping(30_000_000, 0.0).id;
+        c.on_pong(&Pong { id, t1: 30_000_000, t2: 1, t3: 3_000_001 }, 33_000_000, at);
+        let id = c.ping(40_000_000, 0.0).id;
+        c.on_pong(&Pong { id, t1: 40_000_000, t2: 7, t3: 7 }, 45_000_000, at);
+        // nonsense order
+        let id = c.ping(50, 0.0).id;
+        c.on_pong(&Pong { id, t1: 50, t2: 20, t3: 15 }, 60, at);
+        assert_eq!((c.n, c.offset(at)), (n, Some(4000)));
+    }
+
+    /// A 1.5 s round trip (within [`MAX_PING_RTT_US`]) still gives samples at the fast rate:
+    /// every answer finds its PING outstanding. A host that never answers gets the fast PINGs
+    /// once, then one a second.
+    #[test]
+    fn slow_round_trips_count_and_silence_backs_off() {
+        // host clock = ours + 7 ms; 1.5 s round trip; time steps of 10 ms
+        let mut c = Clock::default();
+        let mut flight = std::collections::VecDeque::new();
+        let mut synced_at = None;
+        for step in 0..2000u64 {
+            let ms = step as f64 * 10.0;
+            let us = step * 10_000;
+            if c.ping_due(ms) {
+                let p = c.ping(us, ms);
+                let t2 = us + 750_000 + 7_000;
+                flight.push_back((us + 1_500_000, Pong { id: p.id, t1: p.t1, t2, t3: t2 }));
+            }
+            while flight.front().is_some_and(|f| f.0 <= us) {
+                let (t4, pong) = flight.pop_front().unwrap();
+                c.on_pong(&pong, t4, ms);
+            }
+            if synced_at.is_none() && c.offset(ms).is_some() {
+                synced_at = Some(ms);
+            }
+        }
+        assert_eq!(c.offset(20_000.0), Some(7_000));
+        // eight answers to PINGs 200 ms apart, the first after 1.5 s
+        assert!(synced_at.is_some_and(|t| t < 3500.0), "{synced_at:?}");
+        assert!(c.pings < 16 + 20, "{}", c.pings);
+
+        let mut silent = Clock::default();
+        for step in 0..6000u64 {
+            let ms = step as f64 * 10.0;
+            if silent.ping_due(ms) {
+                silent.ping(step * 10_000, ms);
+            }
+        }
+        // 16 fast ones (3.2 s), then one a second for the rest of the minute
+        assert_eq!(silent.pings, 16 + 56, "{}", silent.pings);
+    }
+
+    /// PINGs every 10 ms steps of the engine clock for `secs`, `loss` (of 10) PONGs lost
+    /// (50 ms round trip), answers stopping at `quiet` s: the share of the time from 10 s to
+    /// `quiet` without an offset, the PINGs sent until `quiet` and after.
+    fn pinging(loss: u64, secs: u64, quiet: f64) -> (f64, u32, u32) {
+        let mut c = Clock::default();
+        let mut flight = std::collections::VecDeque::new();
+        let mut rng = 0x9e37_79b9_7f4a_7c15u64;
+        let (mut short, mut steps, mut at_quiet) = (0, 0, None);
+        for step in 0..secs * 100 {
+            let ms = step as f64 * 10.0;
+            let us = step * 10_000;
+            let answers = ms < quiet * 1e3;
+            if !answers && at_quiet.is_none() {
+                at_quiet = Some(c.pings);
+            }
+            if c.ping_due(ms) {
+                let p = c.ping(us, ms);
+                rng ^= rng << 13;
+                rng ^= rng >> 7;
+                rng ^= rng << 17;
+                if answers && rng % 10 >= loss {
+                    let t2 = us + 25_000 + 7_000;
+                    flight.push_back((us + 50_000, Pong { id: p.id, t1: p.t1, t2, t3: t2 }));
+                }
+            }
+            while flight.front().is_some_and(|f| f.0 <= us) {
+                let (t4, pong) = flight.pop_front().unwrap();
+                c.on_pong(&pong, t4, ms);
+            }
+            if ms >= 10_000.0 && answers {
+                steps += 1;
+                short += usize::from(c.offset(ms).is_none());
+            }
+        }
+        let q = at_quiet.unwrap_or(c.pings);
+        (short as f64 / f64::from(steps.max(1)), q, c.pings - q)
+    }
+
+    /// 30 % of the PONGs lost (50 ms round trip): samples age out faster than one PING a
+    /// second refills them, so whenever the window falls short a burst of fast PINGs refills
+    /// it. The offset is there all but a sliver of the time (at one PING a second it was
+    /// missing 3.9 % of the time), at about the slow rate's PINGs. A host that answered and
+    /// then stopped gets fast PINGs for at most 3.2 s more.
+    #[test]
+    fn lost_pongs_bring_the_fast_rate_back() {
+        let (missing, pings, after) = pinging(3, 600, 590.0);
+        eprintln!("30 % lost: offset missing {:.3} % of the time, {pings} PINGs in 590 s", missing * 100.0);
+        assert!(missing < 0.005, "{missing}");
+        assert!(pings < 2 * 590, "{pings}");
+        assert!(after <= 16 + 10, "{after}");
+    }
+
+    /// Most PONGs lost (70 %, 90 %): the window rarely fills, and the fast bursts come at most
+    /// one per 15 s: about two PINGs a second on average, not five.
+    #[test]
+    fn mostly_lost_pongs_do_not_keep_the_fast_rate() {
+        for loss in [7, 9] {
+            let (missing, pings, _) = pinging(loss, 600, 600.0);
+            eprintln!("{loss}0 % lost: offset missing {:.1} % of the time, {pings} PINGs in 600 s", missing * 100.0);
+            assert!(pings <= 600 + 16 * (600 / 15 + 1), "{pings}");
+        }
+    }
+
+    /// The due time from a host PLAYOUT time: our clock is the host's minus the offset (a sign
+    /// error here moves every target by twice the offset), the skew is our clock's own; absurd
+    /// values give no target instead of panicking.
+    #[test]
+    fn due_times_and_hostile_values() {
+        let epoch = Instant::now();
+        let ms = Duration::from_millis;
+        // host clock 3 s ahead of ours, our clock 1 s ahead of `epoch`
+        let off = 3_000_000;
+        let due = due_at(epoch, 1_000_000, 4_500_000 + off as u64, off, ms(200), ms(5));
+        assert_eq!(due, Some(epoch + ms(3500 + 200 - 5)));
+        // the host's time before our epoch
+        let due = due_at(epoch + ms(10_000), 0, 1_000_000, 2_000_000, ms(100), ms(0));
+        assert_eq!(due, Some(epoch + ms(9000 + 100)));
+        for (t, off) in [(u64::MAX, i64::MIN), (u64::MAX, 0), (0, i64::MAX), (0, 0)] {
+            let _ = due_at(epoch, u64::MAX, t, off, ms(1000), ms(5));
+        }
+        assert_eq!(due_at(epoch, 0, u64::MAX, i64::MIN, ms(1), ms(0)), None);
+
+        // turning sync off needs no anchor (a format change or device setup just cleared it)
+        let off = playout_frame(None, 1, None).expect("off goes out without an anchor");
+        assert_eq!((off.stream, off.delay_ms, accept_playout(off)), (1, 0, None));
+        assert_eq!(playout_frame(Some(150), 0, None), None);
+        let on = playout_frame(Some(150), 0, Some((3, 7, 99)));
+        assert_eq!(on.map(|p| (p.generation, p.seq, p.time_us, p.delay_ms)), Some((3, 7, 99, 150)));
+        let pl = |delay_ms| Playout { stream: 0, generation: 1, seq: 2, time_us: 3, delay_ms };
+        assert_eq!(accept_playout(pl(0)), None);
+        assert_eq!(accept_playout(pl(150)), Some(pl(150)));
+        assert_eq!(accept_playout(pl(u16::MAX)), Some(pl(MAX_PLAYOUT_MS)));
     }
 
     /// A subscription is kept across a re-SUBSCRIBE only while its levels are still those of

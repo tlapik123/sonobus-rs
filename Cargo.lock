@@ -318,6 +318,7 @@ dependencies = [
  "md-5 0.11.0",
  "opusic-sys",
  "rtrb",
+ "socket2",
 ]
 
 [[package]]
@@ -6138,6 +6139,7 @@ dependencies = [
  "sonobus-dsp",
  "sonobus-files",
  "sonobus-net",
+ "tokio",
 ]
 
 [[package]]
