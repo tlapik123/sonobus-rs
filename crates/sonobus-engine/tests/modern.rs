@@ -209,8 +209,7 @@ fn three_engines_controls_then_the_host_leaves() {
     // receive mute: the stream is unsubscribed
     b.e.set_peer_recv_muted(pc, true);
     run(&mut [&mut a, &mut b, &mut c], 1.0);
-<<<<<<< HEAD
-    assert!(b.tone(0, 990.0) < 0.01);
+    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0));
     assert!(
         !b.snap()
             .peers
@@ -219,10 +218,6 @@ fn three_engines_controls_then_the_host_leaves() {
             .unwrap()
             .recv_active
     );
-=======
-    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0));
-    assert!(!b.snap().peers.iter().find(|p| p.id == pc).unwrap().recv_active);
->>>>>>> devenv-template#locki-tzytin9h
     b.e.set_peer_recv_muted(pc, false);
     assert!(
         hears(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0, CENTRE),
@@ -232,16 +227,11 @@ fn three_engines_controls_then_the_host_leaves() {
     let pb = a.peer("user1");
     a.e.set_peer_send_muted(pb, true);
     run(&mut [&mut a, &mut b, &mut c], 1.0);
-<<<<<<< HEAD
-    assert!(b.tone(0, 440.0) < 0.01);
+    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0));
     assert!(
         hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE),
         "c still hears a"
     );
-=======
-    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0));
-    assert!(hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE), "c still hears a");
->>>>>>> devenv-template#locki-tzytin9h
     a.e.set_peer_send_muted(pb, false);
     assert!(
         hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, AMP),
@@ -1120,15 +1110,11 @@ fn end_to_end_latency_legacy_vs_modern() {
         // legacy 48 to 54 ms, modern 43 to 64 ms; a macOS CI runner started legacy at 26.7 ms,
         // below its buffer, and modern at 58.7 ms), so legacy counts as its buffer at least.
         assert!(ms(legacy) < 120.0 && ms(modern) < 120.0);
-<<<<<<< HEAD
         assert!(
-            ms(modern) < ms(legacy) + 15.0,
+            ms(modern) < ms(legacy).max(40.0) + 25.0,
             "{} vs {}",
             ms(modern),
             ms(legacy)
         );
-=======
-        assert!(ms(modern) < ms(legacy).max(40.0) + 25.0, "{} vs {}", ms(modern), ms(legacy));
->>>>>>> devenv-template#locki-tzytin9h
     }
 }
