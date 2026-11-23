@@ -209,14 +209,24 @@ pub fn starved_within(d: Duration) -> bool {
 
 /// Wait until `t`, the lockstep's next block. macOS CI runners oversleep `thread::sleep`
 /// several-fold (20 ms took about 125 ms), which ran the audio clock at a fraction of real
-/// time there; on macOS this yields until `t` instead.
+/// time there; on macOS this yields until `t` instead. The Windows CI runner ran the loop at
+/// about five sixths of real time (47 repaired blocks where Linux counts 56): there it sleeps
+/// short of `t` and yields for the last 2 ms.
 pub fn sleep_until(t: Instant) {
-    if cfg!(target_os = "macos") {
-        while Instant::now() < t {
-            std::thread::yield_now();
+    if cfg!(target_os = "linux") {
+        if let Some(d) = t.checked_duration_since(Instant::now()) {
+            std::thread::sleep(d);
         }
-    } else if let Some(d) = t.checked_duration_since(Instant::now()) {
+        return;
+    }
+    let margin = Duration::from_millis(2);
+    if cfg!(target_os = "windows")
+        && let Some(d) = t.checked_duration_since(Instant::now() + margin)
+    {
         std::thread::sleep(d);
+    }
+    while Instant::now() < t {
+        std::thread::yield_now();
     }
 }
 
