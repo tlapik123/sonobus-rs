@@ -24,6 +24,8 @@ modern = ["dep:sonobus-net"]
 [dev-dependencies]
 # the recording failure test injects a full disk
 sonobus-files = { path = "../sonobus-files", features = ["test-hooks"] }
+# the leak test builds a runtime up front: tokio's signal driver keeps a socket pair for good
+tokio = { version = "1.54.1", default-features = false, features = ["rt", "net"] }
 
 [[example]]
 name = "headless"

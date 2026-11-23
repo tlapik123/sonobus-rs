@@ -22,6 +22,7 @@ in
     pipewire # cpal's PipeWire backend (sonobus-audio feature `pipewire`): libpipewire-0.3
     cmake # opus-bundled (Android) builds libopus from source
     cargo-ndk
+    cargo-nextest # test runner: one process per test, test binaries in parallel
   ] ++ guiLibs;
 
   env.LD_LIBRARY_PATH = lib.makeLibraryPath guiLibs;

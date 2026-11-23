@@ -68,8 +68,11 @@ jobs:
       - name: Build
         run: cargo build --workspace --all-targets ${{ matrix.features }}
 
+      - uses: taiki-e/install-action@nextest
+
+      # nextest runs the test binaries in parallel (cargo test: one after another)
       - name: Test
-        run: cargo test --workspace --no-fail-fast ${{ matrix.features }}
+        run: cargo nextest run --workspace --no-fail-fast ${{ matrix.features }}
 
       - name: Clippy
         if: runner.os == 'Linux'

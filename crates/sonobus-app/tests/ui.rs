@@ -392,6 +392,12 @@ fn host_session_to_peer_effects() {
     h.run_steps(1);
     h.get_by_label("Group Name:").type_text("ui-test");
     h.run_steps(1);
+    // a free port, not the default one: a test in another process may hold that
+    h.state_mut().host_port = std::net::UdpSocket::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port();
     h.get_by_label("Host Session").click();
     h.run_steps(1);
     until(&mut h, 10, "hosting", |a| a.ctrl.vm().hosting.is_some());
