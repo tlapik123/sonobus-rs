@@ -18,8 +18,8 @@ use std::time::{Duration, Instant};
 
 use sonobus_audio::cpal::traits::{DeviceTrait, HostTrait};
 use sonobus_audio::{
-    AppSource, AudioBlock, DeviceId, DeviceInfo, Duplex, ExternalInput, HostId, InputConfig, InputSource,
-    InputStats, Session, SessionConfig, StreamRole, cpal, default_margin,
+    AppSource, AudioBlock, DeviceId, DeviceInfo, Duplex, ExternalInput, HostId, InputConfig,
+    InputSource, InputStats, Session, SessionConfig, StreamRole, cpal, default_margin,
 };
 use sonobus_engine::{AudioConfig, EngineAudio};
 
@@ -135,7 +135,10 @@ impl DeviceSetup {
         AudioConfig {
             sample_rate: self.sample_rate,
             block_size: self.block_size,
-            input_channels: usize::from(self.device_input_channels() + self.extra_input_channels().max(RESERVED_EXTRA_CHANNELS)),
+            input_channels: usize::from(
+                self.device_input_channels()
+                    + self.extra_input_channels().max(RESERVED_EXTRA_CHANNELS),
+            ),
             output_channels: 2,
         }
     }
@@ -155,7 +158,11 @@ impl DeviceSetup {
 
     /// Channels of system sound and platform input, which follow the device input.
     pub fn extra_input_channels(&self) -> u16 {
-        let sys = if self.shares_sound() { SYSTEM_SOUND_CHANNELS } else { 0 };
+        let sys = if self.shares_sound() {
+            SYSTEM_SOUND_CHANNELS
+        } else {
+            0
+        };
         sys + self.external.map_or(0, |e| e.channels)
     }
 
@@ -170,11 +177,19 @@ impl DeviceSetup {
     /// now; it wins over a system-sound device), else the system-sound device, else none.
     fn sound_input(&self, apps: &[AppSource]) -> Result<Option<InputConfig>, String> {
         let source = match (&self.app_sound, &self.system_sound) {
-            (Some(app), _) => apps.iter().any(|a| a.id == *app).then(|| InputSource::App(app.clone())),
-            (None, Some(s)) => Some(InputSource::Loopback(s.parse().map_err(|e: cpal::Error| e.to_string())?)),
+            (Some(app), _) => apps
+                .iter()
+                .any(|a| a.id == *app)
+                .then(|| InputSource::App(app.clone())),
+            (None, Some(s)) => Some(InputSource::Loopback(
+                s.parse().map_err(|e: cpal::Error| e.to_string())?,
+            )),
             (None, None) => None,
         };
-        Ok(source.map(|source| InputConfig { source, channels: Some(SYSTEM_SOUND_CHANNELS) }))
+        Ok(source.map(|source| InputConfig {
+            source,
+            channels: Some(SYSTEM_SOUND_CHANNELS),
+        }))
     }
 
     /// Resolves "default" devices (a cpal query: call off the UI thread). `apps`: the
@@ -187,7 +202,11 @@ impl DeviceSetup {
                 DeviceChoice::None => Ok(None),
                 DeviceChoice::Id(s) => s.parse().map(Some).map_err(|e: cpal::Error| e.to_string()),
                 DeviceChoice::Default => {
-                    let d = if output { host.default_output_device() } else { host.default_input_device() };
+                    let d = if output {
+                        host.default_output_device()
+                    } else {
+                        host.default_input_device()
+                    };
                     Ok(d.and_then(|d| d.id().ok()))
                 }
             }
@@ -196,12 +215,18 @@ impl DeviceSetup {
         let mut inputs = Vec::new();
         if let Some(id) = pick(&self.input, false)? {
             let channels = Some(self.device_input_channels());
-            inputs.push(InputConfig { source: InputSource::Device(id), channels });
+            inputs.push(InputConfig {
+                source: InputSource::Device(id),
+                channels,
+            });
         }
         inputs.extend(self.sound_input(apps)?);
         if let Some(e) = self.external {
             inputs.push(InputConfig {
-                source: InputSource::External { channels: e.channels, sample_rate: e.sample_rate },
+                source: InputSource::External {
+                    channels: e.channels,
+                    sample_rate: e.sample_rate,
+                },
                 channels: None,
             });
         }
@@ -231,7 +256,10 @@ pub enum DeviceState {
     Off,
     Running,
     /// Devices failed; null audio meanwhile, next attempt at `at`.
-    Retrying { error: String, at: Instant },
+    Retrying {
+        error: String,
+        at: Instant,
+    },
 }
 
 /// Device open/loss bookkeeping with exponential backoff, free of I/O so it can be tested
@@ -244,7 +272,10 @@ pub struct Supervisor {
 
 impl Default for Supervisor {
     fn default() -> Self {
-        Supervisor { state: DeviceState::Off, delay: RETRY_MIN }
+        Supervisor {
+            state: DeviceState::Off,
+            delay: RETRY_MIN,
+        }
     }
 }
 
@@ -257,7 +288,10 @@ impl Supervisor {
                 self.delay = RETRY_MIN;
             }
             Err(error) => {
-                self.state = DeviceState::Retrying { error, at: now + self.delay };
+                self.state = DeviceState::Retrying {
+                    error,
+                    at: now + self.delay,
+                };
                 self.delay = (self.delay * 2).min(RETRY_MAX);
             }
         }
@@ -302,7 +336,12 @@ pub struct AppWatch {
 impl Default for AppWatch {
     fn default() -> Self {
         let now = Instant::now();
-        AppWatch { input: None, since: now, next: now, delay: APP_POLL_MIN }
+        AppWatch {
+            input: None,
+            since: now,
+            next: now,
+            delay: APP_POLL_MIN,
+        }
     }
 }
 
@@ -372,7 +411,8 @@ impl AudioStatus {
     /// Input buffering latency: the fullest input ring plus one block, in ms.
     pub fn input_latency_ms(&self) -> Option<f32> {
         let max = self.inputs.iter().map(|s| s.fill_frames).max()?;
-        (self.sample_rate > 0).then(|| 1000.0 * (max + self.block_size) as f32 / self.sample_rate as f32)
+        (self.sample_rate > 0)
+            .then(|| 1000.0 * (max + self.block_size) as f32 / self.sample_rate as f32)
     }
 
     pub fn underflows(&self) -> u64 {
@@ -420,7 +460,12 @@ impl AudioManager {
             .name("sonobus-audio-manager".into())
             .spawn(move || Manager::new(s, x, list_apps).run(&rx))
             .expect("spawn audio manager");
-        AudioManager { tx: Some(tx), status, external, thread: Some(thread) }
+        AudioManager {
+            tx: Some(tx),
+            status,
+            external,
+            thread: Some(thread),
+        }
     }
 
     fn send(&self, c: Cmd) {
@@ -500,12 +545,17 @@ impl NullDriver {
         let rate = cfg.sample_rate.max(1);
         let mut duplex = Duplex::new(engine, rate, cfg.block_size.max(1), 2);
         let ext_ch = setup.external.map_or(0, |e| usize::from(e.channels));
-        let fixed = cfg.input_channels.saturating_sub(ext_ch).min(sonobus_audio::MAX_CHANNELS - ext_ch);
+        let fixed = cfg
+            .input_channels
+            .saturating_sub(ext_ch)
+            .min(sonobus_audio::MAX_CHANNELS - ext_ch);
         if fixed > 0 {
             // never fed: keeps the platform input on its engine channels, silent
             drop(duplex.add_input(fixed, rate, default_margin(rate)));
         }
-        let ext = setup.external.map(|e| duplex.add_input(ext_ch, e.sample_rate, default_margin(e.sample_rate)));
+        let ext = setup
+            .external
+            .map(|e| duplex.add_input(ext_ch, e.sample_rate, default_margin(e.sample_rate)));
         let driver = NullDriver {
             next: Instant::now(),
             frames: cfg.block_size.max(1),
@@ -545,7 +595,11 @@ struct Manager {
 }
 
 impl Manager {
-    fn new(status: Arc<Mutex<AudioStatus>>, external: ExternalSlot, list_apps: fn() -> Vec<AppSource>) -> Self {
+    fn new(
+        status: Arc<Mutex<AudioStatus>>,
+        external: ExternalSlot,
+        list_apps: fn() -> Vec<AppSource>,
+    ) -> Self {
         let (back_tx, back_rx) = sync_channel(1);
         Manager {
             status,
@@ -600,12 +654,16 @@ impl Manager {
             Cmd::Scan(host) => {
                 let status = self.status.clone();
                 std::thread::spawn(move || {
-                    let hosts = sonobus_audio::hosts().iter().map(|h| h.to_string()).collect();
+                    let hosts = sonobus_audio::hosts()
+                        .iter()
+                        .map(|h| h.to_string())
+                        .collect();
                     let id = match host {
                         Some(h) => h.parse::<HostId>().map_err(|e| e.to_string()),
                         None => Ok(sonobus_audio::default_host()),
                     };
-                    let devs = id.and_then(|id| sonobus_audio::devices(id).map_err(|e| e.to_string()));
+                    let devs =
+                        id.and_then(|id| sonobus_audio::devices(id).map_err(|e| e.to_string()));
                     let app_capture = sonobus_audio::app_capture_supported();
                     let apps = sonobus_audio::app_sources();
                     let mut s = lock(&status);
@@ -636,7 +694,10 @@ impl Manager {
 
     /// The engine audio as a device callback (it comes back through `back_rx` when dropped).
     fn callback(&mut self) -> Option<Callback> {
-        let mut slot = RtSlot { audio: Some(self.rt.take()?), back: self.back_tx.clone() };
+        let mut slot = RtSlot {
+            audio: Some(self.rt.take()?),
+            back: self.back_tx.clone(),
+        };
         Some(Box::new(move |b: &mut AudioBlock<'_>| {
             if let Some(a) = slot.audio.as_mut() {
                 a.process(b.inputs, b.outputs);
@@ -661,7 +722,11 @@ impl Manager {
     }
 
     fn try_open(&mut self) {
-        let apps = if self.setup.app_sound.is_some() { (self.list_apps)() } else { Vec::new() };
+        let apps = if self.setup.app_sound.is_some() {
+            (self.list_apps)()
+        } else {
+            Vec::new()
+        };
         self.open_with(&apps);
     }
 
@@ -674,15 +739,27 @@ impl Manager {
         }
         let now = Instant::now();
         let mut result = self.open_session(apps);
-        let with_app = self.setup.app_sound.as_ref().is_some_and(|id| apps.iter().any(|a| a.id == *id));
+        let with_app = self
+            .setup
+            .app_sound
+            .as_ref()
+            .is_some_and(|id| apps.iter().any(|a| a.id == *id));
         if result.is_err() && with_app {
             result = self.open_session(&[]);
         }
         match result {
             Ok(mut s) => {
-                let ext = s.config().inputs.iter().position(|i| matches!(i.source, InputSource::External { .. }));
+                let ext = s
+                    .config()
+                    .inputs
+                    .iter()
+                    .position(|i| matches!(i.source, InputSource::External { .. }));
                 *lock(&self.external) = ext.and_then(|i| s.take_external_input(i));
-                let app = s.config().inputs.iter().position(|i| matches!(i.source, InputSource::App(_)));
+                let app = s
+                    .config()
+                    .inputs
+                    .iter()
+                    .position(|i| matches!(i.source, InputSource::App(_)));
                 self.app.checked(now, app);
                 self.session = Some(s);
                 self.last_check = now;
@@ -698,8 +775,13 @@ impl Manager {
 
     /// One open attempt. A failed open dropped the callback: the engine audio is recovered.
     fn open_session(&mut self, apps: &[AppSource]) -> Result<Session<Callback>, String> {
-        let cb = self.callback().ok_or_else(|| String::from("no engine audio"))?;
-        let r = self.setup.session_config(apps).and_then(|cfg| Session::open(cfg, cb).map_err(|e| e.to_string()));
+        let cb = self
+            .callback()
+            .ok_or_else(|| String::from("no engine audio"))?;
+        let r = self
+            .setup
+            .session_config(apps)
+            .and_then(|cfg| Session::open(cfg, cb).map_err(|e| e.to_string()));
         if r.is_err() {
             self.recover();
         }
@@ -768,7 +850,8 @@ impl Manager {
 
     fn publish(&self) {
         let mut st = lock(&self.status);
-        st.state = (self.rt.is_some() || self.session.is_some() || self.null.is_some()).then(|| self.sup.state.clone());
+        st.state = (self.rt.is_some() || self.session.is_some() || self.null.is_some())
+            .then(|| self.sup.state.clone());
         let cfg = self.setup.audio_config();
         st.sample_rate = cfg.sample_rate;
         st.block_size = cfg.block_size;
@@ -810,7 +893,13 @@ mod tests {
 
     /// The manager loop's decisions, over the fake device and a fake clock (100 ms ticks).
     /// Returns the times (s) of each open attempt.
-    fn simulate(dev: &mut FakeDevice, sup: &mut Supervisor, t0: Instant, secs: u64, break_at: Option<u64>) -> Vec<f64> {
+    fn simulate(
+        dev: &mut FakeDevice,
+        sup: &mut Supervisor,
+        t0: Instant,
+        secs: u64,
+        break_at: Option<u64>,
+    ) -> Vec<f64> {
         let mut attempts = Vec::new();
         for tick in 0..secs * 10 {
             let now = t0 + Duration::from_millis(tick * 100);
@@ -833,7 +922,11 @@ mod tests {
     fn retry_backoff_doubles_to_ten_seconds_then_recovers() {
         let t0 = Instant::now();
         let mut sup = Supervisor::default();
-        let mut dev = FakeDevice { fail_opens: 7, running: false, broken: false };
+        let mut dev = FakeDevice {
+            fail_opens: 7,
+            running: false,
+            broken: false,
+        };
         // initial attempt at t=0 fails
         sup.opened(t0, dev.open());
         let attempts = simulate(&mut dev, &mut sup, t0, 60, None);
@@ -847,7 +940,11 @@ mod tests {
     fn loss_retries_after_one_second() {
         let t0 = Instant::now();
         let mut sup = Supervisor::default();
-        let mut dev = FakeDevice { fail_opens: 0, running: false, broken: false };
+        let mut dev = FakeDevice {
+            fail_opens: 0,
+            running: false,
+            broken: false,
+        };
         sup.opened(t0, dev.open());
         let attempts = simulate(&mut dev, &mut sup, t0, 10, Some(3));
         assert_eq!(attempts, vec![4.0]);
@@ -870,7 +967,10 @@ mod tests {
     #[test]
     fn null_audio_drives_engine() {
         use sonobus_engine::{Engine, EngineConfig};
-        let setup = DeviceSetup { enabled: false, ..DeviceSetup::default() };
+        let setup = DeviceSetup {
+            enabled: false,
+            ..DeviceSetup::default()
+        };
         let (engine, rt) = Engine::new(EngineConfig {
             audio: setup.audio_config(),
             udp_port: 0,
@@ -886,7 +986,10 @@ mod tests {
         m.start(rt, setup);
         let t = Instant::now();
         while engine.snapshot().output.peak.iter().all(|&p| p == 0.0) {
-            assert!(t.elapsed() < Duration::from_secs(5), "no output from the null driver");
+            assert!(
+                t.elapsed() < Duration::from_secs(5),
+                "no output from the null driver"
+            );
             std::thread::sleep(Duration::from_millis(20));
         }
         assert_eq!(m.status().state, Some(DeviceState::Off));
@@ -894,22 +997,39 @@ mod tests {
 
     #[test]
     fn app_sound_takes_the_system_sound_input_while_playing() {
-        let app = |id: &str| AppSource { id: id.into(), name: id.into() };
+        let app = |id: &str| AppSource {
+            id: id.into(),
+            name: id.into(),
+        };
         let both = DeviceSetup {
             // a device id of this platform's host ("alsa:hw:2,0" on Linux)
-            system_sound: Some(cpal::DeviceId::new(sonobus_audio::default_host(), "hw:2,0").to_string()),
+            system_sound: Some(
+                cpal::DeviceId::new(sonobus_audio::default_host(), "hw:2,0").to_string(),
+            ),
             app_sound: Some("Firefox".into()),
             ..DeviceSetup::default()
         };
         let playing = [app("mpv"), app("Firefox")];
         let got = both.sound_input(&playing).unwrap().unwrap();
-        assert_eq!(got, InputConfig { source: InputSource::App("Firefox".into()), channels: Some(SYSTEM_SOUND_CHANNELS) });
+        assert_eq!(
+            got,
+            InputConfig {
+                source: InputSource::App("Firefox".into()),
+                channels: Some(SYSTEM_SOUND_CHANNELS)
+            }
+        );
         // not playing: no input (the device setup still opens), same channels reserved
         assert_eq!(both.sound_input(&[app("mpv")]).unwrap(), None);
         assert_eq!(both.extra_input_channels(), SYSTEM_SOUND_CHANNELS);
         // system sound alone is a loopback input
-        let sys = DeviceSetup { app_sound: None, ..both.clone() };
-        assert!(matches!(sys.sound_input(&playing).unwrap().unwrap().source, InputSource::Loopback(_)));
+        let sys = DeviceSetup {
+            app_sound: None,
+            ..both.clone()
+        };
+        assert!(matches!(
+            sys.sound_input(&playing).unwrap().unwrap().source,
+            InputSource::Loopback(_)
+        ));
         assert_eq!(DeviceSetup::default().sound_input(&playing).unwrap(), None);
     }
 
@@ -945,7 +1065,11 @@ mod tests {
         assert_eq!(reopens, [0, 2, 6, 14, 24, 34]);
         // its own event or stall is the application's, unless it drives the engine; others are
         // device problems
-        let (app, mic, out) = (StreamRole::Input(1), StreamRole::Input(0), StreamRole::Output);
+        let (app, mic, out) = (
+            StreamRole::Input(1),
+            StreamRole::Input(0),
+            StreamRole::Output,
+        );
         w.checked(s(50), Some(1));
         assert!(w.owns(app, Some(out)));
         assert!(!w.owns(mic, Some(out)) && !w.owns(out, Some(out)));
@@ -964,10 +1088,21 @@ mod tests {
         const APP: &str = "sonobus-test-no-such-app";
         fn lister() -> Vec<AppSource> {
             LOOKS.fetch_add(1, Relaxed);
-            vec![AppSource { id: APP.into(), name: APP.into() }]
+            vec![AppSource {
+                id: APP.into(),
+                name: APP.into(),
+            }]
         }
-        let Some(alsa) = sonobus_audio::hosts().into_iter().find(|h| h.name() == "ALSA") else { return };
-        let Some(null) = sonobus_audio::devices(alsa).ok().and_then(|d| d.into_iter().find(|d| d.id.id() == "null")) else {
+        let Some(alsa) = sonobus_audio::hosts()
+            .into_iter()
+            .find(|h| h.name() == "ALSA")
+        else {
+            return;
+        };
+        let Some(null) = sonobus_audio::devices(alsa)
+            .ok()
+            .and_then(|d| d.into_iter().find(|d| d.id.id() == "null"))
+        else {
             println!("no ALSA null PCM here");
             return;
         };
@@ -979,26 +1114,42 @@ mod tests {
             app_sound: Some(APP.into()),
             ..DeviceSetup::default()
         };
-        let (_engine, rt) =
-            Engine::new(EngineConfig { audio: setup.audio_config(), udp_port: 0, state: Default::default() }).unwrap();
+        let (_engine, rt) = Engine::new(EngineConfig {
+            audio: setup.audio_config(),
+            udp_port: 0,
+            state: Default::default(),
+        })
+        .unwrap();
         let m = AudioManager::with_app_lister(lister);
         m.start(rt, setup);
         let t = Instant::now();
         while t.elapsed() < Duration::from_millis(4500) {
             let st = m.status();
-            assert!(!matches!(st.state, Some(DeviceState::Retrying { .. })), "{:?}", st.state);
+            assert!(
+                !matches!(st.state, Some(DeviceState::Retrying { .. })),
+                "{:?}",
+                st.state
+            );
             std::thread::sleep(Duration::from_millis(50));
         }
         let st = m.status();
         assert_eq!(st.state, Some(DeviceState::Running));
-        assert!(st.input_channels.is_empty(), "the application was left out: {:?}", st.input_channels);
+        assert!(
+            st.input_channels.is_empty(),
+            "the application was left out: {:?}",
+            st.input_channels
+        );
         // looked at the open (0 s) and once more at 2 s; the next look is at 6 s
         assert_eq!(LOOKS.load(Relaxed), 2);
     }
 
     #[test]
     fn device_setting_round_trip() {
-        for c in [DeviceChoice::Default, DeviceChoice::None, DeviceChoice::Id("alsa:hw:0,0".into())] {
+        for c in [
+            DeviceChoice::Default,
+            DeviceChoice::None,
+            DeviceChoice::Id("alsa:hw:0,0".into()),
+        ] {
             assert_eq!(DeviceChoice::from_setting(&c.to_setting()), c);
         }
     }

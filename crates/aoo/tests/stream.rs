@@ -7,13 +7,22 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
-use aoo::codec::{Codec, Format, OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC, OpusOptions, PcmBitDepth};
+use aoo::codec::{
+    Codec, Format, OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC, OpusOptions,
+    PcmBitDepth,
+};
 use aoo::sink::{Sink, SinkAudio, SinkEventKind, SinkOptions};
 use aoo::source::{Source, SourceAudio, SourceOptions};
 use aoo::{Message, Setup, TimeTag, message};
 
-const A: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)), 1000);
-const B: SocketAddr = SocketAddr::new(std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 2)), 2000);
+const A: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 1)),
+    1000,
+);
+const B: SocketAddr = SocketAddr::new(
+    std::net::IpAddr::V4(std::net::Ipv4Addr::new(10, 0, 0, 2)),
+    2000,
+);
 const EPOCH: f64 = 1000.0;
 
 struct Rng(u64);
@@ -50,7 +59,8 @@ impl Net {
         }
         let at = t + self.latency + self.rng.next() * self.jitter;
         self.n += 1;
-        self.q.push(Reverse(((at * 1e9) as u64, self.n, to_sink, p.to_vec())));
+        self.q
+            .push(Reverse(((at * 1e9) as u64, self.n, to_sink, p.to_vec())));
     }
 }
 
@@ -135,7 +145,11 @@ impl Sim {
 
     fn run(&mut self, until: f64) {
         loop {
-            let t_net = self.net.q.peek().map_or(f64::MAX, |Reverse((t, ..))| *t as f64 / 1e9);
+            let t_net = self
+                .net
+                .q
+                .peek()
+                .map_or(f64::MAX, |Reverse((t, ..))| *t as f64 / 1e9);
             let t = t_net.min(self.t_src).min(self.t_sink);
             if t >= until {
                 return;
@@ -143,7 +157,11 @@ impl Sim {
             if t == self.t_src {
                 let s = self.src_setup;
                 let chans: Vec<Vec<f32>> = (0..s.nchannels as usize)
-                    .map(|c| (0..s.blocksize as usize).map(|i| (self.signal)(self.in_frames + i, c)).collect())
+                    .map(|c| {
+                        (0..s.blocksize as usize)
+                            .map(|i| (self.signal)(self.in_frames + i, c))
+                            .collect()
+                    })
                     .collect();
                 let refs: Vec<&[f32]> = chans.iter().map(|c| &c[..]).collect();
                 assert!(self.src_audio.process(&refs, Self::tt(t)));
@@ -178,7 +196,11 @@ impl Sim {
     }
 
     fn count(&self, after: f64, f: impl Fn(&SinkEventKind) -> Option<i32>) -> i32 {
-        self.events.iter().filter(|(t, _)| *t >= after).filter_map(|(_, e)| f(e)).sum()
+        self.events
+            .iter()
+            .filter(|(t, _)| *t >= after)
+            .filter_map(|(_, e)| f(e))
+            .sum()
     }
 }
 
@@ -273,7 +295,12 @@ fn pcm_lossy_reordering_bit_exact() {
     assert!((4800..9600).contains(&d), "{d}");
 }
 
-fn snr_db(out: &[f32], input: impl Fn(usize) -> f32, d: usize, range: std::ops::Range<usize>) -> f64 {
+fn snr_db(
+    out: &[f32],
+    input: impl Fn(usize) -> f32,
+    d: usize,
+    range: std::ops::Range<usize>,
+) -> f64 {
     let (mut sig, mut err) = (0.0f64, 0.0f64);
     for n in range {
         let x = input(n) as f64;
@@ -300,7 +327,8 @@ fn opus_loopback(nch: i32) {
     // incommensurate tones per channel: the alignment search has a unique optimum
     let signal = move |n: usize, c: usize| {
         let w = 2.0 * std::f64::consts::PI * n as f64 / 48000.0 * (1.0 + 0.1 * c as f64);
-        (0.25 * (311.0 * w).sin() + 0.25 * (457.0 * w + 1.0).sin() + 0.2 * (1013.0 * w + 2.0).sin()) as f32
+        (0.25 * (311.0 * w).sin() + 0.25 * (457.0 * w + 1.0).sin() + 0.2 * (1013.0 * w + 2.0).sin())
+            as f32
     };
     let fmt = Format {
         nchannels: nch,
@@ -343,14 +371,18 @@ fn opus_four_channels() {
 }
 
 fn zero_crossings(x: &[f32]) -> usize {
-    x.windows(2).filter(|w| (w[0] < 0.0) != (w[1] < 0.0)).count()
+    x.windows(2)
+        .filter(|w| (w[0] < 0.0) != (w[1] < 0.0))
+        .count()
 }
 
 /// 48 kHz source into a 44.1 kHz sink for a simulated minute: no underruns or losses, the
 /// buffer stays put and the pitch is right.
 #[test]
 fn resample_48k_to_44k1_no_drift() {
-    let signal = |n: usize, _| ((n as f64 * 2.0 * std::f64::consts::PI * 1000.0 / 48000.0).sin() * 0.5) as f32;
+    let signal = |n: usize, _| {
+        ((n as f64 * 2.0 * std::f64::consts::PI * 1000.0 / 48000.0).sin() * 0.5) as f32
+    };
     let fmt = Format {
         nchannels: 1,
         samplerate: 48000,
@@ -367,14 +399,23 @@ fn resample_48k_to_44k1_no_drift() {
         Box::new(signal),
     );
     sim.run(60.0);
-    let stops = sim.count(2.0, |e| matches!(e, SinkEventKind::StateChanged { playing: false }).then_some(1));
+    let stops = sim.count(2.0, |e| {
+        matches!(e, SinkEventKind::StateChanged { playing: false }).then_some(1)
+    });
     let lost = sim.count(2.0, |e| match e {
         SinkEventKind::BlocksLost { count } => Some(*count),
         _ => None,
     });
     assert_eq!((stops, lost), (0, 0));
-    let late: Vec<f32> = sim.fill.iter().filter(|(t, _)| *t > 10.0).map(|(_, r)| *r).collect();
-    let (min, max) = late.iter().fold((1.0f32, 0.0f32), |(a, b), &r| (a.min(r), b.max(r)));
+    let late: Vec<f32> = sim
+        .fill
+        .iter()
+        .filter(|(t, _)| *t > 10.0)
+        .map(|(_, r)| *r)
+        .collect();
+    let (min, max) = late
+        .iter()
+        .fold((1.0f32, 0.0f32), |(a, b), &r| (a.min(r), b.max(r)));
     assert!(max - min < 0.5, "fill {min}..{max}");
     let out = &sim.output[0];
     let last10 = &out[out.len() - 441_000..];
@@ -418,7 +459,9 @@ fn clock_drift_buffer_bounded() {
             SinkEventKind::BlocksLost { count } => Some(*count),
             _ => None,
         });
-        let stops = sim.count(2.0, |e| matches!(e, SinkEventKind::StateChanged { playing: false }).then_some(1));
+        let stops = sim.count(2.0, |e| {
+            matches!(e, SinkEventKind::StateChanged { playing: false }).then_some(1)
+        });
         (lost, stops)
     };
     assert_eq!(run(true), (0, 0));
@@ -462,7 +505,11 @@ fn source_rings_two_threads() {
             if let Ok(Message::CompactData { data, .. }) = message::parse(p) {
                 for (i, s) in data.chunks(4).enumerate() {
                     let v = f32::from_be_bytes(s.try_into().unwrap());
-                    let want = if i % 2 == 0 { expect as f32 } else { -(expect as f32) };
+                    let want = if i % 2 == 0 {
+                        expect as f32
+                    } else {
+                        -(expect as f32)
+                    };
                     // first callback is faded in
                     if blocks > 0 {
                         assert_eq!(v, want, "block {blocks}");
@@ -522,7 +569,10 @@ fn sink_rings_two_threads() {
                     std::thread::yield_now();
                     continue;
                 }
-                audio.process(&mut [&mut buf], TimeTag::from_secs(EPOCH + k as f64 * 64.0 / 48000.0));
+                audio.process(
+                    &mut [&mut buf],
+                    TimeTag::from_secs(EPOCH + k as f64 * 64.0 / 48000.0),
+                );
                 k += 1;
                 out.extend_from_slice(&buf);
                 played.fetch_add(1, Ordering::Release);

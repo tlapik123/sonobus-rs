@@ -40,7 +40,7 @@ jobs:
 
       - name: Rust stable
         run: |
-          rustup toolchain install stable --profile minimal --component clippy
+          rustup toolchain install stable --profile minimal --component clippy --component rustfmt
           rustup default stable
 
       # alsa: cpal's default backend; pipewire + libclang: cpal's PipeWire backend (bindgen).
@@ -60,6 +60,10 @@ jobs:
         uses: ilammy/msvc-dev-cmd@v1
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Format
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
 
       - name: Build
         run: cargo build --workspace --all-targets ${{ matrix.features }}

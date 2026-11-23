@@ -25,7 +25,12 @@ struct FakeHost(Arc<Mutex<Log>>);
 
 impl Host for FakeHost {
     fn params(&self) -> Params {
-        self.0.lock().unwrap().params.clone().unwrap_or_else(Params::plugin)
+        self.0
+            .lock()
+            .unwrap()
+            .params
+            .clone()
+            .unwrap_or_else(Params::plugin)
     }
     fn params_edited(&mut self, old: &Params, new: &Params) {
         let mut l = self.0.lock().unwrap();
@@ -46,11 +51,20 @@ impl Host for FakeHost {
 }
 
 fn config(sample_rate: u32, block_size: usize) -> AudioConfig {
-    AudioConfig { sample_rate, block_size, input_channels: 2, output_channels: 2 }
+    AudioConfig {
+        sample_rate,
+        block_size,
+        input_channels: 2,
+        output_channels: 2,
+    }
 }
 
 fn build(cfg: AudioConfig, state: AppState) -> std::io::Result<(Arc<Engine>, EngineAudio)> {
-    let (e, rt) = Engine::new(EngineConfig { audio: cfg, udp_port: 0, state })?;
+    let (e, rt) = Engine::new(EngineConfig {
+        audio: cfg,
+        udp_port: 0,
+        state,
+    })?;
     Ok((Arc::new(e), rt))
 }
 
@@ -89,7 +103,12 @@ impl Drop for Driver {
     }
 }
 
-fn until(ctrls: &mut [&mut AppController], secs: u64, what: &str, cond: impl Fn(&[&mut AppController]) -> bool) {
+fn until(
+    ctrls: &mut [&mut AppController],
+    secs: u64,
+    what: &str,
+    cond: impl Fn(&[&mut AppController]) -> bool,
+) {
     let t = Instant::now();
     loop {
         for c in ctrls.iter_mut() {
@@ -99,7 +118,10 @@ fn until(ctrls: &mut [&mut AppController], secs: u64, what: &str, cond: impl Fn(
             return;
         }
         let status: Vec<_> = ctrls.iter().map(|c| c.vm().status.clone()).collect();
-        assert!(t.elapsed() < Duration::from_secs(secs), "timed out waiting for {what}; status {status:?}");
+        assert!(
+            t.elapsed() < Duration::from_secs(secs),
+            "timed out waiting for {what}; status {status:?}"
+        );
         std::thread::sleep(Duration::from_millis(20));
     }
 }
@@ -124,7 +146,11 @@ fn hosted_controller_with_a_fake_host() {
     let cfg = config(48_000, 256);
     let (engine, rt) = build(cfg, AppState::new(true)).unwrap();
     let mut drv = Some(Driver::start(rt, cfg));
-    let mut c = AppController::hosted(engine, Box::new(FakeHost(log.clone())), Soundboards::default());
+    let mut c = AppController::hosted(
+        engine,
+        Box::new(FakeHost(log.clone())),
+        Soundboards::default(),
+    );
     assert!(c.is_hosted());
     assert!(c.vm().settings_dir.is_none());
     assert_eq!(c.vm().state.params.dry, 1.0, "plugin default monitor level");
@@ -150,18 +176,36 @@ fn hosted_controller_with_a_fake_host() {
     };
     assert_eq!((boards, defaults), (1, 1));
     // no devices, no settings files
-    assert!(c.set_audio_setup(sonobus_app::audio::DeviceSetup::default()).is_err());
+    assert!(
+        c.set_audio_setup(sonobus_app::audio::DeviceSetup::default())
+            .is_err()
+    );
     c.save().unwrap();
     c.shutdown();
     assert!(!c.vm().status_is_error, "{}", c.vm().status);
 
     // a session with a peer
-    let mut peer = AppController::new(ControllerConfig { settings_dir: None, use_devices: false }).unwrap();
-    let req = |user: &str| ConnectRequest { user: user.into(), group: "hosted".into(), ..ConnectRequest::default() };
+    let mut peer = AppController::new(ControllerConfig {
+        settings_dir: None,
+        use_devices: false,
+    })
+    .unwrap();
+    let req = |user: &str| ConnectRequest {
+        user: user.into(),
+        group: "hosted".into(),
+        ..ConnectRequest::default()
+    };
     peer.host_session(0, req("bob")).expect("host");
     let (port, _) = peer.vm().hosting.clone().unwrap();
-    c.connect(ConnectRequest { host: "127.0.0.1".into(), port, ..req("alice") });
-    until(&mut [&mut c, &mut peer], 20, "peers", |x| x.iter().all(|x| x.vm().snapshot.peers.iter().any(|p| p.connected)));
+    c.connect(ConnectRequest {
+        host: "127.0.0.1".into(),
+        port,
+        ..req("alice")
+    });
+    until(&mut [&mut c, &mut peer], 20, "peers", |x| {
+        x.iter()
+            .all(|x| x.vm().snapshot.peers.iter().any(|p| p.connected))
+    });
     c.send_chat(&[], "before the rate change");
 
     // the host switches to 96 kHz: it stops processing, the controller swaps in its new engine
@@ -178,14 +222,23 @@ fn hosted_controller_with_a_fake_host() {
     assert_eq!(c.engine().audio_config().sample_rate, 96_000);
     assert_eq!(c.vm().state.params.dry, 0.25, "settings kept");
     assert_eq!(c.vm().state.extra.last_username, "alice");
-    assert!(c.vm().chat.iter().any(|m| m.message == "before the rate change"), "chat kept");
-    assert_eq!(c.vm().request.as_ref().map(|r| r.group.as_str()), Some("hosted"));
+    assert!(
+        c.vm()
+            .chat
+            .iter()
+            .any(|m| m.message == "before the rate change"),
+        "chat kept"
+    );
+    assert_eq!(
+        c.vm().request.as_ref().map(|r| r.group.as_str()),
+        Some("hosted")
+    );
     // the group is rejoined and the peer comes back
     until(&mut [&mut c, &mut peer], 20, "rejoin", |x| {
         x[0].vm().snapshot.connection == Connection::Connected
-            && x.iter().all(|x| x.vm().snapshot.peers.iter().any(|p| p.connected))
+            && x.iter()
+                .all(|x| x.vm().snapshot.peers.iter().any(|p| p.connected))
     });
     drop(drv);
     assert!(!unwritable.exists());
 }
-

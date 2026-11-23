@@ -115,9 +115,9 @@ impl RecordWriter {
     /// call counts, and it does nothing on a writer from [`start_recording`].
     pub fn set_leading_silence(&mut self, frames: u64) {
         let frames = frames.min(LEAD_PENDING - 1);
-        let _ = self
-            .lead
-            .compare_exchange(LEAD_PENDING, frames, Ordering::AcqRel, Ordering::Relaxed);
+        let _ =
+            self.lead
+                .compare_exchange(LEAD_PENDING, frames, Ordering::AcqRel, Ordering::Relaxed);
     }
 }
 
@@ -934,7 +934,10 @@ pub(crate) mod tests {
         std::fs::remove_file(path).unwrap();
 
         // never set (writer dropped before use) or a plain writer: no silence
-        let spec = RecordSpec { format: RecordFormat::Wav, ..spec };
+        let spec = RecordSpec {
+            format: RecordFormat::Wav,
+            ..spec
+        };
         let (mut w, rec) = start_recording_after_silence(&tmp("nolead.wav"), spec).unwrap();
         assert!(w.write(&blocks[0]));
         let path = rec.stop().unwrap();

@@ -22,7 +22,11 @@ struct Line<const T: usize> {
 
 impl<const T: usize> Line<T> {
     fn new() -> Self {
-        Self { buf: vec![0.0; MAX_LEN as usize].into_boxed_slice(), idx: [0; T], len: MAX_LEN - 1 }
+        Self {
+            buf: vec![0.0; MAX_LEN as usize].into_boxed_slice(),
+            idx: [0; T],
+            len: MAX_LEN - 1,
+        }
     }
     fn set_len(&mut self, len: i32) {
         self.len = len.clamp(0, MAX_LEN);
@@ -73,7 +77,13 @@ struct Svf {
 
 impl Svf {
     fn new() -> Self {
-        let mut s = Self { sample_rate: 0.0, frequency: 1000.0, f: 0.0, low: 0.0, band: 0.0 };
+        let mut s = Self {
+            sample_rate: 0.0,
+            frequency: 1000.0,
+            f: 0.0,
+            low: 0.0,
+            band: 0.0,
+        };
         s.set_sample_rate(44100.0);
         s
     }
@@ -305,13 +315,15 @@ impl MVerb {
         let bandwidth_delta = (((f64::from(self.bandwidth_freq) * 18400.0 + 100.0)
             - f64::from(self.bandwidth_smooth))
             * one_over_d) as f32;
-        let damping_delta =
-            (((f64::from(self.damping_freq) * 18400.0 + 100.0) - f64::from(self.damping_smooth)) * one_over_d)
-                as f32;
-        let predelay_delta =
-            ((self.predelay_time * 200.0 * (self.sample_rate / 1000.0)) - self.predelay_smooth) * one_over;
-        let decay_delta =
-            ((f64::from(0.7995f32 * self.decay) + 0.005 - f64::from(self.decay_smooth)) * one_over_d) as f32;
+        let damping_delta = (((f64::from(self.damping_freq) * 18400.0 + 100.0)
+            - f64::from(self.damping_smooth))
+            * one_over_d) as f32;
+        let predelay_delta = ((self.predelay_time * 200.0 * (self.sample_rate / 1000.0))
+            - self.predelay_smooth)
+            * one_over;
+        let decay_delta = ((f64::from(0.7995f32 * self.decay) + 0.005
+            - f64::from(self.decay_smooth))
+            * one_over_d) as f32;
 
         let d = f64::from;
         for (l, r) in left[..n].iter_mut().zip(&mut right[..n]) {
@@ -382,11 +394,13 @@ impl MVerb {
             self.previous_left_tank = left_tank * self.decay_smooth;
             self.previous_right_tank = right_tank * self.decay_smooth;
 
-            let acc_l = (0.6 * d(sd2.tap(1)) + 0.6 * d(sd2.tap(2)) - 0.6 * d(ap3.tap(1)) + 0.6 * d(sd3.tap(1))
+            let acc_l = (0.6 * d(sd2.tap(1)) + 0.6 * d(sd2.tap(2)) - 0.6 * d(ap3.tap(1))
+                + 0.6 * d(sd3.tap(1))
                 - 0.6 * d(sd0.tap(1))
                 - 0.6 * d(ap1.tap(1))
                 - 0.6 * d(sd1.tap(1))) as f32;
-            let acc_r = (0.6 * d(sd0.tap(2)) + 0.6 * d(sd0.tap(3)) - 0.6 * d(ap1.tap(2)) + 0.6 * d(sd1.tap(2))
+            let acc_r = (0.6 * d(sd0.tap(2)) + 0.6 * d(sd0.tap(3)) - 0.6 * d(ap1.tap(2))
+                + 0.6 * d(sd1.tap(2))
                 - 0.6 * d(sd2.tap(3))
                 - 0.6 * d(ap3.tap(2))
                 - 0.6 * d(sd3.tap(2))) as f32;

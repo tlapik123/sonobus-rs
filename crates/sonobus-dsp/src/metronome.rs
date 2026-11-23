@@ -96,7 +96,10 @@ impl Metronome {
         let frames_in_bar = bpb * frames_in_beat;
         let lrint = |x: f64| x.round_ties_even() as i64;
         let (mut until_bar, mut until_beat) = if relative {
-            (lrint(self.bar_remain_ratio * frames_in_bar as f64), lrint(self.beat_remain_ratio * frames_in_beat as f64))
+            (
+                lrint(self.bar_remain_ratio * frames_in_bar as f64),
+                lrint(self.beat_remain_ratio * frames_in_beat as f64),
+            )
         } else {
             self.beat_pos = beat_time;
             let beat_frac = beat_time.fract();
@@ -117,15 +120,24 @@ impl Metronome {
                 until_bar = frames_in_bar;
                 if bpb > 1 {
                     until_beat = frames_in_beat;
-                    self.bar_voice = Voice { pos: 0, remain: self.bar_click.len() as i64 };
+                    self.bar_voice = Voice {
+                        pos: 0,
+                        remain: self.bar_click.len() as i64,
+                    };
                 }
             }
             if until_beat == 0 {
                 until_beat = frames_in_beat;
-                self.beat_voice = Voice { pos: 0, remain: self.beat_click.len() as i64 };
+                self.beat_voice = Voice {
+                    pos: 0,
+                    remain: self.beat_click.len() as i64,
+                };
             }
             let n = 1.max(frames.min(until_bar.min(until_beat)));
-            for (v, click) in [(&mut self.bar_voice, &self.bar_click), (&mut self.beat_voice, &self.beat_click)] {
+            for (v, click) in [
+                (&mut self.bar_voice, &self.bar_click),
+                (&mut self.beat_voice, &self.beat_click),
+            ] {
                 if v.remain > 0 {
                     let k = n.min(v.remain) as usize;
                     for (o, c) in out[at..at + k].iter_mut().zip(&click[v.pos..v.pos + k]) {

@@ -187,15 +187,20 @@ impl Lan {
     pub fn loopback() -> std::io::Result<Lan> {
         let lan = Lan::new()?;
         lan.daemon.disable_interface(IfKind::All).map_err(io)?;
-        lan.daemon.enable_interface(IfKind::LoopbackV4).map_err(io)?;
+        lan.daemon
+            .enable_interface(IfKind::LoopbackV4)
+            .map_err(io)?;
         Ok(lan)
     }
 
     /// Advertise a session hosted at `host` (its direct addresses; those on the first one's
     /// port), replacing any previous advertisement.
     pub fn advertise(&self, host: &PeerAddr, advert: &Advert) -> std::io::Result<()> {
-        let invalid = |m: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, m.to_string());
-        let ad = advert.encode().ok_or_else(|| invalid("session name too long"))?;
+        let invalid =
+            |m: &str| std::io::Error::new(std::io::ErrorKind::InvalidInput, m.to_string());
+        let ad = advert
+            .encode()
+            .ok_or_else(|| invalid("session name too long"))?;
         let port = host
             .addrs
             .first()
@@ -360,7 +365,12 @@ mod tests {
         let a1: SocketAddr = "192.168.1.5:10999".parse().unwrap();
         let a2: SocketAddr = "[fe80::5]:10999".parse().unwrap();
         // Appears (addresses sorted, duplicates dropped).
-        let ev = b.resolved(&inst, Some(&ad("jam", AuthKind::Pin)), vec![a2, a1, a1], None);
+        let ev = b.resolved(
+            &inst,
+            Some(&ad("jam", AuthKind::Pin)),
+            vec![a2, a1, a1],
+            None,
+        );
         let want = DiscoveredSession {
             session: "jam".into(),
             auth: AuthKind::Pin,
@@ -391,12 +401,18 @@ mod tests {
             (AuthKind::Password, Some("http://r/"))
         );
         // Records that are not ours / not ids are ignored.
-        assert_eq!(b.resolved("printer", Some(&ad("x", AuthKind::Pin)), vec![], None), None);
+        assert_eq!(
+            b.resolved("printer", Some(&ad("x", AuthKind::Pin)), vec![], None),
+            None
+        );
         let other = instance_name(&[8u8; 32]);
         assert_eq!(b.resolved(&other, Some("garbage"), vec![a1], None), None);
         assert_eq!(b.resolved(&other, None, vec![a1], None), None);
         // A known host whose advert turns invalid is lost; removal reports once.
-        assert!(b.resolved(&other, Some(&ad("y", AuthKind::Pin)), vec![a1], None).is_some());
+        assert!(
+            b.resolved(&other, Some(&ad("y", AuthKind::Pin)), vec![a1], None)
+                .is_some()
+        );
         assert_eq!(
             b.resolved(&other, Some("v1;bad"), vec![a1], None),
             Some(LanEvent::Lost([8u8; 32]))
@@ -408,7 +424,12 @@ mod tests {
         for i in 0..MAX_SESSIONS + 10 {
             let mut id = [0u8; 32];
             id[..8].copy_from_slice(&(i as u64).to_le_bytes());
-            b.resolved(&instance_name(&id), Some(&ad("s", AuthKind::Pin)), vec![a1], None);
+            b.resolved(
+                &instance_name(&id),
+                Some(&ad("s", AuthKind::Pin)),
+                vec![a1],
+                None,
+            );
         }
         assert_eq!(b.sessions().count(), MAX_SESSIONS);
     }

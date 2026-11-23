@@ -82,13 +82,24 @@ struct PluginHost {
 
 impl Host for PluginHost {
     fn params(&self) -> state::Params {
-        self.params.upgrade().map_or_else(state::Params::plugin, |p| p.to_core())
+        self.params
+            .upgrade()
+            .map_or_else(state::Params::plugin, |p| p.to_core())
     }
 
     fn params_edited(&mut self, old: &state::Params, new: &state::Params) {
-        let Some(p) = self.params.upgrade() else { return };
-        let gui = lock(&self.gui).as_ref().filter(|g| g.1 == std::thread::current().id()).map(|g| g.0.clone());
-        p.apply_edit(gui.as_ref().map(GuiContext::param_setter).as_ref(), old, new);
+        let Some(p) = self.params.upgrade() else {
+            return;
+        };
+        let gui = lock(&self.gui)
+            .as_ref()
+            .filter(|g| g.1 == std::thread::current().id())
+            .map(|g| g.0.clone());
+        p.apply_edit(
+            gui.as_ref().map(GuiContext::param_setter).as_ref(),
+            old,
+            new,
+        );
     }
 
     fn soundboards_changed(&mut self, boards: &Soundboards) -> io::Result<()> {
@@ -112,7 +123,8 @@ impl Host for PluginHost {
 
 /// `saveCurrentAsDefaultPluginSettings` (P.cpp:8803-8811): no cache, no input groups, XML.
 fn save_plugin_default(dir: Option<&Path>, state: &AppState) -> io::Result<PathBuf> {
-    let dir = dir.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no settings directory"))?;
+    let dir =
+        dir.ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no settings directory"))?;
     std::fs::create_dir_all(dir)?;
     let path = dir.join(PLUGIN_DEFAULT_FILE);
     std::fs::write(&path, files::save_plugin_default(state))?;
@@ -141,7 +153,11 @@ impl Session {
         Session {
             defaults_dir,
             engine: Mutex::new(None),
-            inner: Mutex::new(Inner { app: None, state, last_tick: Instant::now() }),
+            inner: Mutex::new(Inner {
+                app: None,
+                state,
+                last_tick: Instant::now(),
+            }),
             resync: AtomicBool::new(false),
             gui: Gui::default(),
         }
@@ -165,13 +181,16 @@ impl Session {
     /// recents): projects travel between people.
     pub fn state_bytes(&self) -> Vec<u8> {
         let mut out = Vec::new();
-        settings::shareable(&self.state()).to_tree_scoped(Scope::FULL).write(&mut out);
+        settings::shareable(&self.state())
+            .to_tree_scoped(Scope::FULL)
+            .write(&mut out);
         out
     }
 
     /// `setStateInformation` (P.cpp:8797-8800) from those bytes. An invalid tree changes nothing.
     pub fn load_state_bytes(&self, data: &[u8]) -> io::Result<()> {
-        let tree = ValueTree::read(data).map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
+        let tree = ValueTree::read(data)
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidData, e.to_string()))?;
         let local = self.state();
         let mut s = local.clone();
         s.apply_tree(&tree, Scope::FULL);
@@ -219,7 +238,12 @@ impl Session {
     /// first activation creates the controller (which reconnects to the most recent group when
     /// `reconnectlast` is on, as upstream's first state restore, P.cpp:8788-8795); later ones
     /// hand it the new engine, and it rejoins a joined group.
-    pub fn start(&self, cfg: AudioConfig, main_inputs: usize, params: &Arc<SbParams>) -> io::Result<EngineAudio> {
+    pub fn start(
+        &self,
+        cfg: AudioConfig,
+        main_inputs: usize,
+        params: &Arc<SbParams>,
+    ) -> io::Result<EngineAudio> {
         let p = params.to_core();
         let mut audio = None;
         let mut build = |mut state: AppState| -> io::Result<Arc<Engine>> {
@@ -234,7 +258,11 @@ impl Session {
                 state.input_groups.push(grp);
             }
             let port = u16::try_from(state.extra.use_udp_port).unwrap_or(0);
-            let (engine, rt) = Engine::new(EngineConfig { audio: cfg, udp_port: port, state })?;
+            let (engine, rt) = Engine::new(EngineConfig {
+                audio: cfg,
+                udp_port: port,
+                state,
+            })?;
             audio = Some(rt);
             Ok(Arc::new(engine))
         };
@@ -257,9 +285,17 @@ impl Session {
             }
             None => {
                 let engine = build(g.state.clone())?;
-                let boards = self.defaults_dir.as_ref().and_then(|d| settings::load_soundboards(&d.join(SOUNDBOARDS_FILE)).ok());
-                let host = PluginHost { params: Arc::downgrade(params), gui: self.gui.clone(), dir: self.defaults_dir.clone() };
-                let ctrl = AppController::hosted(engine, Box::new(host), boards.unwrap_or_default());
+                let boards = self
+                    .defaults_dir
+                    .as_ref()
+                    .and_then(|d| settings::load_soundboards(&d.join(SOUNDBOARDS_FILE)).ok());
+                let host = PluginHost {
+                    params: Arc::downgrade(params),
+                    gui: self.gui.clone(),
+                    dir: self.defaults_dir.clone(),
+                };
+                let ctrl =
+                    AppController::hosted(engine, Box::new(host), boards.unwrap_or_default());
                 let form = ctrl.default_request();
                 g.app = Some(SonobusApp::new(ctrl, form));
             }
@@ -312,8 +348,15 @@ impl Session {
     pub fn set_window_size(&self, w: i32, h: i32) {
         let mut g = lock(&self.inner);
         match &mut g.app {
-            Some(app) => app.ctrl.edit(|s| (s.extra.last_window_width, s.extra.last_window_height) = (w, h)),
-            None => (g.state.extra.last_window_width, g.state.extra.last_window_height) = (w, h),
+            Some(app) => app
+                .ctrl
+                .edit(|s| (s.extra.last_window_width, s.extra.last_window_height) = (w, h)),
+            None => {
+                (
+                    g.state.extra.last_window_width,
+                    g.state.extra.last_window_height,
+                ) = (w, h)
+            }
         }
     }
 }

@@ -66,7 +66,10 @@ mod tests {
         use super::clean;
         assert_eq!(clean("bob", 10), "bob");
         // terminal escapes, newline forgery, bidi spoofing
-        assert_eq!(clean("\u{1b}[31mred\u{1b}]0;title\u{7}", 50), "[31mred]0;title");
+        assert_eq!(
+            clean("\u{1b}[31mred\u{1b}]0;title\u{7}", 50),
+            "[31mred]0;title"
+        );
         assert_eq!(clean("group\n\nAccept? [yes]", 50), "group Accept? [yes]");
         assert_eq!(clean("evil\u{202e}gnp.exe", 50), "evilgnp.exe");
         assert_eq!(clean("abcdef", 4), "abc\u{2026}");

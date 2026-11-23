@@ -5,7 +5,10 @@ use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
 use std::net::SocketAddr;
 
-use aoo::codec::{Codec, Format, OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC, OpusOptions, PcmBitDepth};
+use aoo::codec::{
+    Codec, Format, OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC, OpusOptions,
+    PcmBitDepth,
+};
 use aoo::sink::{Sink, SinkOptions};
 use aoo::source::{Source, SourceOptions};
 use aoo::{Setup, TimeTag, message};
@@ -103,5 +106,9 @@ fn audio_halves_do_not_allocate() {
         on_audio_thread(|| sink_audio.process(&mut [&mut l[..], &mut r[..]], t));
     }
     assert!(out[0].iter().any(|&x| x != 0.0), "nothing played");
-    assert_eq!(COUNT.with(|c| c.get()), 0, "allocations on the audio thread");
+    assert_eq!(
+        COUNT.with(|c| c.get()),
+        0,
+        "allocations on the audio thread"
+    );
 }

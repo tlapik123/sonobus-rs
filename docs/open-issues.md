@@ -76,7 +76,6 @@ State on 2026-11-22. Decisions behind the "not planned" items are in `docs/adr/`
 - If the captured application is the only stream driving the engine (no output device), losing it stops the session until it is back.
 - System sound and app sound cannot be on together.
 - On Windows the server key file and the app's settings files get no access restriction.
-- `cargo fmt --check` reports differences across the workspace; fmt has never been run.
 
 ## Housekeeping
 

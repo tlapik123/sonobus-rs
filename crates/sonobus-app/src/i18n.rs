@@ -82,7 +82,11 @@ fn close_quote(s: &str, start: usize) -> usize {
 
 /// JUCE `unescapeString`: replaced one after the other, as JUCE does.
 fn unescape(s: &str) -> String {
-    s.replace("\\\"", "\"").replace("\\'", "'").replace("\\t", "\t").replace("\\r", "\r").replace("\\n", "\n")
+    s.replace("\\\"", "\"")
+        .replace("\\'", "'")
+        .replace("\\t", "\t")
+        .replace("\\r", "\r")
+        .replace("\\n", "\n")
 }
 
 /// `LocalisedStrings::loadFromText`: `language:` / `countries:` header lines, then
@@ -108,7 +112,8 @@ pub fn parse(text: &str) -> Strings {
         } else if line.len() >= 9 && line[..9].eq_ignore_ascii_case("language:") {
             s.language = line[9..].trim().to_owned();
         } else if line.len() >= 10 && line[..10].eq_ignore_ascii_case("countries:") {
-            s.countries.extend(line[10..].split_whitespace().map(str::to_owned));
+            s.countries
+                .extend(line[10..].split_whitespace().map(str::to_owned));
         }
     }
     s
@@ -129,8 +134,17 @@ pub fn system_locale() -> String {
 
 /// `de_DE.UTF-8` / `de-DE` -> `de-de`; `C` / `POSIX` -> "".
 pub fn normalize_locale(v: &str) -> String {
-    let v = v.split(['.', '@']).next().unwrap_or_default().to_lowercase().replace('_', "-");
-    if v == "c" || v == "posix" { String::new() } else { v }
+    let v = v
+        .split(['.', '@'])
+        .next()
+        .unwrap_or_default()
+        .to_lowercase()
+        .replace('_', "-");
+    if v == "c" || v == "posix" {
+        String::new()
+    } else {
+        v
+    }
 }
 
 /// The shipped language for an override code or a locale (`setupLocalisation`,
@@ -143,7 +157,12 @@ pub fn resolve(code: &str, from_system: bool) -> Option<&'static str> {
     if from_system && (base == "nl" || base == "ja") {
         return None;
     }
-    let known = |c: &str| LANGUAGES.iter().map(|l| l.0).find(|k| *k == c && file(k).is_some());
+    let known = |c: &str| {
+        LANGUAGES
+            .iter()
+            .map(|l| l.0)
+            .find(|k| *k == c && file(k).is_some())
+    };
     known(&code).or_else(|| match (base, region) {
         ("zh", "tw" | "hk" | "mo" | "hant") => None,
         ("zh", _) => known("zh-hans"),
@@ -175,7 +194,11 @@ thread_local! {
 /// The language for an override code (upstream's `langOverrideCode`; "" = the OS locale),
 /// without making it the process language.
 pub fn pick(override_code: &str) -> Option<&'static str> {
-    if override_code.is_empty() { resolve(&system_locale(), true) } else { resolve(override_code, false) }
+    if override_code.is_empty() {
+        resolve(&system_locale(), true)
+    } else {
+        resolve(override_code, false)
+    }
 }
 
 /// Picks the process language once: `override_code` as in [`pick`]. Later calls change
@@ -201,7 +224,9 @@ pub fn scope(lang: Option<&'static str>) -> Scope {
 
 /// The language in use on this thread (`None` = English or not initialised yet).
 pub fn current() -> Option<&'static str> {
-    SCOPED.with(Cell::get).unwrap_or_else(|| CURRENT.get().copied().flatten())
+    SCOPED
+        .with(Cell::get)
+        .unwrap_or_else(|| CURRENT.get().copied().flatten())
 }
 
 /// The translation of `s` in the current language, or `s`.
@@ -282,10 +307,18 @@ mod tests {
         }
         let de = parse(file("de").unwrap());
         assert_eq!(de.get("Output Level"), Some("Ausgabelautstärke"));
-        assert_eq!(de.get("Filled in Group from link! Press 'Connect to Group' to join..."), Some("Gruppe aus Link übernommen! Drücken Sie 'Mit Gruppe verbinden', um sich anzumelden ..."));
+        assert_eq!(
+            de.get("Filled in Group from link! Press 'Connect to Group' to join..."),
+            Some(
+                "Gruppe aus Link übernommen! Drücken Sie 'Mit Gruppe verbinden', um sich anzumelden ..."
+            )
+        );
         let ja = parse(file("ja").unwrap());
         assert_eq!(ja.language, "Japanese");
-        assert!(ja.get("Mute All Input").is_some_and(|t| t.chars().any(|c| ('\u{3040}'..='\u{9fff}').contains(&c))));
+        assert!(
+            ja.get("Mute All Input")
+                .is_some_and(|t| t.chars().any(|c| ('\u{3040}'..='\u{9fff}').contains(&c)))
+        );
     }
 
     #[test]

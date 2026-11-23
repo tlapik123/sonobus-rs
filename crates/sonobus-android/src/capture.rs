@@ -11,7 +11,11 @@ pub enum CaptureEvent {
     /// The consent dialog is being shown for `target`.
     Requested(CaptureTarget),
     /// `AudioRecord` started.
-    Started { sample_rate: u32, channels: u16, buffer_frames: u32 },
+    Started {
+        sample_rate: u32,
+        channels: u16,
+        buffer_frames: u32,
+    },
     /// Consent declined, projection stopped by the system/user, or `AudioRecord` failed.
     Stopped(String),
     /// Stopped on our request.
@@ -31,11 +35,22 @@ impl CaptureModel {
         let s = &mut self.status;
         match e {
             CaptureEvent::Requested(t) => {
-                *s = CaptureStatus { state: CaptureState::NeedsConsent, target: Some(t), ..CaptureStatus::default() };
+                *s = CaptureStatus {
+                    state: CaptureState::NeedsConsent,
+                    target: Some(t),
+                    ..CaptureStatus::default()
+                };
             }
-            CaptureEvent::Started { sample_rate, channels, buffer_frames } => {
+            CaptureEvent::Started {
+                sample_rate,
+                channels,
+                buffer_frames,
+            } => {
                 s.state = CaptureState::Running;
-                s.format = Some(ExternalSpec { channels, sample_rate });
+                s.format = Some(ExternalSpec {
+                    channels,
+                    sample_rate,
+                });
                 s.buffer_frames = buffer_frames;
             }
             // a stop of something not running (late callback after "Microphone only") stays off
@@ -48,7 +63,9 @@ impl CaptureModel {
                 s.state = CaptureState::Off;
                 s.latency_ms = None;
             }
-            CaptureEvent::Latency(ms) => s.latency_ms = (s.state == CaptureState::Running).then_some(ms),
+            CaptureEvent::Latency(ms) => {
+                s.latency_ms = (s.state == CaptureState::Running).then_some(ms)
+            }
         }
     }
 }
@@ -84,9 +101,19 @@ mod tests {
         assert_eq!(m.status.state, CaptureState::NeedsConsent);
         m.on_event(CaptureEvent::Latency(12.0)); // not running yet: ignored
         assert_eq!(m.status.latency_ms, None);
-        m.on_event(CaptureEvent::Started { sample_rate: 48000, channels: 2, buffer_frames: 480 });
+        m.on_event(CaptureEvent::Started {
+            sample_rate: 48000,
+            channels: 2,
+            buffer_frames: 480,
+        });
         assert_eq!(m.status.state, CaptureState::Running);
-        assert_eq!(m.status.format, Some(ExternalSpec { channels: 2, sample_rate: 48000 }));
+        assert_eq!(
+            m.status.format,
+            Some(ExternalSpec {
+                channels: 2,
+                sample_rate: 48000
+            })
+        );
         m.on_event(CaptureEvent::Latency(12.0));
         assert_eq!(m.status.latency_ms, Some(12.0));
         // revoked from the status bar: stopped, target kept for "Capture again"
@@ -95,9 +122,15 @@ mod tests {
         assert_eq!(m.status.target, Some(CaptureTarget::System));
         assert_eq!(m.status.latency_ms, None);
         // a new request clears the old format until the new recorder reports
-        let app = CaptureTarget::App { uid: 10123, label: "Player".into() };
+        let app = CaptureTarget::App {
+            uid: 10123,
+            label: "Player".into(),
+        };
         m.on_event(CaptureEvent::Requested(app.clone()));
-        assert_eq!((m.status.format, m.status.target.clone()), (None, Some(app)));
+        assert_eq!(
+            (m.status.format, m.status.target.clone()),
+            (None, Some(app))
+        );
         // user picks "Microphone only"; a late stop callback does not resurrect it
         m.on_event(CaptureEvent::Off);
         m.on_event(CaptureEvent::Stopped("projection stopped".into()));

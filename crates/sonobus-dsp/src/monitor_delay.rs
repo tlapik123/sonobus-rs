@@ -34,7 +34,13 @@ pub struct MonitorDelay {
 
 impl MonitorDelay {
     /// MonitorDelayView slider; upstream default is 0 ms, disabled.
-    pub const DELAY_MS: ParamSpec = ParamSpec { min: 0.0, max: 5000.0, step: 0.1, skew: 0.25, default: 0.0 };
+    pub const DELAY_MS: ParamSpec = ParamSpec {
+        min: 0.0,
+        max: 5000.0,
+        step: 0.1,
+        skew: 0.25,
+        default: 0.0,
+    };
 
     /// Allocates the delay line for `channels` channels (about 1 MB each).
     pub fn new(sample_rate: u32, channels: usize) -> Self {
@@ -47,7 +53,9 @@ impl MonitorDelay {
             active: false,
             last_active: false,
             created: false,
-            bufs: (0..channels).map(|_| vec![0.0; TOTAL].into_boxed_slice()).collect(),
+            bufs: (0..channels)
+                .map(|_| vec![0.0; TOTAL].into_boxed_slice())
+                .collect(),
             write_pos: 0,
             read_pos: 0,
             delay_int: 0,
@@ -81,7 +89,13 @@ impl MonitorDelay {
     fn set_line_delay(&mut self) {
         let d = self.delay_samples as f32;
         let upper = MAX_DELAY_SAMPLES as f32;
-        let d = if d < 0.0 { 0.0 } else if upper < d { upper } else { d };
+        let d = if d < 0.0 {
+            0.0
+        } else if upper < d {
+            upper
+        } else {
+            d
+        };
         self.delay_int = d.floor() as usize;
     }
 

@@ -316,7 +316,13 @@ fn latency_match_receive_sync_suggestions() {
     assert_eq!(a.e.receive_sync_padding(), 500.0);
     assert!((buf(&a) - 50.0).abs() < 0.01, "setting it does not sync");
     a.e.set_receive_sync_padding(10.0);
-    assert!(a.e.state().extra.unknown.iter().any(|(k, v)| k == "ReceiveSyncPadding" && v.to_f64() == 10.0));
+    assert!(
+        a.e.state()
+            .extra
+            .unknown
+            .iter()
+            .any(|(k, v)| k == "ReceiveSyncPadding" && v.to_f64() == 10.0)
+    );
 
     // commit a match 20 ms above the current incoming latency: the buffer grows by 20 and the
     // incoming latency lands on the target
@@ -521,7 +527,11 @@ fn recording_disk_full() {
     assert!(a.e.recording_status().is_none(), "stopped by itself");
     let e = a.e.stop_recording().expect_err("the failure");
     assert!(e.to_string().contains("no space"), "{e}");
-    assert_eq!(a.e.stop_recording().unwrap(), Vec::<std::path::PathBuf>::new(), "reported once");
+    assert_eq!(
+        a.e.stop_recording().unwrap(),
+        Vec::<std::path::PathBuf>::new(),
+        "reported once"
+    );
     // still in session, and it can record again
     assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| near(
         n[0].tone(0, 660.0),
@@ -580,7 +590,10 @@ fn recording_stop_with_a_running_audio_thread() {
         let files = e.stop_recording().unwrap();
         assert_eq!(files.len(), 3, "{files:?}");
         let lens: Vec<usize> = files.iter().map(|f| read_wav(f)[0].len()).collect();
-        assert!(lens.iter().all(|&n| n == lens[0] && n > 0), "{folder:?}: {lens:?}");
+        assert!(
+            lens.iter().all(|&n| n == lens[0] && n > 0),
+            "{folder:?}: {lens:?}"
+        );
     }
     quit.store(true, Ordering::Relaxed);
     t.join().unwrap();
@@ -635,7 +648,11 @@ fn slow_files_do_not_block_the_engine() {
         std::thread::sleep(Duration::from_millis(150));
         let t0 = Instant::now();
         let _ = e.snapshot();
-        assert!(t0.elapsed() < Duration::from_millis(200), "blocked {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed() < Duration::from_millis(200),
+            "blocked {:?}",
+            t0.elapsed()
+        );
         opener.join().unwrap().unwrap();
         std::thread::sleep(Duration::from_millis(100)); // the decoder is inside a read
         let t0 = Instant::now();
@@ -644,7 +661,11 @@ fn slow_files_do_not_block_the_engine() {
         } else {
             e.close_file();
         }
-        assert!(t0.elapsed() < Duration::from_millis(200), "close {:?}", t0.elapsed());
+        assert!(
+            t0.elapsed() < Duration::from_millis(200),
+            "close {:?}",
+            t0.elapsed()
+        );
     }
     sonobus_files::testing::set_slow_io(&wav, Duration::ZERO);
 }
@@ -705,7 +726,9 @@ fn engine_drop_finalizes_a_recording() {
     drop(audio);
 }
 
-fn bare_engine(st: sonobus_core::state::AppState) -> (sonobus_engine::Engine, sonobus_engine::EngineAudio) {
+fn bare_engine(
+    st: sonobus_core::state::AppState,
+) -> (sonobus_engine::Engine, sonobus_engine::EngineAudio) {
     let cfg = sonobus_engine::AudioConfig {
         sample_rate: SR,
         block_size: BLOCK,
@@ -760,7 +783,11 @@ fn input_solo_is_restored_through_the_engine() {
     let only_second = render(st.clone(), [0.0, 0.25]);
     let both = render(st.clone(), [0.5, 0.25]);
     assert_ne!(only_second, both);
-    assert_eq!(render(soloed.clone(), [0.5, 0.25]), only_second, "solo restored");
+    assert_eq!(
+        render(soloed.clone(), [0.5, 0.25]),
+        only_second,
+        "solo restored"
+    );
     let mut forget = soloed;
     sonobus_engine::options::set(
         &mut forget.extra,

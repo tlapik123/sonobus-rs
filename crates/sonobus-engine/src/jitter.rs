@@ -116,7 +116,11 @@ pub fn peer_ms(v: f64) -> Option<f32> {
 
 /// A buffer length to set: NaN is 0, the rest is clamped to `0..=MAX_BUFFER_MS`.
 pub fn buffer_ms(v: f32) -> f32 {
-    if v.is_nan() { 0.0 } else { v.clamp(0.0, MAX_BUFFER_MS) }
+    if v.is_nan() {
+        0.0
+    } else {
+        v.clamp(0.0, MAX_BUFFER_MS)
+    }
 }
 
 impl Jitter {

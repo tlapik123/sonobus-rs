@@ -30,7 +30,10 @@ use std::io::{BufReader, BufWriter, Read, Write};
 use std::net::SocketAddr;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 
-use aoo::codec::{Codec, Format, OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC, OpusOptions, PcmBitDepth};
+use aoo::codec::{
+    Codec, Format, OPUS_APPLICATION_RESTRICTED_LOWDELAY, OPUS_SIGNAL_MUSIC, OpusOptions,
+    PcmBitDepth,
+};
 use aoo::sink::{Sink, SinkAudio, SinkOptions};
 use aoo::source::{Source, SourceOptions};
 use aoo::{Message, Setup, TimeTag, message};
@@ -76,7 +79,9 @@ impl Cpp {
     fn process_source(&mut self, t: TimeTag, planar: &[Vec<f32>]) {
         self.w.write_all(b"P").unwrap();
         self.w.write_all(&t.0.to_ne_bytes()).unwrap();
-        self.w.write_all(&(planar[0].len() as u32).to_ne_bytes()).unwrap();
+        self.w
+            .write_all(&(planar[0].len() as u32).to_ne_bytes())
+            .unwrap();
         for c in planar {
             for x in c {
                 self.w.write_all(&x.to_ne_bytes()).unwrap();
@@ -224,12 +229,52 @@ fn opus(nch: i32) -> Codec {
 fn matrix() -> Vec<(&'static str, Case)> {
     let pcm = |d| Codec::Pcm(d);
     vec![
-        ("pcm int16", Case { codec: pcm(PcmBitDepth::Int16), nch: 2, bs: 256, dynamic: false }),
+        (
+            "pcm int16",
+            Case {
+                codec: pcm(PcmBitDepth::Int16),
+                nch: 2,
+                bs: 256,
+                dynamic: false,
+            },
+        ),
         // 512 frames * 2 ch * 4 bytes = 4096 bytes = 8 frames of 520
-        ("pcm float32 multi-frame", Case { codec: pcm(PcmBitDepth::Float32), nch: 2, bs: 512, dynamic: false }),
-        ("opus mono", Case { codec: opus(1), nch: 1, bs: 240, dynamic: true }),
-        ("opus stereo", Case { codec: opus(2), nch: 2, bs: 240, dynamic: true }),
-        ("opus 4ch", Case { codec: opus(4), nch: 4, bs: 240, dynamic: true }),
+        (
+            "pcm float32 multi-frame",
+            Case {
+                codec: pcm(PcmBitDepth::Float32),
+                nch: 2,
+                bs: 512,
+                dynamic: false,
+            },
+        ),
+        (
+            "opus mono",
+            Case {
+                codec: opus(1),
+                nch: 1,
+                bs: 240,
+                dynamic: true,
+            },
+        ),
+        (
+            "opus stereo",
+            Case {
+                codec: opus(2),
+                nch: 2,
+                bs: 240,
+                dynamic: true,
+            },
+        ),
+        (
+            "opus 4ch",
+            Case {
+                codec: opus(4),
+                nch: 4,
+                bs: 240,
+                dynamic: true,
+            },
+        ),
     ]
 }
 
@@ -265,8 +310,15 @@ fn deliver(p: &[u8], cpp: &mut Cpp, sink: &mut Sink, t: TimeTag) {
 fn assert_same(name: &str, k: usize, rust: &[Vec<f32>], cpp: &[Vec<f32>]) {
     for (c, (r, p)) in rust.iter().zip(cpp).enumerate() {
         if r != p {
-            let i = r.iter().zip(p).position(|(a, b)| a.to_bits() != b.to_bits()).unwrap();
-            panic!("{name}: block {k} channel {c} sample {i}: rust {} cpp {}", r[i], p[i]);
+            let i = r
+                .iter()
+                .zip(p)
+                .position(|(a, b)| a.to_bits() != b.to_bits())
+                .unwrap();
+            panic!(
+                "{name}: block {k} channel {c} sample {i}: rust {} cpp {}",
+                r[i], p[i]
+            );
         }
     }
 }
@@ -351,11 +403,21 @@ fn rust_source_to_cpp_sink() {
                 let f = match case.codec {
                     Codec::Pcm(PcmBitDepth::Int16) => Codec::Pcm(PcmBitDepth::Int24),
                     Codec::Pcm(_) => Codec::Pcm(PcmBitDepth::Float64),
-                    Codec::Opus(o) => Codec::Opus(OpusOptions { bitrate: o.bitrate / 2, ..o }),
+                    Codec::Opus(o) => Codec::Opus(OpusOptions {
+                        bitrate: o.bitrate / 2,
+                        ..o
+                    }),
                 };
-                src.set_format(Format { codec: f, ..case.format() }).unwrap();
+                src.set_format(Format {
+                    codec: f,
+                    ..case.format()
+                })
+                .unwrap();
             }
-            src_audio.process(&input(k, bs, nch).iter().map(|c| &c[..]).collect::<Vec<_>>(), t);
+            src_audio.process(
+                &input(k, bs, nch).iter().map(|c| &c[..]).collect::<Vec<_>>(),
+                t,
+            );
             let mut pkts = Vec::new();
             src.send(|_, p| pkts.push(p.to_vec()));
             for p in &pkts {
@@ -397,8 +459,13 @@ fn rust_source_to_cpp_sink() {
             .filter(|(t, _)| *t == AOO_BLOCK_RESENT_EVENT)
             .map(|(_, n)| n)
             .sum();
-        assert!(dropped > 20 && resent > 0, "{name}: dropped {dropped}, C++ sink resent {resent}");
-        eprintln!("{name}: {BLOCKS} blocks identical, {dropped} dropped, C++ sink counted {resent} resent");
+        assert!(
+            dropped > 20 && resent > 0,
+            "{name}: dropped {dropped}, C++ sink resent {resent}"
+        );
+        eprintln!(
+            "{name}: {BLOCKS} blocks identical, {dropped} dropped, C++ sink counted {resent} resent"
+        );
     }
 }
 
@@ -429,7 +496,12 @@ fn source_packets_byte_identical() {
     let mut cases = matrix();
     cases.push((
         "pcm float32 dynamic",
-        Case { codec: Codec::Pcm(PcmBitDepth::Float32), nch: 2, bs: 512, dynamic: true },
+        Case {
+            codec: Codec::Pcm(PcmBitDepth::Float32),
+            nch: 2,
+            bs: 512,
+            dynamic: true,
+        },
     ));
     for (name, case) in cases {
         let (bs, nch) = (case.bs as usize, case.nch as usize);
@@ -451,9 +523,17 @@ fn source_packets_byte_identical() {
         }
         assert_eq!(ours.len(), theirs.len(), "{name}: packet count");
         for (i, (a, b)) in ours.iter().zip(&theirs).enumerate() {
-            assert!(a == b, "{name}: packet {i} differs:\nrust {:?}\ncpp  {:?}", message::parse(a), message::parse(b));
+            assert!(
+                a == b,
+                "{name}: packet {i} differs:\nrust {:?}\ncpp  {:?}",
+                message::parse(a),
+                message::parse(b)
+            );
         }
-        let pings = ours.iter().filter(|p| p.starts_with(b"/aoo/sink/7/ping")).count();
+        let pings = ours
+            .iter()
+            .filter(|p| p.starts_with(b"/aoo/sink/7/ping"))
+            .count();
         assert!(pings >= 2, "{name}");
         eprintln!("{name}: {} packets byte-identical", ours.len());
     }
@@ -479,7 +559,10 @@ fn stock_sink_follows_sequence_wrap() {
         if k == 100 {
             src.set_sequence_for_testing(i32::MAX - 50);
         }
-        src_audio.process(&input(k, bs, nch).iter().map(|c| &c[..]).collect::<Vec<_>>(), t);
+        src_audio.process(
+            &input(k, bs, nch).iter().map(|c| &c[..]).collect::<Vec<_>>(),
+            t,
+        );
         let mut pkts = Vec::new();
         src.send(|_, p| pkts.push(p.to_vec()));
         for p in &pkts {

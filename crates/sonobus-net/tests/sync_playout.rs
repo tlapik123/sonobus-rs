@@ -244,7 +244,10 @@ fn receivers_behind_different_latency_play_in_sync() {
         let d = sim.delays(i, 1.5);
         eprintln!("sync, receiver {i}: {d:.2?}");
         assert!(d.len() >= 9, "{d:?}");
-        assert!(d.iter().all(|x| (x - 150.0).abs() < 0.1), "receiver {i}: {d:?}");
+        assert!(
+            d.iter().all(|x| (x - 150.0).abs() < 0.1),
+            "receiver {i}: {d:?}"
+        );
     }
 
     let mut sim = Sim::new(&[0.010, 0.070], None, 1.0);
@@ -272,7 +275,9 @@ fn sync_holds_against_clock_drift() {
             let late = d.iter().map(|x| x - 100.0).fold(f64::MIN, f64::max);
             let early = d.iter().map(|x| 100.0 - x).fold(f64::MIN, f64::max);
             let last = d.last().unwrap() - 100.0;
-            eprintln!("sender x{speed}, receiver {i}: up to {late:.2} ms late, {early:.2} ms early, {last:.2} at 30 s");
+            eprintln!(
+                "sender x{speed}, receiver {i}: up to {late:.2} ms late, {early:.2} ms early, {last:.2} at 30 s"
+            );
             assert!(late < bound && early < 0.5, "receiver {i}: {d:.2?}");
         }
     }
@@ -291,7 +296,10 @@ fn an_unreachable_target_degrades_to_unsynced_playout() {
     let ok = sim.delays(1, 1.0);
     eprintln!("unsynced {plain:.2?}, late {late:.2?}, reachable {ok:.2?}");
     assert_eq!(late.len(), plain.len(), "every impulse still plays");
-    assert!(late.iter().all(|x| (x - plain[0]).abs() < 3.0), "{late:?} vs {plain:?}");
+    assert!(
+        late.iter().all(|x| (x - plain[0]).abs() < 3.0),
+        "{late:?} vs {plain:?}"
+    );
     assert!(ok.iter().all(|x| (x - 40.0).abs() < 0.1), "{ok:?}");
 }
 
@@ -301,15 +309,29 @@ fn an_unreachable_target_degrades_to_unsynced_playout() {
 /// far fewer.
 #[test]
 fn an_unreachable_target_under_heavy_jitter_plays_no_worse_than_unsynced() {
-    let f = Fmt { sr: 48000, block: 120, dev: 128, buffer_ms: 20.0 };
-    let pat = pattern("18 ms jitter", 0.040, 10.0, Box::new(|_, r1, _| Some(0.070 + 0.018 * r1)));
+    let f = Fmt {
+        sr: 48000,
+        block: 120,
+        dev: 128,
+        buffer_ms: 20.0,
+    };
+    let pat = pattern(
+        "18 ms jitter",
+        0.040,
+        10.0,
+        Box::new(|_, r1, _| Some(0.070 + 0.018 * r1)),
+    );
     let (p, s) = (cell(f, &pat, false, 1), cell(f, &pat, true, 1));
     eprintln!(
         "unsynced: {} underruns, {} lost, splices {:.1?}; synced: {} underruns, {} lost, splices \
          {:.1?}",
         p.stops, p.lost, p.splices, s.stops, s.lost, s.splices
     );
-    assert!(s.splices.iter().all(|x| x.1 > 0.0), "a skip: {:?}", s.splices);
+    assert!(
+        s.splices.iter().all(|x| x.1 > 0.0),
+        "a skip: {:?}",
+        s.splices
+    );
     assert!(s.stops <= p.stops && s.lost <= p.lost);
     assert!(s.delivered >= p.delivered);
 }
@@ -324,10 +346,19 @@ fn a_target_that_moves_restarts_or_waits() {
     sim.delay = Some(0.120);
     sim.run(5.0);
     let d = sim.delays(0, 1.0);
-    eprintln!("target 150 -> 120 ms: {d:.2?}, {} underruns", sim.rxs[0].stops);
-    let (before, after) = (sim.delays(0, 1.0).len() - sim.delays(0, 2.0).len(), sim.delays(0, 2.6));
+    eprintln!(
+        "target 150 -> 120 ms: {d:.2?}, {} underruns",
+        sim.rxs[0].stops
+    );
+    let (before, after) = (
+        sim.delays(0, 1.0).len() - sim.delays(0, 2.0).len(),
+        sim.delays(0, 2.6),
+    );
     assert!(d[..before].iter().all(|x| (x - 150.0).abs() < 0.1), "{d:?}");
-    assert!(after.len() >= 9 && after.iter().all(|x| (x - 120.0).abs() < 0.1), "{after:?}");
+    assert!(
+        after.len() >= 9 && after.iter().all(|x| (x - 120.0).abs() < 0.1),
+        "{after:?}"
+    );
     assert!(sim.rxs[0].stops <= 1 && sim.rxs[0].lost == 0);
 
     let mut sim = Sim::new(&[0.010], Some(0.120), 1.0);
@@ -366,7 +397,10 @@ fn the_error_reading_is_gone_while_nothing_plays() {
     sim.run(30.0);
     let still = sim.rxs[0].rx.playout_error_ms().expect("playing");
     eprintln!("after the outage: {late:.2} ms at 5 s, {still:.2} ms at 30 s");
-    assert!(late < -100.0 && (still - late).abs() < 0.5, "{late} {still}");
+    assert!(
+        late < -100.0 && (still - late).abs() < 0.5,
+        "{late} {still}"
+    );
     assert_eq!(sim.rxs[0].stops, 1, "one underrun: the outage");
 }
 
@@ -385,7 +419,10 @@ fn absurd_targets_are_ignored() {
         sim.run(3.0);
         let (p, s) = (&plain.rxs[0], &sim.rxs[0]);
         let diff = p.out.iter().zip(&s.out).filter(|(a, b)| a != b).count();
-        eprintln!("skew {skew} s: {:.2?}, {diff} samples differ", sim.delays(0, 1.0));
+        eprintln!(
+            "skew {skew} s: {:.2?}, {diff} samples differ",
+            sim.delays(0, 1.0)
+        );
         assert_eq!(diff, 0, "skew {skew}");
         assert_eq!((s.stops, s.lost), (p.stops, p.lost));
     }
@@ -414,12 +451,26 @@ fn a_latency_step_beyond_the_target_buffers_like_unsynced() {
         s.lost,
         s.rx.playout_error_ms()
     );
-    assert!(s.stops <= p.stops && s.lost <= p.lost, "{:?} vs {:?}", (s.stops, s.lost), (p.stops, p.lost));
+    assert!(
+        s.stops <= p.stops && s.lost <= p.lost,
+        "{:?} vs {:?}",
+        (s.stops, s.lost),
+        (p.stops, p.lost)
+    );
     // never less buffered than unsynced; later by at most the jitter (it buffers for the late
     // arrivals, unsynced for the one it ran dry on) plus a block or callback
     let (dp, ds) = (plain.delays(0, 30.0), synced.delays(0, 30.0));
-    eprintln!("latency step, after 30 s: unsynced {:.2} ms, synced {:.2} ms", dp[0], ds[0]);
-    assert!(ds.len() == dp.len() && ds.iter().zip(&dp).all(|(a, b)| a - b > -0.5 && a - b < 4.0 + 2.7));
+    eprintln!(
+        "latency step, after 30 s: unsynced {:.2} ms, synced {:.2} ms",
+        dp[0], ds[0]
+    );
+    assert!(
+        ds.len() == dp.len()
+            && ds
+                .iter()
+                .zip(&dp)
+                .all(|(a, b)| a - b > -0.5 && a - b < 4.0 + 2.7)
+    );
 }
 
 /// Sync on, then off: the stream is again exactly one that never synced. A 300 ms stall then
@@ -439,7 +490,10 @@ fn after_sync_off_the_ring_is_as_if_never_synced() {
     let (dp, dw) = (plain.delays(0, 6.0), was.delays(0, 6.0));
     eprintln!("after the stall: never synced {dp:.2?}, synced before {dw:.2?}");
     assert!(!dp.is_empty() && dp.len() == dw.len());
-    assert!(dw.iter().zip(&dp).all(|(a, b)| (a - b).abs() < 1.0), "{dw:.2?} vs {dp:.2?}");
+    assert!(
+        dw.iter().zip(&dp).all(|(a, b)| (a - b).abs() < 1.0),
+        "{dw:.2?} vs {dp:.2?}"
+    );
 }
 
 /// One run for the sweeps: 10 ms link, 20 ms buffer, the link `step` s slower from 2 s on,
@@ -505,7 +559,12 @@ fn latency_step_sweep_never_buffers_below_unsynced() {
         worst.1 * 1e3,
         worst.2 * 1e3
     );
-    assert!(bad.is_empty(), "{} cases worse than unsynced:\n{}", bad.len(), bad.join("\n"));
+    assert!(
+        bad.is_empty(),
+        "{} cases worse than unsynced:\n{}",
+        bad.len(),
+        bad.join("\n")
+    );
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -616,23 +675,39 @@ fn stalls(lat: f64, period: f64, len: impl Fn(u64) -> f64 + 'static) -> Link {
     jittery(move |t| {
         let k = (t / period).floor();
         let (ph, l) = (t - k * period, len(k as u64));
-        lat + if (1.0..1.0 + l).contains(&ph) { 1.0 + l - ph } else { 0.0 }
+        lat + if (1.0..1.0 + l).contains(&ph) {
+            1.0 + l - ph
+        } else {
+            0.0
+        }
     })
 }
 
 fn heavy_tail(lat: f64) -> Link {
     Box::new(move |_, r1, r2| {
-        let extra = if r2 < 0.02 { 0.005 + 0.015 * (r2 / 0.02) } else { 0.0 };
+        let extra = if r2 < 0.02 {
+            0.005 + 0.015 * (r2 / 0.02)
+        } else {
+            0.0
+        };
         Some(lat + 0.002 * r1 + extra)
     })
 }
 
 fn spikes(lat: f64) -> Link {
-    jittery(move |t| lat + if t.rem_euclid(1.0) < 0.0026 { 0.012 } else { 0.0 })
+    jittery(move |t| {
+        lat + if t.rem_euclid(1.0) < 0.0026 {
+            0.012
+        } else {
+            0.0
+        }
+    })
 }
 
 fn loss_step(lat: f64) -> Link {
-    Box::new(move |t, r1, r2| (r2 >= 0.03).then_some(lat + 0.008 * r1 + if t < 2.0 { 0.0 } else { 0.130 }))
+    Box::new(move |t, r1, r2| {
+        (r2 >= 0.03).then_some(lat + 0.008 * r1 + if t < 2.0 { 0.0 } else { 0.130 })
+    })
 }
 
 fn patterns(f: Fmt) -> Vec<Pattern> {
@@ -659,55 +734,122 @@ fn patterns(f: Fmt) -> Vec<Pattern> {
     let moves = |name: &str, secs: f64, at: &'static [(f64, f64)]| Pattern {
         delay: Box::new(move |t| at.iter().rev().find(|x| t >= x.0).map_or(0.150, |x| x.1)),
         reachable_at_end: at.last().unwrap().1 * 1e3 - 32.0 - f.ms(f.dev as f64) > f.need() + 1.0,
-        restarts: at.windows(2).filter(|w| w[1].1 < w[0].1).map(|w| w[1].0).collect(),
+        restarts: at
+            .windows(2)
+            .filter(|w| w[1].1 < w[0].1)
+            .map(|w| w[1].0)
+            .collect(),
         extra_splices: at.len(),
         ..pattern(name, 0.0, secs, jittery(|_| 0.030))
     };
     vec![
         reach(pattern("steady", 0.150, 20.0, jittery(move |_| spare))),
         pattern("5 ms short", 0.150, 20.0, jittery(move |_| short)),
-        pattern("step +125 ms", 0.150, 25.0, jittery(|t| if t < 2.0 { 0.010 } else { 0.135 })),
+        pattern(
+            "step +125 ms",
+            0.150,
+            25.0,
+            jittery(|t| if t < 2.0 { 0.010 } else { 0.135 }),
+        ),
         pattern(
             "step up/down",
             0.150,
             25.0,
-            jittery(|t| if (2.0..12.0).contains(&t) { 0.135 } else { 0.010 }),
+            jittery(|t| {
+                if (2.0..12.0).contains(&t) {
+                    0.135
+                } else {
+                    0.010
+                }
+            }),
         ),
         Pattern {
             // 190 ms in 30 ms steps
             extra_splices: 7,
-            ..pattern("ramp 10-200 ms", 0.150, 25.0, jittery(|t| 0.010 + 0.019 * (t - 2.0).clamp(0.0, 10.0)))
+            ..pattern(
+                "ramp 10-200 ms",
+                0.150,
+                25.0,
+                jittery(|t| 0.010 + 0.019 * (t - 2.0).clamp(0.0, 10.0)),
+            )
         },
-        pattern("60 ms stall / 2 s", 0.150, 30.0, stalls(0.120, 2.0, |_| 0.060)),
+        pattern(
+            "60 ms stall / 2 s",
+            0.150,
+            30.0,
+            stalls(0.120, 2.0, |_| 0.060),
+        ),
         pattern(
             "stalls / 3 s, 10-90 ms",
             0.150,
             60.0,
             stalls(0.040, 3.0, |k| 0.010 + 0.010 * ((k * 7919) % 9) as f64),
         ),
-        seeds(pattern("15 ms jitter", 0.150, 30.0, Box::new(|_, r1, _| Some(0.040 + 0.015 * r1)))),
+        seeds(pattern(
+            "15 ms jitter",
+            0.150,
+            30.0,
+            Box::new(|_, r1, _| Some(0.040 + 0.015 * r1)),
+        )),
         seeds(pattern("heavy tail", 0.040, 30.0, heavy_tail(0.070))),
         seeds(pattern("12 ms spike / s", 0.040, 30.0, spikes(0.070))),
         seeds(pattern("3 % loss, step", 0.150, 25.0, loss_step(0.010))),
         Pattern {
             rtt: Some(0.010),
-            ..seeds(pattern("3 % loss, 5 ms link, NACK", 0.150, 25.0, Box::new(|_, r1, r2| {
-                (r2 >= 0.03).then_some(0.005 + 0.002 * r1)
-            })))
+            ..seeds(pattern(
+                "3 % loss, 5 ms link, NACK",
+                0.150,
+                25.0,
+                Box::new(|_, r1, r2| (r2 >= 0.03).then_some(0.005 + 0.002 * r1)),
+            ))
         },
         Pattern {
             rtt: Some(0.160),
-            ..pattern("60 ms stall / 2 s at 80 ms, NACK", 0.150, 30.0, stalls(0.080, 2.0, |_| 0.060))
+            ..pattern(
+                "60 ms stall / 2 s at 80 ms, NACK",
+                0.150,
+                30.0,
+                stalls(0.080, 2.0, |_| 0.060),
+            )
         },
         Pattern {
             rtt: Some(0.020),
-            ..seeds(pattern("3 % loss, step, NACK", 0.150, 25.0, loss_step(0.010)))
+            ..seeds(pattern(
+                "3 % loss, step, NACK",
+                0.150,
+                25.0,
+                loss_step(0.010),
+            ))
         },
         // not checked against the target: the callback times no longer tell when the audio
         // plays (it comes out 4 to 17 ms later than the target here, a constant offset)
-        Pattern { pairs: true, ..seeds(pattern("callbacks in pairs", 0.150, 20.0, jittery(move |_| spare))) },
-        Pattern { session: 2, ..reach(pattern("session late 1 callback", 0.150, 20.0, jittery(move |_| spare))) },
-        Pattern { session: 3, ..pattern("session late 2 callbacks, 15 ms jitter", 0.150, 20.0, Box::new(|_, r1, _| Some(0.040 + 0.015 * r1))) },
+        Pattern {
+            pairs: true,
+            ..seeds(pattern(
+                "callbacks in pairs",
+                0.150,
+                20.0,
+                jittery(move |_| spare),
+            ))
+        },
+        Pattern {
+            session: 2,
+            ..reach(pattern(
+                "session late 1 callback",
+                0.150,
+                20.0,
+                jittery(move |_| spare),
+            ))
+        },
+        Pattern {
+            session: 3,
+            ..pattern(
+                "session late 2 callbacks, 15 ms jitter",
+                0.150,
+                20.0,
+                Box::new(|_, r1, _| Some(0.040 + 0.015 * r1)),
+            )
+        },
         clocks("sender +200 ppm", spare, 1.0002, 1.0),
         clocks("sender -200 ppm", spare, 0.9998, 1.0),
         clocks("sender +200 ppm, tight", tight, 1.0002, 1.0),
@@ -807,7 +949,10 @@ fn cell(f: Fmt, pat: &Pattern, sync: bool, seed: u64) -> Outcome {
     // datagrams on the way to the receiver, NACKs on the way back
     let mut q: BTreeMap<(u64, u64), Bytes> = BTreeMap::new();
     let mut back: BTreeMap<(u64, u64), Bytes> = BTreeMap::new();
-    let (mut n, mut rng) = (0u64, 0x9e37_79b9_7f4a_7c15u64 ^ seed.wrapping_mul(0x2545_f491_4f6c_dd1d));
+    let (mut n, mut rng) = (
+        0u64,
+        0x9e37_79b9_7f4a_7c15u64 ^ seed.wrapping_mul(0x2545_f491_4f6c_dd1d),
+    );
     let mut rand = move || {
         rng ^= rng << 13;
         rng ^= rng >> 7;
@@ -828,7 +973,8 @@ fn cell(f: Fmt, pat: &Pattern, sync: bool, seed: u64) -> Outcome {
         }
     };
     let first = |q: &BTreeMap<(u64, u64), Bytes>| {
-        q.first_key_value().map_or(f64::MAX, |((t, _), _)| *t as f64 / 1e9)
+        q.first_key_value()
+            .map_or(f64::MAX, |((t, _), _)| *t as f64 / 1e9)
     };
     let noisy = pat.anchor_jitter > 0.0 || pat.due_off.is_some();
     let (mut held, mut held_at, mut jr) = (None, f64::MIN, 0x2545_f491_4f6c_dd1du64 ^ seed);
@@ -857,7 +1003,8 @@ fn cell(f: Fmt, pat: &Pattern, sync: bool, seed: u64) -> Outcome {
                     jr ^= jr << 13;
                     jr ^= jr >> 7;
                     jr ^= jr << 17;
-                    let j = ((jr >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 2.0 * pat.anchor_jitter;
+                    let j =
+                        ((jr >> 11) as f64 / (1u64 << 53) as f64 - 0.5) * 2.0 * pat.anchor_jitter;
                     held = anchor.map(|a| (a, j));
                     held_at = t;
                 }
@@ -881,7 +1028,10 @@ fn cell(f: Fmt, pat: &Pattern, sync: bool, seed: u64) -> Outcome {
         } else if t == t_cb {
             for k in 0..calls {
                 // called back to back; the second plays a callback after the first
-                audio.process(&mut [&mut buf[..]], base + Duration::from_secs_f64(t + k as f64 * 50e-6));
+                audio.process(
+                    &mut [&mut buf[..]],
+                    base + Duration::from_secs_f64(t + k as f64 * 50e-6),
+                );
                 let t = t + (k * f.dev) as f64 / sr;
                 let (mut cb_lat, mut cb_n) = (0.0, 0usize);
                 for (k, &v) in buf.iter().enumerate() {
@@ -919,7 +1069,11 @@ fn cell(f: Fmt, pat: &Pattern, sync: bool, seed: u64) -> Outcome {
                         lat_n += 1;
                     }
                 }
-                o.lat.push(if cb_n > 0 { cb_lat / cb_n as f64 } else { f64::NAN });
+                o.lat.push(if cb_n > 0 {
+                    cb_lat / cb_n as f64
+                } else {
+                    f64::NAN
+                });
             }
             if pat.session == 1 {
                 rx.tick(now, Duration::from_secs_f64(rtt));
@@ -941,7 +1095,8 @@ fn cell(f: Fmt, pat: &Pattern, sync: bool, seed: u64) -> Outcome {
             o.lost += lost;
             for k in 0..calls {
                 o.lost_at.push(if k == 0 { lost } else { 0 });
-                o.on_target.push(rx.playout_error_ms().is_some_and(|e| e.abs() < 0.5));
+                o.on_target
+                    .push(rx.playout_error_ms().is_some_and(|e| e.abs() < 0.5));
                 o.fill.push(f64::from(rx.fill_ms()));
                 o.stops_at.push(o.stops);
             }
@@ -1116,49 +1271,108 @@ fn check(f: Fmt, pat: &Pattern) -> Vec<(String, bool)> {
 }
 
 fn matrix(f: Fmt) {
-    let bad: Vec<String> = patterns(f).iter().flat_map(|p| check(f, p)).filter(|x| x.1).map(|x| x.0).collect();
-    assert!(bad.is_empty(), "{f:?}: cells worse than unsynced:\n{}", bad.join("\n"));
+    let bad: Vec<String> = patterns(f)
+        .iter()
+        .flat_map(|p| check(f, p))
+        .filter(|x| x.1)
+        .map(|x| x.0)
+        .collect();
+    assert!(
+        bad.is_empty(),
+        "{f:?}: cells worse than unsynced:\n{}",
+        bad.join("\n")
+    );
 }
 
 fn long_matrix(which: usize) {
     let mut bad = Vec::new();
     for f in [
-        Fmt { sr: 48000, block: 120, dev: 128, buffer_ms: 20.0 },
-        Fmt { sr: 48000, block: 128, dev: 512, buffer_ms: 20.0 },
+        Fmt {
+            sr: 48000,
+            block: 120,
+            dev: 128,
+            buffer_ms: 20.0,
+        },
+        Fmt {
+            sr: 48000,
+            block: 128,
+            dev: 512,
+            buffer_ms: 20.0,
+        },
     ] {
-        bad.extend(long_patterns(f, which).iter().flat_map(|p| check(f, p)).filter(|x| x.1).map(|x| x.0));
+        bad.extend(
+            long_patterns(f, which)
+                .iter()
+                .flat_map(|p| check(f, p))
+                .filter(|x| x.1)
+                .map(|x| x.0),
+        );
     }
-    assert!(bad.is_empty(), "cells worse than unsynced:\n{}", bad.join("\n"));
+    assert!(
+        bad.is_empty(),
+        "cells worse than unsynced:\n{}",
+        bad.join("\n")
+    );
 }
 
 #[test]
 fn matrix_48k_block_120_device_128() {
-    matrix(Fmt { sr: 48000, block: 120, dev: 128, buffer_ms: 20.0 });
+    matrix(Fmt {
+        sr: 48000,
+        block: 120,
+        dev: 128,
+        buffer_ms: 20.0,
+    });
 }
 
 #[test]
 fn matrix_44k1_block_256_device_512() {
-    matrix(Fmt { sr: 44100, block: 256, dev: 512, buffer_ms: 20.0 });
+    matrix(Fmt {
+        sr: 44100,
+        block: 256,
+        dev: 512,
+        buffer_ms: 20.0,
+    });
 }
 
 #[test]
 fn matrix_48k_block_128_device_512() {
-    matrix(Fmt { sr: 48000, block: 128, dev: 512, buffer_ms: 20.0 });
+    matrix(Fmt {
+        sr: 48000,
+        block: 128,
+        dev: 512,
+        buffer_ms: 20.0,
+    });
 }
 
 #[test]
 fn matrix_48k_block_64_device_256_buffer_10() {
-    matrix(Fmt { sr: 48000, block: 64, dev: 256, buffer_ms: 10.0 });
+    matrix(Fmt {
+        sr: 48000,
+        block: 64,
+        dev: 256,
+        buffer_ms: 10.0,
+    });
 }
 
 #[test]
 fn matrix_96k_block_64_device_1024() {
-    matrix(Fmt { sr: 96000, block: 64, dev: 1024, buffer_ms: 20.0 });
+    matrix(Fmt {
+        sr: 96000,
+        block: 64,
+        dev: 1024,
+        buffer_ms: 20.0,
+    });
 }
 
 #[test]
 fn matrix_48k_buffer_100() {
-    matrix(Fmt { sr: 48000, block: 120, dev: 128, buffer_ms: 100.0 });
+    matrix(Fmt {
+        sr: 48000,
+        block: 120,
+        dev: 128,
+        buffer_ms: 100.0,
+    });
 }
 
 #[test]
@@ -1182,21 +1396,41 @@ fn matrix_long_tight_drift_and_stalls() {
 #[ignore]
 fn fast_sender_error() {
     for f in [
-        Fmt { sr: 48000, block: 120, dev: 128, buffer_ms: 20.0 },
-        Fmt { sr: 48000, block: 128, dev: 512, buffer_ms: 20.0 },
+        Fmt {
+            sr: 48000,
+            block: 120,
+            dev: 128,
+            buffer_ms: 20.0,
+        },
+        Fmt {
+            sr: 48000,
+            block: 128,
+            dev: 512,
+            buffer_ms: 20.0,
+        },
     ] {
         for speed in [1.0002, 0.9998] {
-            let pat = Pattern { speed, ..pattern("drift", 0.150, 300.0, jittery(|_| 0.040)) };
+            let pat = Pattern {
+                speed,
+                ..pattern("drift", 0.150, 300.0, jittery(|_| 0.040))
+            };
             let (u, s) = (cell(f, &pat, false, 1), cell(f, &pat, true, 1));
             let at = |o: &Outcome, t: f64| {
                 let k = (t * f64::from(f.sr) / f.dev as f64) as usize;
-                o.lat[k..k + 50].iter().cloned().filter(|x| x.is_finite()).fold(f64::NAN, f64::max)
+                o.lat[k..k + 50]
+                    .iter()
+                    .cloned()
+                    .filter(|x| x.is_finite())
+                    .fold(f64::NAN, f64::max)
             };
             let row: Vec<String> = [1.0, 10.0, 30.0, 60.0, 120.0, 299.0]
                 .iter()
                 .map(|&t| format!("{t}s {:.2}/{:.2}", at(&u, t), at(&s, t) - 150.0))
                 .collect();
-            eprintln!("{f:?} x{speed}: unsynced latency / synced error: {}", row.join("  "));
+            eprintln!(
+                "{f:?} x{speed}: unsynced latency / synced error: {}",
+                row.join("  ")
+            );
         }
     }
 }
@@ -1217,20 +1451,46 @@ fn shift(at: Instant, s: f64) -> Instant {
 fn a_noisy_due_time_never_restarts_buffering() {
     let mut bad = Vec::new();
     for f in [
-        Fmt { sr: 48000, block: 120, dev: 128, buffer_ms: 20.0 },
-        Fmt { sr: 48000, block: 128, dev: 512, buffer_ms: 20.0 },
+        Fmt {
+            sr: 48000,
+            block: 120,
+            dev: 128,
+            buffer_ms: 20.0,
+        },
+        Fmt {
+            sr: 48000,
+            block: 128,
+            dev: 512,
+            buffer_ms: 20.0,
+        },
     ] {
         let mut pats: Vec<Pattern> = [0.006, 0.012]
             .iter()
             .map(|&j| Pattern {
                 anchor_jitter: j,
-                ..pattern(&format!("anchor jitter ±{:.0} ms", j * 1e3), 0.150, 120.0, jittery(|_| 0.030))
+                ..pattern(
+                    &format!("anchor jitter ±{:.0} ms", j * 1e3),
+                    0.150,
+                    120.0,
+                    jittery(|_| 0.030),
+                )
             })
             .collect();
         for step in [0.012, -0.012, 0.030, -0.030] {
             pats.push(Pattern {
-                due_off: Some(Box::new(move |t| if (t / 8.0).floor() as i64 % 2 == 1 { step } else { 0.0 })),
-                ..pattern(&format!("offset {:+.0} ms every other 8 s", step * 1e3), 0.150, 120.0, jittery(|_| 0.030))
+                due_off: Some(Box::new(move |t| {
+                    if (t / 8.0).floor() as i64 % 2 == 1 {
+                        step
+                    } else {
+                        0.0
+                    }
+                })),
+                ..pattern(
+                    &format!("offset {:+.0} ms every other 8 s", step * 1e3),
+                    0.150,
+                    120.0,
+                    jittery(|_| 0.030),
+                )
             });
         }
         for pat in &pats {

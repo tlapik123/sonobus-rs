@@ -1217,7 +1217,10 @@ mod tests {
         }
         assert_eq!(parse(&blob_msg("/sb/pinfo", "{")), Err(Error::BadJson));
         // strings coerce through getIntValue/getDoubleValue (numeric prefix), as JUCE's var does
-        let pkt = blob_msg("/sb/pinfo", r#"{"nettype": "2.9", "rec": "2.9", "jitbuf": "12ms", "inlat": " yes"}"#);
+        let pkt = blob_msg(
+            "/sb/pinfo",
+            r#"{"nettype": "2.9", "rec": "2.9", "jitbuf": "12ms", "inlat": " yes"}"#,
+        );
         assert_eq!(
             parse(&pkt).unwrap(),
             Some(SbMessage::PeerInfo(PeerInfo {
@@ -1280,7 +1283,10 @@ mod tests {
         };
         assert_eq!(
             got.supported_codecs,
-            Some(vec!["d30affc3db7640fd85bd6ba4f67d75f0".into(), "pcm8".into()])
+            Some(vec![
+                "d30affc3db7640fd85bd6ba4f67d75f0".into(),
+                "pcm8".into()
+            ])
         );
         // a value of the wrong type is no list (the legacy assumption applies)
         for v in [r#""abc""#, "1", "{}", "null", "true"] {

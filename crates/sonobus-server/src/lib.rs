@@ -267,7 +267,9 @@ fn apply(s: &mut Settings, k: &str, v: &str) -> Result<(), String> {
                 "n0" => RelayChoice::N0Default,
                 // filled in at start, once the --relay-http relay is bound
                 "self" if cfg!(feature = "relay") => RelayChoice::None,
-                "self" => return Err("`self` (the --relay-http relay) needs the relay feature".into()),
+                "self" => {
+                    return Err("`self` (the --relay-http relay) needs the relay feature".into());
+                }
                 urls => RelayChoice::Custom(list(urls)),
             };
             #[cfg(feature = "relay")]
@@ -645,7 +647,11 @@ pub fn serve(s: &Settings, signals: Receiver<Signal>) -> i32 {
 /// Until [`Signal::Stop`] (or every sender is gone): `stats(true)` every `interval` (zero:
 /// never) and `stats(false)` on each [`Signal::Stats`], which does not move the schedule.
 fn wait(interval: Duration, signals: &Receiver<Signal>, mut stats: impl FnMut(bool)) {
-    let next = || Instant::now().checked_add(interval).filter(|_| !interval.is_zero());
+    let next = || {
+        Instant::now()
+            .checked_add(interval)
+            .filter(|_| !interval.is_zero())
+    };
     let mut due = next();
     loop {
         let r = match due {

@@ -86,11 +86,20 @@ pub struct TextFormat {
 
 impl TextFormat {
     /// `TextFormat()`: header, indented, `\r\n`. Used by `toXmlString()` and `writeTo(file)`.
-    pub const DEFAULT: TextFormat = TextFormat { header: true, multi_line: true };
+    pub const DEFAULT: TextFormat = TextFormat {
+        header: true,
+        multi_line: true,
+    };
     /// `TextFormat().singleLine()` (used by `copyXmlToBinary`).
-    pub const SINGLE_LINE: TextFormat = TextFormat { header: true, multi_line: false };
+    pub const SINGLE_LINE: TextFormat = TextFormat {
+        header: true,
+        multi_line: false,
+    };
     /// `TextFormat().singleLine().withoutHeader()` (how `PropertySet` stores XML values).
-    pub const SINGLE_LINE_NO_HEADER: TextFormat = TextFormat { header: false, multi_line: false };
+    pub const SINGLE_LINE_NO_HEADER: TextFormat = TextFormat {
+        header: false,
+        multi_line: false,
+    };
 }
 
 const NEWLINE: &str = "\r\n";
@@ -98,11 +107,17 @@ const WRAP: usize = 60;
 
 impl XmlElement {
     pub fn new(name: impl Into<String>) -> Self {
-        XmlElement { name: name.into(), ..Default::default() }
+        XmlElement {
+            name: name.into(),
+            ..Default::default()
+        }
     }
 
     pub fn attribute(&self, name: &str) -> Option<&str> {
-        self.attributes.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+        self.attributes
+            .iter()
+            .find(|(n, _)| n == name)
+            .map(|(_, v)| v.as_str())
     }
 
     /// JUCE `setAttribute`: replaces in place or appends (linear in the attribute count).
@@ -360,7 +375,6 @@ impl Parser<'_> {
                 }
             }
             el.attributes.push((att, value)); // XmlDocument appends without checking
-
         }
     }
 
@@ -378,11 +392,18 @@ impl Parser<'_> {
             }
             if r.starts_with("<![CDATA[") {
                 self.pos += 9;
-                let end = self.rest().find("]]>").ok_or(Error::Xml("unterminated CDATA section"))?;
-                parent.children.push(XmlNode::Text(self.rest()[..end].to_string()));
+                let end = self
+                    .rest()
+                    .find("]]>")
+                    .ok_or(Error::Xml("unterminated CDATA section"))?;
+                parent
+                    .children
+                    .push(XmlNode::Text(self.rest()[..end].to_string()));
                 self.pos += end + 3;
             } else if r.starts_with('<') {
-                parent.children.push(XmlNode::Element(self.read_element(depth + 1)?));
+                parent
+                    .children
+                    .push(XmlNode::Element(self.read_element(depth + 1)?));
             } else {
                 self.pos = before_ws;
                 let mut text = String::new();
@@ -416,7 +437,10 @@ impl Parser<'_> {
 
     /// `readEntity`, after the `&`.
     fn read_entity(&mut self, out: &mut String) -> Result<(), Error> {
-        let semi = self.rest().find(';').ok_or(Error::Xml("unterminated entity"))?;
+        let semi = self
+            .rest()
+            .find(';')
+            .ok_or(Error::Xml("unterminated entity"))?;
         let ent = &self.rest()[..semi];
         let c = match ent.to_ascii_lowercase().as_str() {
             "amp" => '&',
@@ -442,7 +466,8 @@ impl Parser<'_> {
 }
 
 fn num_entity(digits: &str, radix: u32) -> Result<char, Error> {
-    let code = u32::from_str_radix(digits, radix).map_err(|_| Error::Xml("illegal escape sequence"))?;
+    let code =
+        u32::from_str_radix(digits, radix).map_err(|_| Error::Xml("illegal escape sequence"))?;
     Ok(char::from_u32(code).unwrap_or(char::REPLACEMENT_CHARACTER))
 }
 
@@ -464,7 +489,14 @@ pub fn var_to_string(v: &Var) -> String {
 /// JUCE `serialiseDouble` (juce_String.cpp:2262-2300), how doubles appear in XML.
 pub fn serialise_double(x: f64) -> String {
     if !x.is_finite() {
-        return if x.is_nan() { "nan" } else if x > 0.0 { "inf" } else { "-inf" }.into();
+        return if x.is_nan() {
+            "nan"
+        } else if x > 0.0 {
+            "inf"
+        } else {
+            "-inf"
+        }
+        .into();
     }
     let a = x.abs();
     if a >= 1.0e6 || a <= 1.0e-5 {
@@ -574,9 +606,10 @@ pub fn to_base64(data: &[u8]) -> String {
 /// JUCE `base64DecodingTable` (juce_MemoryBlock.cpp:376-381), indexed by `char - 43`.
 const B64_DECODE: [u8; 80] = [
     63, 0, 0, 0, 0, 53, 54, 55, 56, 57, 58, 59, 60, 61, 62, 0, 0, 0, 0, 0, 0, 0, //
-    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, //
-    0, 0, 0, 0, 0, 0, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48,
-    49, 50, 51, 52,
+    1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25,
+    26, //
+    0, 0, 0, 0, 0, 0, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40, 41, 42, 43, 44, 45,
+    46, 47, 48, 49, 50, 51, 52,
 ];
 
 /// `MemoryBlock::fromBase64Encoding`. As in JUCE, every char in 43..=122 (`+` to `z`) takes 6
@@ -594,7 +627,9 @@ pub fn from_base64(s: &str) -> Option<Vec<u8>> {
     let mut out = vec![0u8; n];
     let mut pos = 0;
     for c in chars.chars() {
-        let Some(&v) = (c as usize).checked_sub(43).and_then(|i| B64_DECODE.get(i)) else { continue };
+        let Some(&v) = (c as usize).checked_sub(43).and_then(|i| B64_DECODE.get(i)) else {
+            continue;
+        };
         for k in 0..6 {
             let b = pos + k;
             if v >> k & 1 == 1 && b / 8 < n {
@@ -616,8 +651,14 @@ pub(crate) fn juce_int(s: &str) -> i64 {
     let v = digits
         .bytes()
         .take_while(u8::is_ascii_digit)
-        .fold(0u64, |v, d| v.wrapping_mul(10).wrapping_add(u64::from(d - b'0')));
-    if neg { (v as i64).wrapping_neg() } else { v as i64 }
+        .fold(0u64, |v, d| {
+            v.wrapping_mul(10).wrapping_add(u64::from(d - b'0'))
+        });
+    if neg {
+        (v as i64).wrapping_neg()
+    } else {
+        v as i64
+    }
 }
 
 /// JUCE `var` string-to-bool (juce_Variant.cpp:266-271): `getIntValue() != 0`, or "true"/"yes"
@@ -643,7 +684,11 @@ pub(crate) fn juce_double(s: &str) -> f64 {
         return f64::NAN;
     }
     if lower.starts_with("inf") {
-        return if s.starts_with('-') { f64::NEG_INFINITY } else { f64::INFINITY };
+        return if s.starts_with('-') {
+            f64::NEG_INFINITY
+        } else {
+            f64::INFINITY
+        };
     }
     i = digits(i);
     if b.get(i) == Some(&b'.') {
@@ -673,7 +718,11 @@ impl ValueTree {
             Var::Binary(b) => (format!("base64:{name}"), to_base64(b)),
             v => (name.clone(), var_to_string(v)),
         }));
-        xml.children = self.children.iter().filter_map(|c| c.to_xml().map(XmlNode::Element)).collect();
+        xml.children = self
+            .children
+            .iter()
+            .filter_map(|c| c.to_xml().map(XmlNode::Element))
+            .collect();
         Some(xml)
     }
 
@@ -684,9 +733,14 @@ impl ValueTree {
         v.properties = xml
             .attributes
             .iter()
-            .map(|(name, value)| match name.strip_prefix("base64:").and_then(|n| Some((n, from_base64(value)?))) {
-                Some((n, bytes)) => (n.to_string(), Var::Binary(bytes)),
-                None => (name.clone(), Var::String(value.clone())),
+            .map(|(name, value)| {
+                match name
+                    .strip_prefix("base64:")
+                    .and_then(|n| Some((n, from_base64(value)?)))
+                {
+                    Some((n, bytes)) => (n.to_string(), Var::Binary(bytes)),
+                    None => (name.clone(), Var::String(value.clone())),
+                }
             })
             .collect();
         v.children = xml.child_elements().map(ValueTree::from_xml).collect();
@@ -695,7 +749,9 @@ impl ValueTree {
 
     /// `ValueTree::toXmlString()` (default format); empty for an invalid tree.
     pub fn to_xml_string(&self) -> String {
-        self.to_xml().map(|x| x.to_xml_string(TextFormat::DEFAULT)).unwrap_or_default()
+        self.to_xml()
+            .map(|x| x.to_xml_string(TextFormat::DEFAULT))
+            .unwrap_or_default()
     }
 
     /// `ValueTree::fromXml(const String&)`, with the parse error JUCE swallows.
@@ -768,7 +824,12 @@ mod tests {
 
     #[test]
     fn reduce_matches_juce_tests() {
-        for (x, s) in [(0.76378, "7.6378e-1"), (-10.0, "-1.0e1"), (10691.01, "1.069101e4"), (0.0123, "1.23e-2")] {
+        for (x, s) in [
+            (0.76378, "7.6378e-1"),
+            (-10.0, "-1.0e1"),
+            (10691.01, "1.069101e4"),
+            (0.0123, "1.23e-2"),
+        ] {
             let sci = format!("{x:.15e}");
             let (m, e) = sci.split_once('e').unwrap();
             let e: i32 = e.parse().unwrap();
@@ -790,7 +851,21 @@ mod tests {
 
     #[test]
     fn parser_rejects_garbage_without_panicking() {
-        for s in ["", "abc", "<", "<a", "<a b", "<a b=", "<a b=\"x", "<a>", "<a><b></a", "<a>&amp", "<a>&#zz;</a>", "<?xml", "<!DOCTYPE x"] {
+        for s in [
+            "",
+            "abc",
+            "<",
+            "<a",
+            "<a b",
+            "<a b=",
+            "<a b=\"x",
+            "<a>",
+            "<a><b></a",
+            "<a>&amp",
+            "<a>&#zz;</a>",
+            "<?xml",
+            "<!DOCTYPE x",
+        ] {
             assert!(XmlElement::parse(s).is_err(), "{s:?}");
         }
         let deep = "<a>".repeat(MAX_DEPTH + 2);
@@ -798,14 +873,24 @@ mod tests {
         assert_eq!(from_base64("x"), None);
         assert_eq!(from_base64("-1."), None);
         assert_eq!(from_base64("99999999999."), None);
-        assert_eq!(get_xml_from_binary(&[0x56, 0x43, 0x32, 0x21, 0, 0, 0, 0, 0]), Err(Error::NotXmlBinary));
+        assert_eq!(
+            get_xml_from_binary(&[0x56, 0x43, 0x32, 0x21, 0, 0, 0, 0, 0]),
+            Err(Error::NotXmlBinary)
+        );
     }
 
     // juce_MemoryBlock.cpp:376-410: chars 43..=122 index the decoding table (the gaps decode as
     // 0 and still take 6 bits); everything else, whitespace included, is skipped.
     #[test]
     fn base64_decodes_like_juce() {
-        for (s, b) in [("1.-A", 0x40), ("1.,A", 0x40), ("1.@A", 0x40), ("1.`A", 0x40), ("1._A", 0x40), ("1./A", 0x40)] {
+        for (s, b) in [
+            ("1.-A", 0x40),
+            ("1.,A", 0x40),
+            ("1.@A", 0x40),
+            ("1.`A", 0x40),
+            ("1._A", 0x40),
+            ("1./A", 0x40),
+        ] {
             assert_eq!(from_base64(s), Some(vec![b]), "{s}");
         }
         for s in ["1. A", "1.\r\nA", "1.{A", "1.*A", "1.éA", "1.A"] {
@@ -826,13 +911,25 @@ mod tests {
         assert_eq!(t.get("x"), Some(&Var::String("1".into())));
         assert_eq!(t.properties.len(), 3);
         // createXml uses setAttribute: first position, last value
-        assert_eq!(t.to_xml().unwrap().attributes, vec![("x".into(), "3".into()), ("y".into(), "2".into())]);
+        assert_eq!(
+            t.to_xml().unwrap().attributes,
+            vec![("x".into(), "3".into()), ("y".into(), "2".into())]
+        );
     }
 
     #[test]
     fn parser_handles_juce_leniency() {
         let x = XmlElement::parse("\u{feff}<?xml version=\"1.0\"?>\r\n<!-- c --><a  q='1' b=\"&lt;&#233;&#x41;&foo;\"><!--x-->\r\n  <c/>t&amp;\r\nu</wrong>trailing\0junk").unwrap();
-        assert_eq!(x.attributes, vec![("q".into(), "1".into()), ("b".into(), "<éA&foo;".into())]);
-        assert_eq!(x.children, vec![XmlNode::Element(XmlElement::new("c")), XmlNode::Text("t&\nu".into())]);
+        assert_eq!(
+            x.attributes,
+            vec![("q".into(), "1".into()), ("b".into(), "<éA&foo;".into())]
+        );
+        assert_eq!(
+            x.children,
+            vec![
+                XmlNode::Element(XmlElement::new("c")),
+                XmlNode::Text("t&\nu".into())
+            ]
+        );
     }
 }

@@ -72,7 +72,11 @@ pub fn add_from_with_ramp(dst: &mut [f32], src: &[f32], start: f32, end: f32) {
 /// (-1 left), before the caller's level factor (upstream multiplies that in last).
 pub fn pan_gains(pan: f32, center_pan_law: f32) -> [f32; 2] {
     let law = center_pan_law + (pan.abs() * (1.0 - center_pan_law));
-    let (l, r) = if pan >= 0.0 { (1.0 - pan, 1.0) } else { (1.0, 1.0 + pan) };
+    let (l, r) = if pan >= 0.0 {
+        (1.0 - pan, 1.0)
+    } else {
+        (1.0, 1.0 + pan)
+    };
     [l * law, r * law]
 }
 

@@ -142,7 +142,9 @@ impl Adapt {
         let Some(&(start, _)) = win.clone().next() else {
             return false;
         };
-        let early = win.clone().filter(|(t, _)| t.saturating_duration_since(start) <= TREND_SMOOTH);
+        let early = win
+            .clone()
+            .filter(|(t, _)| t.saturating_duration_since(start) <= TREND_SMOOTH);
         let late = win.filter(|(t, _)| now.saturating_duration_since(*t) <= TREND_SMOOTH);
         match (early.map(|x| x.1).min(), late.map(|x| x.1).min()) {
             (Some(a), Some(b)) => b.saturating_sub(a) > TREND_RISE,
@@ -211,8 +213,7 @@ impl Adapt {
         let mut d = self.policy;
         d.redundancy = 0;
         let since = |t: Instant| now.saturating_duration_since(t);
-        if d.level + 1 < self.levels.len() && self.last_down.is_none_or(|t| since(t) >= DOWN_HOLD)
-        {
+        if d.level + 1 < self.levels.len() && self.last_down.is_none_or(|t| since(t) >= DOWN_HOLD) {
             d.level += 1;
             self.last_down = Some(now);
         }
@@ -290,11 +291,8 @@ impl Adapt {
         if let Some(q) = self.req {
             if usize::from(q.preferred_format) <= last {
                 // a pin never lifts the quality above what congestion allows
-                d.level = usize::from(q.preferred_format).max(if self.congested {
-                    d.level
-                } else {
-                    0
-                });
+                d.level =
+                    usize::from(q.preferred_format).max(if self.congested { d.level } else { 0 });
             }
             if q.max_bitrate > 0 {
                 let cap = self
@@ -438,7 +436,10 @@ mod tests {
             let last = levels.len() - 1;
             assert_eq!(*ds.last().unwrap(), d(last, 0));
             assert!(ds.iter().all(|x| x.redundancy == 0), "{ds:?}");
-            assert!(ds.windows(2).all(|w| rate(&levels, &w[1]) <= rate(&levels, &w[0])));
+            assert!(
+                ds.windows(2)
+                    .all(|w| rate(&levels, &w[1]) <= rate(&levels, &w[0]))
+            );
             assert!(s.a.congested() && s.a.exhausted());
         }
         // k already raised by random loss before the queue builds: dropped at once
@@ -488,7 +489,10 @@ mod tests {
         let t0 = s.sec as f64;
         let ds = s.run_with(4, 8, &|t| 20.0 + 25.0 * (t - t0));
         assert_eq!(ds[0], d(0, 1), "{ds:?}");
-        assert!(ds[1..].iter().all(|&x| x == d(1, 0)), "lowest level reached: {ds:?}");
+        assert!(
+            ds[1..].iter().all(|&x| x == d(1, 0)),
+            "lowest level reached: {ds:?}"
+        );
         // still queued (RTT high), no loss: not clean
         assert!(s.run_with(10, 0, &|_| 200.0).iter().all(|&x| x == d(1, 0)));
         // the queue drains; 20 s at the baseline steps back up

@@ -10,10 +10,10 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use sonobus_core::state::{AppState, ChannelGroup};
-use sonobus_files::{RecordFormat, RecordSpec, start_recording};
 use sonobus_engine::{
     AudioConfig, Engine, EngineAudio, EngineConfig, Event, GroupJoin, PeerId, Snapshot,
 };
+use sonobus_files::{RecordFormat, RecordSpec, start_recording};
 
 pub const SR: u32 = 48000;
 pub const BLOCK: usize = 256;
@@ -183,7 +183,8 @@ static EPOCH: std::sync::OnceLock<Instant> = std::sync::OnceLock::new();
 static STARVED_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn ns(t: Instant) -> u64 {
-    t.saturating_duration_since(*EPOCH.get_or_init(Instant::now)).as_nanos() as u64
+    t.saturating_duration_since(*EPOCH.get_or_init(Instant::now))
+        .as_nanos() as u64
 }
 
 /// A lockstep loop that meant to run at `next` runs now: note it if that is starving.

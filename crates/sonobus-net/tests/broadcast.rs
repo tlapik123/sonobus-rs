@@ -71,16 +71,16 @@ fn listeners_stay_private_cannot_publish_and_are_capped() {
             let mut c = key_join(&ep, &to, &K).await.unwrap();
             let mut got = vec![Frame::Roster(c.welcome.roster.clone())];
             let end = Instant::now() + Duration::from_secs(3);
-            while let Ok(Ok(f)) =
-                tokio::time::timeout_at(end.into(), rf(&mut c.recv)).await
-            {
+            while let Ok(Ok(f)) = tokio::time::timeout_at(end.into(), rf(&mut c.recv)).await {
                 got.push(f);
             }
             raw_tx.send(got).unwrap();
             c.conn.close(0u32.into(), b"");
         })
     });
-    wait(&host, |e| matches!(e, Event::Connected { .. }).then_some(()));
+    wait(&host, |e| {
+        matches!(e, Event::Connected { .. }).then_some(())
+    });
 
     let ls: Vec<Net> = (2..5).map(|n| listener(n, hid)).collect();
     let mut events: Vec<Vec<Event>> = vec![];
@@ -149,7 +149,10 @@ fn listeners_stay_private_cannot_publish_and_are_capped() {
     }
     std::thread::sleep(Duration::from_millis(200));
     let k = kinds.lock().unwrap().clone();
-    assert!(k.iter().all(|&k| k == wire::KIND_PING) && k.len() == 5, "{k:?}");
+    assert!(
+        k.iter().all(|&k| k == wire::KIND_PING) && k.len() == 5,
+        "{k:?}"
+    );
 
     // Nobody learned anyone but the host, by event or by frame.
     std::thread::sleep(Duration::from_millis(1500));
@@ -225,8 +228,15 @@ fn password_joiner_of_a_hub_becomes_a_listener() {
         matches!(e, Event::Connected { .. }).then_some(())
     });
     let at = |k: &str| seen.iter().position(|s| s.starts_with(k));
-    assert!(at("JoinedBroadcast").is_some_and(|b| Some(b) < at("Connected")), "{seen:?}");
-    assert_eq!(seen.iter().filter(|s| *s == "JoinedBroadcast").count(), 1, "{seen:?}");
+    assert!(
+        at("JoinedBroadcast").is_some_and(|b| Some(b) < at("Connected")),
+        "{seen:?}"
+    );
+    assert_eq!(
+        seen.iter().filter(|s| *s == "JoinedBroadcast").count(),
+        1,
+        "{seen:?}"
+    );
     assert_eq!(j.authority(), Some(host.local_addr().id));
     // it left the rendezvous: only the host is listed
     regs(1);
@@ -238,7 +248,10 @@ fn password_joiner_of_a_hub_becomes_a_listener() {
     let by_key = simple(cfg("by key", Some(K), None));
     by_key.connect(ja, Join::Key);
     failed(&by_key);
-    assert_eq!(incoming_failed(&j), "broadcast listeners accept no connections");
+    assert_eq!(
+        incoming_failed(&j),
+        "broadcast listeners accept no connections"
+    );
 
     // a mesh host's password joiner stays a mesh peer
     let mesh = simple(Config {
@@ -279,9 +292,15 @@ fn mesh_invite_joiner_of_a_hub_becomes_a_listener() {
         matches!(e, Event::Connected { .. }).then_some(())
     });
     let at = |k: &str| seen.iter().position(|s| s.starts_with(k));
-    assert!(at("JoinedBroadcast").is_some_and(|b| Some(b) < at("Connected")), "{seen:?}");
+    assert!(
+        at("JoinedBroadcast").is_some_and(|b| Some(b) < at("Connected")),
+        "{seen:?}"
+    );
     let by_key = simple(cfg("by key", Some(K), None));
     by_key.connect(j.local_addr(), Join::Key);
     failed(&by_key);
-    assert_eq!(incoming_failed(&j), "broadcast listeners accept no connections");
+    assert_eq!(
+        incoming_failed(&j),
+        "broadcast listeners accept no connections"
+    );
 }

@@ -102,14 +102,27 @@ pub enum SinkEventKind {
         user_format: Vec<u8>,
     },
     /// Playback started (`true`) or ran dry (`false`).
-    StateChanged { playing: bool },
-    BlocksLost { count: i32 },
-    BlocksReordered { count: i32 },
-    BlocksResent { count: i32 },
+    StateChanged {
+        playing: bool,
+    },
+    BlocksLost {
+        count: i32,
+    },
+    BlocksReordered {
+        count: i32,
+    },
+    BlocksResent {
+        count: i32,
+    },
     /// Blocks skipped by a transmission gap.
-    BlocksGap { count: i32 },
+    BlocksGap {
+        count: i32,
+    },
     /// Ping from the source: `tt1` its send time, `tt2` our receive time.
-    Ping { tt1: TimeTag, tt2: TimeTag },
+    Ping {
+        tt1: TimeTag,
+        tt2: TimeTag,
+    },
 }
 
 /// Flags the audio half reports back for one source.
@@ -219,7 +232,9 @@ impl SinkAudio {
     /// whether any source contributed. Real-time safe.
     pub fn process(&mut self, output: &mut [&mut [f32]], now: TimeTag) -> bool {
         while !self.garbage.is_full() {
-            let Ok(Install { index, slot }) = self.installs.pop() else { break };
+            let Ok(Install { index, slot }) = self.installs.pop() else {
+                break;
+            };
             if let Some(old) = self.slots[index].replace(slot) {
                 let _ = self.garbage.push(old);
             }
@@ -229,13 +244,18 @@ impl SinkAudio {
         }
         let sr = self.setup.samplerate as f64;
         if self.timer.update(now) {
-            self.dll.setup(sr, self.setup.blocksize, self.bandwidth, 0.0);
+            self.dll
+                .setup(sr, self.setup.blocksize, self.bandwidth, 0.0);
         } else {
             self.dll.update(self.timer.elapsed());
         }
         let ignore_dll = !self.shared.dynamic_resampling.load(Ordering::Relaxed)
             || (self.dll.samplerate() - sr).abs() > 0.1 * sr;
-        let real_sr = if ignore_dll { sr } else { self.dll.samplerate() };
+        let real_sr = if ignore_dll {
+            sr
+        } else {
+            self.dll.samplerate()
+        };
         let n = output
             .first()
             .map_or(0, |o| o.len())
@@ -411,7 +431,8 @@ impl SourceDesc {
     fn update(&mut self, p: &Params) {
         let Some(f) = self.format else { return };
         let (cbs, csr, nch) = (f.blocksize, f.samplerate, f.nchannels as usize);
-        let bufsize = (p.opts.buffersize_ms as f64 * csr as f64 * 0.001).max(p.setup.blocksize as f64);
+        let bufsize =
+            (p.opts.buffersize_ms as f64 * csr as f64 * 0.001).max(p.setup.blocksize as f64);
         self.nsamples = nch * cbs as usize;
         let nbuffers = (((bufsize as i32 + cbs - 1) / cbs).max(1) as usize)
             .min(MAX_RING_SAMPLES / self.nsamples.max(1))
@@ -473,11 +494,19 @@ impl SourceDesc {
     }
 
     /// Decode one block (or conceal a missing one) into the ring. `false` if the ring is full.
-    fn push_block(&mut self, data: Option<&[u8]>, info: BlockInfo, fade: bool, zero_on_error: bool) -> bool {
+    fn push_block(
+        &mut self,
+        data: Option<&[u8]>,
+        info: BlockInfo,
+        fade: bool,
+        zero_on_error: bool,
+    ) -> bool {
         if self.ring_space() == 0 {
             return false;
         }
-        let Some(dec) = &mut self.decoder else { return false };
+        let Some(dec) = &mut self.decoder else {
+            return false;
+        };
         let buf = &mut self.scratch[..self.nsamples];
         if !dec.decode(data, buf) {
             if zero_on_error {
@@ -653,9 +682,17 @@ impl SourceDesc {
             } else {
                 f64::from_bits(self.shared.samplerate.load(Ordering::Relaxed))
             },
-            channel: if d.channel >= 0 { d.channel } else { self.channel },
+            channel: if d.channel >= 0 {
+                d.channel
+            } else {
+                self.channel
+            },
             data: vec![0; d.total_size as usize],
-            missing: if d.nframes >= 64 { u64::MAX } else { (1u64 << d.nframes) - 1 },
+            missing: if d.nframes >= 64 {
+                u64::MAX
+            } else {
+                (1u64 << d.nframes) - 1
+            },
             nframes: d.nframes,
         };
         if !block.add_frame(d.frame, d.data) {
@@ -734,7 +771,10 @@ impl SourceDesc {
         if self.queue.len() < RESEND_CHECK_THRESHOLD {
             return;
         }
-        let (limit, interval) = (p.opts.resend_limit, p.opts.resend_interval_ms as f64 * 0.001);
+        let (limit, interval) = (
+            p.opts.resend_limit,
+            p.opts.resend_interval_ms as f64 * 0.001,
+        );
         let maxframes = p.opts.resend_maxnumframes.max(1);
         let mut numframes = 0;
         // incomplete blocks except the newest
@@ -818,7 +858,11 @@ pub struct Sink {
     packet: Vec<u8>,
 }
 
-fn audio_half(setup: Setup, opts: &SinkOptions, shared: Arc<AudioShared>) -> (SinkAudio, Producer<Install>, Consumer<Box<Slot>>) {
+fn audio_half(
+    setup: Setup,
+    opts: &SinkOptions,
+    shared: Arc<AudioShared>,
+) -> (SinkAudio, Producer<Install>, Consumer<Box<Slot>>) {
     let (ip, ic) = RingBuffer::new(2 * MAX_SOURCES);
     let (gp, gc) = RingBuffer::new(2 * MAX_SOURCES);
     let audio = SinkAudio {
@@ -906,7 +950,9 @@ impl Sink {
     /// Invite a source (creating its entry). The invitation is repeated every second until its
     /// format arrives or it is uninvited.
     pub fn invite_source(&mut self, addr: SocketAddr, id: i32) -> bool {
-        let Some(i) = self.find_or_add(addr, id, None) else { return false };
+        let Some(i) = self.find_or_add(addr, id, None) else {
+            return false;
+        };
         let s = &mut self.sources[i];
         s.invitation = Invitation::Invite;
         s.inviting = true;
@@ -915,7 +961,9 @@ impl Sink {
     }
 
     pub fn uninvite_source(&mut self, addr: SocketAddr, id: i32) -> bool {
-        let Some(s) = self.find(addr, id) else { return false };
+        let Some(s) = self.find(addr, id) else {
+            return false;
+        };
         s.invitation = Invitation::Uninvite;
         s.inviting = false;
         true
@@ -941,7 +989,9 @@ impl Sink {
 
     /// Ask a source to switch codec (it keeps its channel count and samplerate).
     pub fn request_codec_change(&mut self, addr: SocketAddr, id: i32, format: Format) -> bool {
-        self.find(addr, id).map(|s| s.codec_change = Some(format)).is_some()
+        self.find(addr, id)
+            .map(|s| s.codec_change = Some(format))
+            .is_some()
     }
 
     /// Move a source to a new address (peer NAT rebinding).
@@ -1026,14 +1076,19 @@ impl Sink {
                 if !check_version(version) || src < 0 {
                     return true;
                 }
-                let Some(i) = self.find_or_add(from, src, Some(salt)) else { return true };
-                let Ok(f) = Format::from_wire(codec, nchannels, samplerate, blocksize, options) else {
+                let Some(i) = self.find_or_add(from, src, Some(salt)) else {
+                    return true;
+                };
+                let Ok(f) = Format::from_wire(codec, nchannels, samplerate, blocksize, options)
+                else {
                     return true;
                 };
                 if !f.check_decodable() {
                     return true;
                 }
-                let Ok(dec) = Decoder::new(&f) else { return true };
+                let Ok(dec) = Decoder::new(&f) else {
+                    return true;
+                };
                 let p = self.p;
                 let s = &mut self.sources[i];
                 s.salt = Some(salt);
@@ -1072,7 +1127,11 @@ impl Sink {
                 if src < 0 {
                     return true;
                 }
-                match self.sources.iter().position(|s| s.addr == from && s.id == src) {
+                match self
+                    .sources
+                    .iter()
+                    .position(|s| s.addr == from && s.id == src)
+                {
                     Some(i) => {
                         let pkt = Packet {
                             seq,
@@ -1134,10 +1193,18 @@ impl Sink {
                 push_event(ev, addr, id, SinkEventKind::StateChanged { playing });
             }
             let counters: [(i32, Counter); 4] = [
-                (std::mem::take(&mut s.lost), |count| SinkEventKind::BlocksLost { count }),
-                (std::mem::take(&mut s.reordered), |count| SinkEventKind::BlocksReordered { count }),
-                (std::mem::take(&mut s.resent), |count| SinkEventKind::BlocksResent { count }),
-                (std::mem::take(&mut s.gap), |count| SinkEventKind::BlocksGap { count }),
+                (std::mem::take(&mut s.lost), |count| {
+                    SinkEventKind::BlocksLost { count }
+                }),
+                (std::mem::take(&mut s.reordered), |count| {
+                    SinkEventKind::BlocksReordered { count }
+                }),
+                (std::mem::take(&mut s.resent), |count| {
+                    SinkEventKind::BlocksResent { count }
+                }),
+                (std::mem::take(&mut s.gap), |count| {
+                    SinkEventKind::BlocksGap { count }
+                }),
             ];
             for (count, kind) in counters {
                 if count > 0 {
@@ -1206,7 +1273,15 @@ impl Sink {
                 emit(pk, &mut out, addr, &msg);
                 did = true;
             } else if invitation == Invitation::Uninvite {
-                emit(pk, &mut out, addr, &Message::SourceUninvite { src: id, sink: my_id });
+                emit(
+                    pk,
+                    &mut out,
+                    addr,
+                    &Message::SourceUninvite {
+                        src: id,
+                        sink: my_id,
+                    },
+                );
                 did = true;
             }
         }
@@ -1222,11 +1297,17 @@ impl Sink {
     }
 
     fn find(&mut self, addr: SocketAddr, id: i32) -> Option<&mut SourceDesc> {
-        self.sources.iter_mut().find(|s| s.addr == addr && s.id == id)
+        self.sources
+            .iter_mut()
+            .find(|s| s.addr == addr && s.id == id)
     }
 
     fn find_or_add(&mut self, addr: SocketAddr, id: i32, salt: Option<i32>) -> Option<usize> {
-        if let Some(i) = self.sources.iter().position(|s| s.addr == addr && s.id == id) {
+        if let Some(i) = self
+            .sources
+            .iter()
+            .position(|s| s.addr == addr && s.id == id)
+        {
             return Some(i);
         }
         let index = self.sources.len();
@@ -1234,7 +1315,8 @@ impl Sink {
             return None;
         }
         let flags = self.p.opts.protocol_flags;
-        self.sources.push(SourceDesc::new(addr, id, index, salt, flags));
+        self.sources
+            .push(SourceDesc::new(addr, id, index, salt, flags));
         self.event(addr, id, SinkEventKind::SourceAdded);
         Some(index)
     }
@@ -1249,8 +1331,10 @@ impl Sink {
 
     fn flush_pending(installs: &mut Producer<Install>, s: &mut SourceDesc) {
         if let Some(slot) = s.pending.take()
-            && let Err(rtrb::PushError::Full(Install { slot, .. })) =
-                installs.push(Install { index: s.index, slot })
+            && let Err(rtrb::PushError::Full(Install { slot, .. })) = installs.push(Install {
+                index: s.index,
+                slot,
+            })
         {
             s.pending = Some(slot);
         }

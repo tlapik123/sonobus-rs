@@ -105,7 +105,11 @@ fn main() {
         }
         o.pin = pin;
         o.password = (!password.is_empty()).then(|| password.clone());
-        o.lan = if lan { LanScope::Network } else { LanScope::Off };
+        o.lan = if lan {
+            LanScope::Network
+        } else {
+            LanScope::Off
+        };
         let st = engine.host_session(&net, o).expect("host session");
         println!("hosting {name}: invite {}", st.invite.unwrap_or_default());
         if let Some(pin) = st.pin {

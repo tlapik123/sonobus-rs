@@ -9,12 +9,12 @@ mod common;
 use std::net::Ipv4Addr;
 
 use common::*;
+use sonobus_core::files::{SoundSample, Soundboard, Soundboards};
 use sonobus_dsp::gain::DEFAULT_CENTER_PAN_LAW as LAW;
 use sonobus_engine::modern::{
     AuthKind, DiscoveredSession, HostOptions, LanScope, NetOptions, PeerAddr, RelayChoice,
     SessionEvent, SessionMode, SessionRole,
 };
-use sonobus_core::files::{SoundSample, Soundboard, Soundboards};
 use sonobus_engine::{Connection, Event, Notification};
 
 const CENTRE: f32 = AMP * LAW;
@@ -47,7 +47,11 @@ fn mesh(nodes: &mut [&mut Node], session: &str) {
     assert!(
         run_until(nodes, 15.0, |n| all_receiving(n, count)),
         "peers did not connect: {}",
-        nodes.iter().map(|n| diag(n)).collect::<Vec<_>>().join(" | ")
+        nodes
+            .iter()
+            .map(|n| diag(n))
+            .collect::<Vec<_>>()
+            .join(" | ")
     );
 }
 
@@ -88,14 +92,23 @@ fn two_engines_opus_mono_by_invite_then_leave() {
     let (mut a, mut b) = (Node::mono(440.0), Node::mono(660.0));
     mesh(&mut [&mut a, &mut b], "jam");
     for ch in 0..2 {
-        assert!(hears(&mut [&mut a, &mut b], 1, ch, 440.0, CENTRE), "b hears a");
-        assert!(hears(&mut [&mut a, &mut b], 0, ch, 660.0, CENTRE), "a hears b");
+        assert!(
+            hears(&mut [&mut a, &mut b], 1, ch, 440.0, CENTRE),
+            "b hears a"
+        );
+        assert!(
+            hears(&mut [&mut a, &mut b], 0, ch, 660.0, CENTRE),
+            "a hears b"
+        );
     }
     let s = b.snap();
     assert_eq!(s.connection, Connection::Connected);
     assert_eq!(s.group.as_deref(), Some("jam"));
     let p = &s.peers[0];
-    assert_eq!((p.user.as_str(), p.recv_channels, p.send_channels), ("user0", 1, 1));
+    assert_eq!(
+        (p.user.as_str(), p.recv_channels, p.send_channels),
+        ("user0", 1, 1)
+    );
     assert_eq!(p.recv_format.as_deref(), Some("96 kbps/ch"));
     assert!(p.packets_received > 100 && p.recv_bps > 50_000.0, "{p:?}");
     let net = p.net.as_ref().expect("modern peer");
@@ -103,10 +116,16 @@ fn two_engines_opus_mono_by_invite_then_leave() {
     assert_eq!(net.endpoint_id, a.e.session_status().unwrap().endpoint_id);
     assert!(!p.latency.legacy, "{:?}", p.latency);
     assert!(p.meter.peak[0] > 0.3);
-    assert!(!b.e.start_latency_test(p.id), "no measured test in modern sessions");
+    assert!(
+        !b.e.start_latency_test(p.id),
+        "no measured test in modern sessions"
+    );
 
     b.e.leave_session();
-    assert!(run_until(&mut [&mut a, &mut b], 5.0, |n| n[0].snap().peers.is_empty()
+    assert!(run_until(&mut [&mut a, &mut b], 5.0, |n| n[0]
+        .snap()
+        .peers
+        .is_empty()
         && n[1].snap().peers.is_empty()));
     run(&mut [&mut a, &mut b], 0.05);
     assert!(a.has(|e| matches!(e, Event::PeerLeft { user, .. } if user == "user1")));
@@ -123,11 +142,21 @@ fn pcm_stereo_and_four_channel_layout() {
     let mut a = Node::new(&[300.0, 500.0], 2, st);
     let mut b = Node::mono(700.0);
     mesh(&mut [&mut a, &mut b], "pcm");
-    assert!(eventually(&mut [&mut a, &mut b], 5.0, |n| near(n[1].tone(0, 300.0), AMP, 0.03)
-        && near(n[1].tone(1, 500.0), AMP, 0.03)));
+    assert!(eventually(&mut [&mut a, &mut b], 5.0, |n| near(
+        n[1].tone(0, 300.0),
+        AMP,
+        0.03
+    ) && near(
+        n[1].tone(1, 500.0),
+        AMP,
+        0.03
+    )));
     assert!(b.tone(1, 300.0) < 0.005 && b.tone(0, 500.0) < 0.005);
     let p = &b.snap().peers[0];
-    assert_eq!((p.recv_channels, p.recv_format.as_deref()), (2, Some("PCM 16 bit")));
+    assert_eq!(
+        (p.recv_channels, p.recv_format.as_deref()),
+        (2, Some("PCM 16 bit"))
+    );
     drop((a, b));
 
     // "match inputs" with four channels in three groups: the receiver adopts the layout
@@ -143,10 +172,18 @@ fn pcm_stereo_and_four_channel_layout() {
             .iter()
             .all(|&(ch, f)| near(n[1].tone(ch, f), AMP, TOL) && n[1].tone(1 - ch, f) < 0.01)
     };
-    assert!(eventually(&mut [&mut a, &mut b], 5.0, placed), "{}", diag(&b));
+    assert!(
+        eventually(&mut [&mut a, &mut b], 5.0, placed),
+        "{}",
+        diag(&b)
+    );
     let p = &b.snap().peers[0];
     assert_eq!(p.recv_channels, 4);
-    let layout: Vec<_> = p.groups.iter().map(|g| (g.chan_start, g.num_channels)).collect();
+    let layout: Vec<_> = p
+        .groups
+        .iter()
+        .map(|g| (g.chan_start, g.num_channels))
+        .collect();
     assert_eq!(layout, [(0, 2), (2, 1), (3, 1)]);
 }
 
@@ -155,12 +192,25 @@ fn three_engines_controls_then_the_host_leaves() {
     let _serial = serial();
     let (mut a, mut b, mut c) = (Node::mono(440.0), Node::mono(660.0), Node::mono(990.0));
     mesh(&mut [&mut a, &mut b, &mut c], "three");
-    for (node, f) in [(0, 660.0), (0, 990.0), (1, 440.0), (1, 990.0), (2, 440.0), (2, 660.0)] {
+    for (node, f) in [
+        (0, 660.0),
+        (0, 990.0),
+        (1, 440.0),
+        (1, 990.0),
+        (2, 440.0),
+        (2, 660.0),
+    ] {
         assert!(hears(&mut [&mut a, &mut b, &mut c], node, 0, f, CENTRE));
     }
     let (pa, pc) = (b.peer("user0"), b.peer("user2"));
     b.e.set_peer_level(pa, 0.5);
-    assert!(hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, CENTRE * 0.25));
+    assert!(hears(
+        &mut [&mut a, &mut b, &mut c],
+        1,
+        0,
+        440.0,
+        CENTRE * 0.25
+    ));
     b.e.set_peer_level(pa, 1.0);
     b.e.update_peer_groups(pa, |g, _| g[0].pans[0] = -1.0);
     assert!(hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, AMP));
@@ -173,17 +223,33 @@ fn three_engines_controls_then_the_host_leaves() {
     b.e.set_peer_recv_muted(pc, true);
     run(&mut [&mut a, &mut b, &mut c], 1.0);
     assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0));
-    assert!(!b.snap().peers.iter().find(|p| p.id == pc).unwrap().recv_active);
+    assert!(
+        !b.snap()
+            .peers
+            .iter()
+            .find(|p| p.id == pc)
+            .unwrap()
+            .recv_active
+    );
     b.e.set_peer_recv_muted(pc, false);
-    assert!(hears(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0, CENTRE), "receive resumes");
+    assert!(
+        hears(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0, CENTRE),
+        "receive resumes"
+    );
     // a stops sending to b only
     let pb = a.peer("user1");
     a.e.set_peer_send_muted(pb, true);
     run(&mut [&mut a, &mut b, &mut c], 1.0);
     assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0));
-    assert!(hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE), "c still hears a");
+    assert!(
+        hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE),
+        "c still hears a"
+    );
     a.e.set_peer_send_muted(pb, false);
-    assert!(hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, AMP), "sending resumes");
+    assert!(
+        hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, AMP),
+        "sending resumes"
+    );
     // encode once: three peers, one shared stream (two encodings per block), no private ones
     let per_sec = encodes_per_second(&mut [&mut a, &mut b, &mut c]);
     // 240-frame Opus blocks: 200 per second, times main + low
@@ -191,7 +257,11 @@ fn three_engines_controls_then_the_host_leaves() {
 
     // the host leaves: b and c keep each other
     a.e.leave_session();
-    assert!(run_until(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[1].snap().peers.len() == 1
+    assert!(run_until(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[1]
+        .snap()
+        .peers
+        .len()
+        == 1
         && n[2].snap().peers.len() == 1));
     assert!(hears(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0, CENTRE));
     assert!(hears(&mut [&mut a, &mut b, &mut c], 2, 0, 660.0, CENTRE));
@@ -216,23 +286,40 @@ fn master_mutes_and_format_changes() {
     // a per-peer format outside the shared stream's encodings: its own encoder
     let pb = a.peer("user1");
     a.e.set_peer_send_format(pb, 10);
-    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1].snap().peers[0].recv_format.as_deref()
+    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1]
+        .snap()
+        .peers[0]
+        .recv_format
+        .as_deref()
         == Some("PCM 32 bit float")));
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     // the receiver asks for another format; the sender follows
     let pa = b.peer("user0");
     b.e.request_peer_send_format(pa, Some(8));
-    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[0].snap().peers[0].send_format == 8
-        && n[1].snap().peers[0].recv_format.as_deref() == Some("PCM 16 bit")));
+    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[0]
+        .snap()
+        .peers[0]
+        .send_format
+        == 8
+        && n[1].snap().peers[0].recv_format.as_deref()
+            == Some("PCM 16 bit")));
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     // back to the default: the shared stream again
     a.e.set_peer_send_format(pb, 4);
-    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1].snap().peers[0].recv_format.as_deref()
+    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1]
+        .snap()
+        .peers[0]
+        .recv_format
+        .as_deref()
         == Some("96 kbps/ch")));
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     // "change for all": the shared stream's format follows
     a.e.set_send_format_for_all(9);
-    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1].snap().peers[0].recv_format.as_deref()
+    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1]
+        .snap()
+        .peers[0]
+        .recv_format
+        .as_deref()
         == Some("PCM 24 bit")));
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
 }
@@ -277,7 +364,10 @@ fn join_by_pin_through_lan_discovery() {
     let start = std::time::Instant::now();
     while found.is_none() && start.elapsed().as_secs() < 8 {
         run(&mut [&mut a, &mut b], 0.1);
-        found = b.e.lan_sessions().into_iter().find(|s| s.host.id == st.endpoint_id);
+        found =
+            b.e.lan_sessions()
+                .into_iter()
+                .find(|s| s.host.id == st.endpoint_id);
     }
     let Some(s) = found else {
         println!(
@@ -288,14 +378,22 @@ fn join_by_pin_through_lan_discovery() {
     };
     assert_eq!(s.session, "Friday jam");
     // a wrong PIN: authentication fails, nobody is admitted
-    c.e.join_lan(&net("guess"), &s, if pin == "000000" { "111111" } else { "000000" })
-        .unwrap();
+    c.e.join_lan(
+        &net("guess"),
+        &s,
+        if pin == "000000" { "111111" } else { "000000" },
+    )
+    .unwrap();
     assert!(wait_event(&mut [&mut a, &mut b, &mut c], 2, 6.0, auth_failed).is_some());
     assert!(a.snap().peers.is_empty() && c.snap().peers.is_empty());
     assert!(a.e.session_status().unwrap().failed_joins >= 1);
     // the right one
     b.e.join_lan(&net("joiner"), &s, &pin).unwrap();
-    assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)), "{}", diag(&a));
+    assert!(
+        run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)),
+        "{}",
+        diag(&a)
+    );
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     assert!(hears(&mut [&mut a, &mut b], 0, 0, 660.0, CENTRE));
     b.e.stop_lan_browse();
@@ -316,7 +414,11 @@ fn join_by_name_through_the_hosts_rendezvous() {
     assert!(a.snap().peers.is_empty() && c.snap().peers.is_empty());
     b.e.join_by_name(&net("joiner"), server, "Thursday", "open sesame")
         .unwrap();
-    assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)), "{}", diag(&a));
+    assert!(
+        run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)),
+        "{}",
+        diag(&a)
+    );
     assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     assert!(hears(&mut [&mut a, &mut b], 0, 0, 660.0, CENTRE));
     assert_eq!(b.snap().peers[0].user, "host");
@@ -328,7 +430,9 @@ fn join_by_name_through_the_hosts_rendezvous() {
 fn broadcast_host_three_listeners_encode_once_and_isolation() {
     let _serial = serial();
     let mut h = Node::mono(440.0);
-    let mut ls: Vec<Node> = (0..4).map(|i| Node::mono(500.0 + 100.0 * i as f64)).collect();
+    let mut ls: Vec<Node> = (0..4)
+        .map(|i| Node::mono(500.0 + 100.0 * i as f64))
+        .collect();
     let mut o = HostOptions::new("radio");
     o.mode = SessionMode::Broadcast;
     o.max_listeners = Some(3);
@@ -337,17 +441,23 @@ fn broadcast_host_three_listeners_encode_once_and_isolation() {
         l.e.join_invite(&net(&format!("l{i}")), &link).unwrap();
     }
     {
-        let [l0, l1, l2, _] = &mut ls[..] else { unreachable!() };
+        let [l0, l1, l2, _] = &mut ls[..] else {
+            unreachable!()
+        };
         let nodes = &mut [&mut h, l0, l1, l2];
         assert!(
             run_until(nodes, 15.0, |n| n[0].snap().peers.len() == 3
-                && n[1..].iter().all(|l| l.snap().peers.len() == 1
-                    && l.snap().peers[0].recv_active)),
+                && n[1..].iter().all(
+                    |l| l.snap().peers.len() == 1 && l.snap().peers[0].recv_active
+                )),
             "{}",
             diag(nodes[0])
         );
         for k in 1..4 {
-            assert!(hears(nodes, k, 0, 440.0, CENTRE), "listener {k} hears the host");
+            assert!(
+                hears(nodes, k, 0, 440.0, CENTRE),
+                "listener {k} hears the host"
+            );
         }
         // listeners send nothing: the host hears none of them
         run(nodes, 0.5);
@@ -381,7 +491,9 @@ fn broadcast_host_three_listeners_encode_once_and_isolation() {
         assert!(ready);
     }
     // the fourth is refused: the host is full
-    let [l0, l1, l2, l3] = &mut ls[..] else { unreachable!() };
+    let [l0, l1, l2, l3] = &mut ls[..] else {
+        unreachable!()
+    };
     l3.e.join_invite(&net("l3"), &link).unwrap();
     let nodes = &mut [&mut h, l0, l1, l2, l3];
     assert!(wait_event(nodes, 4, 8.0, |e| *e == SessionEvent::SessionFull).is_some());
@@ -404,8 +516,13 @@ fn password_joined_broadcast_listeners_stay_isolated() {
     o.mode = SessionMode::Broadcast;
     o.password = Some("open sesame".into());
     o.rendezvous = true;
-    let server = h.e.host_session(&net("host"), o).unwrap().rendezvous.unwrap();
-    l1.e.join_by_name(&net("l1"), server.clone(), "radio pw", "open sesame").unwrap();
+    let server =
+        h.e.host_session(&net("host"), o)
+            .unwrap()
+            .rendezvous
+            .unwrap();
+    l1.e.join_by_name(&net("l1"), server.clone(), "radio pw", "open sesame")
+        .unwrap();
     assert!(run_until(&mut [&mut h, &mut l1], 15.0, |n| {
         n[1].snap().peers.first().is_some_and(|p| p.recv_active)
     }));
@@ -424,30 +541,63 @@ fn password_joined_broadcast_listeners_stay_isolated() {
     let isolated = |nodes: &mut [&mut Node], what: &str| {
         run(nodes, 2.0);
         let (l1_hears_l2, l2_hears_l1) = (nodes[1].tone(0, 660.0), nodes[2].tone(0, 550.0));
-        let users = |n: &Node| n.snap().peers.iter().map(|p| p.user.clone()).collect::<Vec<_>>();
+        let users = |n: &Node| {
+            n.snap()
+                .peers
+                .iter()
+                .map(|p| p.user.clone())
+                .collect::<Vec<_>>()
+        };
         let (p1, p2) = (users(nodes[1]), users(nodes[2]));
-        eprintln!("{what}: l1 hears l2 at {l1_hears_l2}, l2 hears l1 at {l2_hears_l1}; peers {p1:?} / {p2:?}");
-        assert!(l1_hears_l2 < 0.01 && l2_hears_l1 < 0.01, "{what}: audio between listeners");
+        eprintln!(
+            "{what}: l1 hears l2 at {l1_hears_l2}, l2 hears l1 at {l2_hears_l1}; peers {p1:?} / {p2:?}"
+        );
+        assert!(
+            l1_hears_l2 < 0.01 && l2_hears_l1 < 0.01,
+            "{what}: audio between listeners"
+        );
         assert_eq!(p1, ["host"], "{what}");
         assert!(p2.iter().all(|u| u == "host"), "{what}: {p2:?}");
-        assert_eq!(nodes[1].e.modern_encode_count(), 0, "{what}: l1 has no encoder");
+        assert_eq!(
+            nodes[1].e.modern_encode_count(),
+            0,
+            "{what}: l1 has no encoder"
+        );
     };
-    let failed = wait_event(nodes, 2, 8.0, |e| matches!(e, SessionEvent::JoinFailed { .. }));
+    let failed = wait_event(nodes, 2, 8.0, |e| {
+        matches!(e, SessionEvent::JoinFailed { .. })
+    });
     isolated(nodes, "join aimed at l1");
-    assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
+    assert_eq!(
+        (st.mode, st.role),
+        (SessionMode::Broadcast, SessionRole::Listener)
+    );
     assert!(failed.is_some(), "a listener serves no password joins");
     assert!(nodes[2].snap().peers.is_empty());
 
     nodes[2].e.leave_session();
-    nodes[2].e.join_by_name(&net("l2"), server, "radio pw", "open sesame").unwrap();
+    nodes[2]
+        .e
+        .join_by_name(&net("l2"), server, "radio pw", "open sesame")
+        .unwrap();
     assert!(run_until(nodes, 15.0, |n| n[0].snap().peers.len() == 2
         && n[2].snap().peers.first().is_some_and(|p| p.recv_active)));
     isolated(nodes, "join by name");
     for k in 1..3 {
-        assert!(hears(nodes, k, 0, 440.0, CENTRE), "listener {k} hears the host");
-        assert_eq!(nodes[k].e.modern_encode_count(), 0, "listener {k} has no encoder");
+        assert!(
+            hears(nodes, k, 0, 440.0, CENTRE),
+            "listener {k} hears the host"
+        );
+        assert_eq!(
+            nodes[k].e.modern_encode_count(),
+            0,
+            "listener {k} has no encoder"
+        );
         let st = nodes[k].e.session_status().unwrap();
-        assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
+        assert_eq!(
+            (st.mode, st.role),
+            (SessionMode::Broadcast, SessionRole::Listener)
+        );
     }
     // the host hears neither
     assert!(nodes[0].tone(0, 550.0) < 0.01 && nodes[0].tone(0, 660.0) < 0.01);
@@ -468,9 +618,16 @@ fn mesh_invite_to_a_broadcast_host_joins_as_listener() {
     inv.mode = SessionMode::Mesh;
     l.e.join_invite(&net("l"), &inv.to_url().unwrap()).unwrap();
     let nodes = &mut [&mut h, &mut l];
-    assert!(run_until(nodes, 15.0, |n| n[1].snap().peers.first().is_some_and(|p| p.recv_active)));
+    assert!(run_until(nodes, 15.0, |n| n[1]
+        .snap()
+        .peers
+        .first()
+        .is_some_and(|p| p.recv_active)));
     let st = nodes[1].e.session_status().unwrap();
-    assert_eq!((st.mode, st.role), (SessionMode::Broadcast, SessionRole::Listener));
+    assert_eq!(
+        (st.mode, st.role),
+        (SessionMode::Broadcast, SessionRole::Listener)
+    );
     assert!(hears(nodes, 1, 0, 440.0, CENTRE));
     assert_eq!(nodes[1].e.modern_encode_count(), 0);
     assert!(nodes[0].tone(0, 550.0) < 0.01);
@@ -497,7 +654,11 @@ fn induced_loss_is_repaired_and_adaptation_reacts() {
     let (r0, d0) = stats(&b);
     run(&mut [&mut a, &mut b], 3.0);
     let (r1, d1) = stats(&b);
-    eprintln!("10 % loss, 3 s: {} repaired, {} concealed", r1 - r0, d1 - d0);
+    eprintln!(
+        "10 % loss, 3 s: {} repaired, {} concealed",
+        r1 - r0,
+        d1 - d0
+    );
     // (shared CI runners do not always keep the test's audio loop at real-time pace: 45
     // repaired in "3 s" on macOS, 48 on Windows; what counts is that few are concealed)
     assert!(r1 - r0 > 25 && d1 - d0 < 10, "NACK repairs it");
@@ -537,7 +698,8 @@ fn key_rotation_evicts_a_member_and_outsiders_get_nothing() {
     let mut forged = sonobus_net::auth::Invite::parse(&old).unwrap();
     forged.seed[0] ^= 1;
     let mut d = Node::mono(1200.0);
-    d.e.join_invite(&net("outsider"), &forged.to_url().unwrap()).unwrap();
+    d.e.join_invite(&net("outsider"), &forged.to_url().unwrap())
+        .unwrap();
     assert!(wait_event(&mut [&mut a, &mut b, &mut c, &mut d], 3, 8.0, auth_failed).is_some());
     assert!(d.snap().peers.is_empty() && a.snap().peers.len() == 2);
     assert!(d.tone(0, 440.0) < 0.01);
@@ -545,7 +707,11 @@ fn key_rotation_evicts_a_member_and_outsiders_get_nothing() {
     let pc = a.peer("user2");
     let new = a.e.rotate_session_key(Some(pc)).expect("new link");
     assert_ne!(new, old);
-    assert!(run_until(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[0].snap().peers.len() == 1
+    assert!(run_until(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[0]
+        .snap()
+        .peers
+        .len()
+        == 1
         && n[1].snap().peers.len() == 1
         && n[2].snap().peers.is_empty()));
     // c cannot come back with the old link
@@ -555,7 +721,9 @@ fn key_rotation_evicts_a_member_and_outsiders_get_nothing() {
     assert!(a.snap().peers.len() == 1 && b.snap().peers.len() == 1);
     // the session goes on, and a newcomer with the new link joins everyone left
     d.e.join_invite(&net("user3"), &new).unwrap();
-    assert!(run_until(&mut [&mut a, &mut b, &mut d], 15.0, |n| all_receiving(n, 2)));
+    assert!(run_until(&mut [&mut a, &mut b, &mut d], 15.0, |n| {
+        all_receiving(n, 2)
+    }));
     assert!(hears(&mut [&mut a, &mut b, &mut d], 2, 0, 660.0, CENTRE));
     // removing someone who is no longer a peer under that id changes nothing: it must not
     // become a plain key change that the "removed" device would receive too
@@ -608,16 +776,20 @@ fn stage2_features_in_a_modern_session() {
     let folder = a.e.start_recording(&dir, "take").unwrap();
     // chat: the receiver names the sender by its connection
     a.e.send_chat(&[], "hello");
-    assert!(run_until(&mut [&mut a, &mut b], 3.0, |n| n[1].has(|e| matches!(
-        e,
-        Event::Chat(m) if m.from == "user0" && m.message == "hello" && !m.own
-    ))));
+    assert!(run_until(&mut [&mut a, &mut b], 3.0, |n| n[1].has(
+        |e| matches!(
+            e,
+            Event::Chat(m) if m.from == "user0" && m.message == "hello" && !m.own
+        )
+    )));
     assert_eq!(b.e.chat_history().len(), 1);
     // file playback and soundboard reach the peer through the shared stream
     a.e.load_file(&file).unwrap();
     a.e.set_file_looping(true);
     a.e.set_file_playing(true);
-    assert!(eventually(&mut [&mut a, &mut b], 5.0, |n| n[1].tone(0, 1000.0) > 0.2));
+    assert!(eventually(&mut [&mut a, &mut b], 5.0, |n| n[1]
+        .tone(0, 1000.0)
+        > 0.2));
     a.e.set_soundboards(Soundboards {
         boards: vec![Soundboard {
             name: "fx".into(),
@@ -631,7 +803,9 @@ fn stage2_features_in_a_modern_session() {
         ..Soundboards::default()
     });
     a.e.soundboard_press((0, 0)).unwrap();
-    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1].tone(0, 1500.0) > 0.1));
+    assert!(eventually(&mut [&mut a, &mut b], 4.0, |n| n[1]
+        .tone(0, 1500.0)
+        > 0.1));
     assert!(b.snap().peers[0].remote_recording, "rec flag in /sb/pinfo");
     a.e.stop_all_samples();
     a.e.set_file_playing(false);
@@ -642,13 +816,21 @@ fn stage2_features_in_a_modern_session() {
         .iter()
         .map(|p| p.file_name().unwrap().to_string_lossy().into_owned())
         .collect();
-    for want in ["take-MIXMINUS.wav", "take-SELF.wav", "take-MIX.wav", "take-user1.wav"] {
+    for want in [
+        "take-MIXMINUS.wav",
+        "take-SELF.wav",
+        "take-MIX.wav",
+        "take-user1.wav",
+    ] {
         assert!(names.iter().any(|n| n == want), "{want} in {names:?}");
     }
     let peer = read_wav(&folder.join("take-user1.wav"));
     assert!(near(tone_at(&peer[0], 660.0, 0), AMP, 0.1));
     let side = std::fs::read_to_string(folder.join("take-latency.txt")).unwrap();
-    assert!(side.lines().next().unwrap().starts_with("start\tuser1\t"), "{side}");
+    assert!(
+        side.lines().next().unwrap().starts_with("start\tuser1\t"),
+        "{side}"
+    );
     run(&mut [&mut a, &mut b], 0.5);
     assert!(!b.snap().peers[0].remote_recording);
 
@@ -664,10 +846,17 @@ fn stage2_features_in_a_modern_session() {
     a.e.commit_latency_match(target);
     assert!((buf(&a) - 70.0).abs() < 0.05, "{}", buf(&a));
     let p = &a.snap().peers[0];
-    assert!(p.latency.ping_ms > 0.0 && !p.latency.legacy, "{:?}", p.latency);
+    assert!(
+        p.latency.ping_ms > 0.0 && !p.latency.legacy,
+        "{:?}",
+        p.latency
+    );
     a.e.begin_latency_match();
-    assert!(wait_note(&mut [&mut a, &mut b], 0, 3.0, |n| *n == Notification::LatencyMatchReady)
-        .is_some());
+    assert!(
+        wait_note(&mut [&mut a, &mut b], 0, 3.0, |n| *n
+            == Notification::LatencyMatchReady)
+        .is_some()
+    );
     let (entries, ready, _) = a.e.latency_match_info();
     assert!(ready && entries.len() == 2, "{entries:?}");
     a.e.send_latency_match(77.0);
@@ -677,11 +866,13 @@ fn stage2_features_in_a_modern_session() {
     };
     assert!(wait_note(&mut [&mut a, &mut b], 1, 3.0, |n| *n == want).is_some());
     a.e.suggest_group("elsewhere", "pw2", true, &["user1"]);
-    assert!(wait_note(&mut [&mut a, &mut b], 1, 3.0, |n| matches!(
-        n,
-        Notification::GroupSuggested(g) if g.user == "user0" && g.group == "elsewhere"
-    ))
-    .is_some());
+    assert!(
+        wait_note(&mut [&mut a, &mut b], 1, 3.0, |n| matches!(
+            n,
+            Notification::GroupSuggested(g) if g.user == "user0" && g.group == "elsewhere"
+        ))
+        .is_some()
+    );
     // a suggestion is only a notification: b is still in the same session
     run(&mut [&mut a, &mut b], 0.5);
     assert_eq!(b.snap().group.as_deref(), Some("stage2"));
@@ -699,15 +890,25 @@ fn patchbay_and_peer_cache_in_a_modern_session() {
     mesh(&mut [&mut a, &mut b, &mut c], "patch");
     let b_on_c = c.peer("user1");
     c.e.set_peer_recv_muted(b_on_c, true);
-    assert!(eventually(&mut [&mut a, &mut b, &mut c], 4.0, |n| n[2].tone(0, 660.0) < 0.01));
+    assert!(eventually(&mut [&mut a, &mut b, &mut c], 4.0, |n| n[2]
+        .tone(0, 660.0)
+        < 0.01));
     let (pb, pc) = (a.peer("user1"), a.peer("user2"));
     let e0 = a.e.modern_encode_count();
     a.e.set_patch(pb, pc, true);
     assert!(a.e.patch(pb, pc));
-    let to_c = |n: &Node| n.snap().peers.iter().find(|p| p.user == "user2").unwrap().send_channels;
+    let to_c = |n: &Node| {
+        n.snap()
+            .peers
+            .iter()
+            .find(|p| p.user == "user2")
+            .unwrap()
+            .send_channels
+    };
     assert_eq!(to_c(&a), 2);
     assert!(
-        eventually(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[2].tone(0, 660.0) > 0.1),
+        eventually(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[2].tone(0, 660.0)
+            > 0.1),
         "c hears b through a: {}",
         c.tone(0, 660.0)
     );
@@ -721,7 +922,9 @@ fn patchbay_and_peer_cache_in_a_modern_session() {
     assert!(near(b.tone(0, 440.0), CENTRE, TOL));
     a.e.set_patch(pb, pc, false);
     assert_eq!(to_c(&a), 1);
-    assert!(eventually(&mut [&mut a, &mut b, &mut c], 4.0, |n| n[2].tone(0, 660.0) < 0.01));
+    assert!(eventually(&mut [&mut a, &mut b, &mut c], 4.0, |n| n[2]
+        .tone(0, 660.0)
+        < 0.01));
     assert!(hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE));
 
     a.e.set_peer_level(pb, 0.3);
@@ -730,20 +933,48 @@ fn patchbay_and_peer_cache_in_a_modern_session() {
     a.e.set_peer_soloed(pb, true);
     run(&mut [&mut a, &mut b, &mut c], 0.3);
     b.e.leave_session();
-    assert!(run_until(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[0].snap().peers.len() == 1));
+    assert!(run_until(&mut [&mut a, &mut b, &mut c], 5.0, |n| n[0]
+        .snap()
+        .peers
+        .len()
+        == 1));
     let link = a.e.invite_link().unwrap();
     b.e.join_invite(&net("renamed"), &link).unwrap();
-    assert!(run_until(&mut [&mut a, &mut b, &mut c], 15.0, |n| n[0].snap().peers.len() == 2));
+    assert!(run_until(&mut [&mut a, &mut b, &mut c], 15.0, |n| n[0]
+        .snap()
+        .peers
+        .len()
+        == 2));
     let s = a.snap();
-    let p = s.peers.iter().find(|p| p.user == "renamed").expect("rejoined");
+    let p = s
+        .peers
+        .iter()
+        .find(|p| p.user == "renamed")
+        .expect("rejoined");
     assert_eq!(p.send_format, 8);
-    assert!((p.level - 0.3).abs() < 1e-6 && (p.buffer_ms - 70.0).abs() < 1e-3, "{p:?}");
+    assert!(
+        (p.level - 0.3).abs() < 1e-6 && (p.buffer_ms - 70.0).abs() < 1e-3,
+        "{p:?}"
+    );
     // the cache entry is the endpoint's, whatever its name
     run(&mut [&mut a, &mut b, &mut c], 1.2);
     let id = p.net.as_ref().unwrap().endpoint_id;
-    let key = format!("sbid:{}", id.iter().map(|x| format!("{x:02x}")).collect::<String>());
-    assert!(a.e.state().peer_cache.iter().any(|c| c.name == key && c.send_format == 8));
-    assert!(a.e.state().peer_cache.iter().all(|c| c.name != "renamed" && c.name != "user1"));
+    let key = format!(
+        "sbid:{}",
+        id.iter().map(|x| format!("{x:02x}")).collect::<String>()
+    );
+    assert!(
+        a.e.state()
+            .peer_cache
+            .iter()
+            .any(|c| c.name == key && c.send_format == 8)
+    );
+    assert!(
+        a.e.state()
+            .peer_cache
+            .iter()
+            .all(|c| c.name != "renamed" && c.name != "user1")
+    );
 }
 
 fn aoo_server() -> aoo::server::ServerHandle {
@@ -766,32 +997,54 @@ fn legacy_and_modern_sessions_alternate_without_leaks() {
     run(&mut [&mut a, &mut b], 0.2);
     // The first tokio runtime of a process with tokio's `signal` feature on (the workspace build)
     // makes the signal driver's socket pair, which is never closed: not ours to count.
-    drop(tokio::runtime::Builder::new_current_thread().enable_io().build().unwrap());
+    drop(
+        tokio::runtime::Builder::new_current_thread()
+            .enable_io()
+            .build()
+            .unwrap(),
+    );
     let before = threads_and_fds();
     for round in 0..2 {
         a.join(srv.local_addr(), "user0", "g", "pw");
         b.join(srv.local_addr(), "user1", "g", "pw");
-        assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)), "legacy {round}");
+        assert!(
+            run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)),
+            "legacy {round}"
+        );
         assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
         assert!(a.snap().peers[0].net.is_none(), "a legacy peer");
         // hosting a modern session ends the legacy one
-        let link = a.e.host_session(&net("user0"), HostOptions::new("m")).unwrap().invite.unwrap();
+        let link =
+            a.e.host_session(&net("user0"), HostOptions::new("m"))
+                .unwrap()
+                .invite
+                .unwrap();
         assert!(a.snap().public_groups.is_empty() && a.snap().group.as_deref() == Some("m"));
         b.e.join_invite(&net("user1"), &link).unwrap();
-        assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)
-            && n.iter().all(|x| x.snap().peers[0].net.is_some())), "modern {round}");
+        assert!(
+            run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)
+                && n.iter().all(|x| x.snap().peers[0].net.is_some())),
+            "modern {round}"
+        );
         assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
         assert!(hears(&mut [&mut a, &mut b], 0, 0, 660.0, CENTRE));
         // connecting to a server ends the modern session
         a.e.leave_session();
         b.e.disconnect();
-        assert!(b.e.session_status().is_some(), "disconnect is the legacy session's");
+        assert!(
+            b.e.session_status().is_some(),
+            "disconnect is the legacy session's"
+        );
         b.e.leave_session();
-        assert!(run_until(&mut [&mut a, &mut b], 5.0, |n| n.iter().all(|x| x.snap().peers.is_empty())));
+        assert!(run_until(&mut [&mut a, &mut b], 5.0, |n| n
+            .iter()
+            .all(|x| x.snap().peers.is_empty())));
     }
     a.join(srv.local_addr(), "user0", "g", "pw");
     b.join(srv.local_addr(), "user1", "g", "pw");
-    assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)));
+    assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(
+        n, 1
+    )));
     a.e.disconnect();
     b.e.disconnect();
     // the server closes its side of the two connections on its own threads: give it time
@@ -852,7 +1105,9 @@ fn end_to_end_latency_legacy_vs_modern() {
         let (mut a, mut b) = quiet_pair(fmt);
         a.join(srv.local_addr(), "user0", &format!("lat{fmt}"), "pw");
         b.join(srv.local_addr(), "user1", &format!("lat{fmt}"), "pw");
-        assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(n, 1)));
+        assert!(run_until(&mut [&mut a, &mut b], 15.0, |n| all_receiving(
+            n, 1
+        )));
         run(&mut [&mut a, &mut b], 1.0);
         let legacy = click_latency(&mut a, &mut b).expect("legacy click");
         drop((a, b));
@@ -875,7 +1130,12 @@ fn end_to_end_latency_legacy_vs_modern() {
         // (compared on Linux only: on a macOS CI runner one modern stream started at 32 ms
         // and the next at 99 ms)
         if cfg!(target_os = "linux") {
-            assert!(ms(modern) < ms(legacy).max(40.0) + 25.0, "{} vs {}", ms(modern), ms(legacy));
+            assert!(
+                ms(modern) < ms(legacy).max(40.0) + 25.0,
+                "{} vs {}",
+                ms(modern),
+                ms(legacy)
+            );
         }
     }
 }

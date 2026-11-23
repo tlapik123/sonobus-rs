@@ -18,7 +18,9 @@ use sonobus_net::{Config, Event, Join, Net, PeerAddr, RelayChoice};
 
 fn main() -> std::io::Result<()> {
     let mut args = std::env::args().skip(1);
-    let link = args.next().expect("usage: join <invite link> [seconds] [buffer ms]");
+    let link = args
+        .next()
+        .expect("usage: join <invite link> [seconds] [buffer ms]");
     let secs: u64 = args.next().and_then(|a| a.parse().ok()).unwrap_or(20);
     let buffer_ms: f32 = args.next().and_then(|a| a.parse().ok()).unwrap_or(40.0);
     let inv = Invite::parse(&link).map_err(|e| std::io::Error::other(e.to_string()))?;
@@ -96,7 +98,11 @@ fn main() -> std::io::Result<()> {
             let rtt = path.as_ref().map_or(0.0, |p| p.rtt.as_secs_f64() * 1e3);
             println!(
                 "{} rtt {rtt:.1} ms, one-way ≈ {:.1} ms + buffer {:.1} ms | lost {} resent {} recovered {} | {} NACKs",
-                if path.is_some_and(|p| p.direct) { "direct " } else { "relayed" },
+                if path.is_some_and(|p| p.direct) {
+                    "direct "
+                } else {
+                    "relayed"
+                },
                 rtt / 2.0,
                 lis.rx.fill_ms(),
                 c(lost),

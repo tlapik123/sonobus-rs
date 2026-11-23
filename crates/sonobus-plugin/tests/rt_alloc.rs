@@ -99,13 +99,20 @@ fn process_never_allocates() {
             unsafe { p.bypass._internal_set_plain_value(!p.bypass.value()) };
         }
         // odd host callback sizes in the last quarter (the engine's FIFO path)
-        let n = if i > 3000 { [BLOCK, 100, 37, 1, 300][i as usize % 5] } else { BLOCK };
+        let n = if i > 3000 {
+            [BLOCK, 100, 37, 1, 300][i as usize % 5]
+        } else {
+            BLOCK
+        };
         step(&mut a, n);
         b.block(BLOCK);
         connected |= a.receiving() == 1 && b.receiving() == 1;
         std::thread::sleep(pace);
     }
-    assert!(connected, "the peers never connected: the test did not cover streaming");
+    assert!(
+        connected,
+        "the peers never connected: the test did not cover streaming"
+    );
     let count = COUNT.with(Cell::get);
     assert_eq!(count, 0, "allocations on the audio thread");
 }

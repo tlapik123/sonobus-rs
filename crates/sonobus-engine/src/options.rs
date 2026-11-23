@@ -53,7 +53,9 @@ pub fn packet_redundancy(e: &ExtraState) -> i32 {
 }
 
 pub fn receive_sync_padding(e: &ExtraState) -> f32 {
-    get(e, RECEIVE_SYNC_PADDING).map_or(0.0, |v| v.to_f64() as f32).clamp(0.0, 500.0)
+    get(e, RECEIVE_SYNC_PADDING)
+        .map_or(0.0, |v| v.to_f64() as f32)
+        .clamp(0.0, 500.0)
 }
 
 /// [`MAX_SEND_QUALITY`] as a table index, `None` when unset.

@@ -11,7 +11,10 @@
 use std::net::{IpAddr, Ipv4Addr};
 
 use sonobus_core::files::PropertiesFile;
-use sonobus_engine::modern::{DEFAULT_PLAYOUT_MS, DiscoveredSession, LanScope, MAX_PLAYOUT_MS, PeerAddr, RelayChoice, SessionMode};
+use sonobus_engine::modern::{
+    DEFAULT_PLAYOUT_MS, DiscoveredSession, LanScope, MAX_PLAYOUT_MS, PeerAddr, RelayChoice,
+    SessionMode,
+};
 use sonobus_net::RdvAddr;
 use sonobus_net::auth::Invite;
 
@@ -49,7 +52,9 @@ impl How {
     }
 
     fn from_code(s: &str) -> Option<How> {
-        [How::Hosted, How::Invite, How::Lan, How::Name].into_iter().find(|h| h.code() == s)
+        [How::Hosted, How::Invite, How::Lan, How::Name]
+            .into_iter()
+            .find(|h| h.code() == s)
     }
 }
 
@@ -82,7 +87,13 @@ pub struct SecurePrefs {
 impl Default for SecurePrefs {
     fn default() -> Self {
         // the shipped app's default: n0's public relays
-        SecurePrefs { relay: RelayChoice::N0Default, rendezvous: String::new(), recents: Vec::new(), playout_sync: false, playout_ms: DEFAULT_PLAYOUT_MS }
+        SecurePrefs {
+            relay: RelayChoice::N0Default,
+            rendezvous: String::new(),
+            recents: Vec::new(),
+            playout_sync: false,
+            playout_ms: DEFAULT_PLAYOUT_MS,
+        }
     }
 }
 
@@ -118,7 +129,10 @@ impl SecurePrefs {
             rendezvous: p.get(RENDEZVOUS_KEY).unwrap_or_default().to_owned(),
             recents,
             playout_sync: p.get(PLAYOUT_SYNC_KEY) == Some("1"),
-            playout_ms: p.get(PLAYOUT_MS_KEY).and_then(|v| v.parse().ok()).map_or(DEFAULT_PLAYOUT_MS, clamp_playout_ms),
+            playout_ms: p
+                .get(PLAYOUT_MS_KEY)
+                .and_then(|v| v.parse().ok())
+                .map_or(DEFAULT_PLAYOUT_MS, clamp_playout_ms),
         }
     }
 
@@ -140,8 +154,15 @@ impl SecurePrefs {
             .iter()
             .map(|r| {
                 let mode = if r.broadcast { "broadcast" } else { "mesh" };
-                let f = [r.name.as_str(), mode, r.how.code(), r.invite.as_deref().unwrap_or(""), r.server.as_deref().unwrap_or("")];
-                f.map(|x| x.replace([SEP, '\n', '\r'], " ")).join(&SEP.to_string())
+                let f = [
+                    r.name.as_str(),
+                    mode,
+                    r.how.code(),
+                    r.invite.as_deref().unwrap_or(""),
+                    r.server.as_deref().unwrap_or(""),
+                ];
+                f.map(|x| x.replace([SEP, '\n', '\r'], " "))
+                    .join(&SEP.to_string())
             })
             .collect();
         p.set(RECENTS_KEY, lines.join("\n"));
@@ -151,7 +172,8 @@ impl SecurePrefs {
 
     /// Adds `r` first (replacing an entry for the same session and way of joining).
     pub fn remember(&mut self, r: SecureRecent) {
-        self.recents.retain(|x| !(x.name == r.name && x.how == r.how));
+        self.recents
+            .retain(|x| !(x.name == r.name && x.how == r.how));
         self.recents.insert(0, r);
         self.recents.truncate(MAX_RECENTS);
     }
@@ -175,13 +197,20 @@ pub fn load_identity(p: &PropertiesFile) -> Option<[u8; 32]> {
 }
 
 pub fn store_identity(p: &mut PropertiesFile, key: &[u8; 32]) {
-    p.set(IDENTITY_KEY, key.iter().map(|b| format!("{b:02x}")).collect::<String>());
+    p.set(
+        IDENTITY_KEY,
+        key.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+    );
 }
 
 /// The short form of an endpoint id people compare by eye: the first 6 bytes, hex, in three
 /// groups ("3f2a-91c0-07be").
 pub fn short_id(id: &[u8; 32]) -> String {
-    id[..6].chunks(2).map(|c| format!("{:02x}{:02x}", c[0], c[1])).collect::<Vec<_>>().join("-")
+    id[..6]
+        .chunks(2)
+        .map(|c| format!("{:02x}{:02x}", c[0], c[1]))
+        .collect::<Vec<_>>()
+        .join("-")
 }
 
 /// What the user reads when a secure session ends for them ([`SessionEvent::Ended`]).
@@ -213,7 +242,12 @@ pub fn relay_host(url: &str) -> String {
 /// The rendezvous address others type to join by name through `p` (a host serving
 /// rendezvous: [`sonobus_engine::modern::SessionStatus::rendezvous`]).
 pub fn rdv_text(p: &PeerAddr) -> String {
-    RdvAddr { id: p.id, hosts: p.addrs.iter().map(ToString::to_string).collect(), relay: p.relay.clone() }.to_string()
+    RdvAddr {
+        id: p.id,
+        hosts: p.addrs.iter().map(ToString::to_string).collect(),
+        relay: p.relay.clone(),
+    }
+    .to_string()
 }
 
 /// What a link shows before joining: session, host fingerprint, relay, mode.
@@ -287,7 +321,9 @@ impl HostForm {
             Some("Give the session a name.")
         } else if self.lan && !secret {
             Some("Advertising on the local network needs a PIN or a password.")
-        } else if (self.rendezvous_here || !self.register_at.trim().is_empty()) && self.password.is_empty() {
+        } else if (self.rendezvous_here || !self.register_at.trim().is_empty())
+            && self.password.is_empty()
+        {
             Some("Joining by name needs a password.")
         } else {
             None
@@ -302,7 +338,11 @@ pub enum JoinMethod {
     /// A session found on this network, with its PIN or password.
     Lan(DiscoveredSession, String),
     /// Rendezvous server address (text), session name, password.
-    Name { server: String, session: String, password: String },
+    Name {
+        server: String,
+        session: String,
+        password: String,
+    },
 }
 
 /// Where the secure endpoint binds and how LAN discovery runs (tests: loopback).
@@ -317,7 +357,11 @@ pub struct NetPlace {
 
 impl Default for NetPlace {
     fn default() -> Self {
-        NetPlace { bind_ip: Ipv4Addr::UNSPECIFIED.into(), port: sonobus_net::rt::DEFAULT_PORT, lan: LanScope::Network }
+        NetPlace {
+            bind_ip: Ipv4Addr::UNSPECIFIED.into(),
+            port: sonobus_net::rt::DEFAULT_PORT,
+            lan: LanScope::Network,
+        }
     }
 }
 
@@ -333,7 +377,12 @@ pub fn password_hint(pw: &str) -> String {
         pw.chars().any(|c| c.is_ascii_digit()),
         pw.chars().any(|c| !c.is_ascii_alphanumeric()),
     ];
-    let alphabet: f64 = [26.0, 26.0, 10.0, 33.0].iter().zip(classes).filter(|(_, on)| *on).map(|(n, _)| n).sum();
+    let alphabet: f64 = [26.0, 26.0, 10.0, 33.0]
+        .iter()
+        .zip(classes)
+        .filter(|(_, on)| *on)
+        .map(|(n, _)| n)
+        .sum();
     let bits = pw.chars().count() as f64 * alphabet.max(2.0).log2();
     let days = 2f64.powf(bits - 1.0) / GUESSES_PER_DAY;
     let (label, span) = if days < 1.0 {
@@ -345,7 +394,10 @@ pub fn password_hint(pw: &str) -> String {
     } else {
         (crate::tr("Strong"), crate::tr("more than a century"))
     };
-    format!("{label}: {} {span}.", crate::tr("guessing it online would take"))
+    format!(
+        "{label}: {} {span}.",
+        crate::tr("guessing it online would take")
+    )
 }
 
 /// The text a QR code of `link` carries: the `sonobus2://join/` prefix as is (Android matches
@@ -354,7 +406,9 @@ pub fn password_hint(pw: &str) -> String {
 pub fn qr_text(link: &str) -> String {
     let prefix = sonobus_net::auth::INVITE_URL_PREFIX;
     match link.get(..prefix.len()) {
-        Some(p) if p.eq_ignore_ascii_case(prefix) => format!("{prefix}{}", link[prefix.len()..].to_ascii_uppercase()),
+        Some(p) if p.eq_ignore_ascii_case(prefix) => {
+            format!("{prefix}{}", link[prefix.len()..].to_ascii_uppercase())
+        }
         _ => link.to_ascii_uppercase(),
     }
 }
@@ -363,7 +417,13 @@ pub fn qr_text(link: &str) -> String {
 /// the quiet zone ([`QUIET`] modules around it, drawn by the widget).
 pub fn qr_modules(link: &str) -> Option<(usize, Vec<bool>)> {
     let code = qrcode::QrCode::new(qr_text(link).as_bytes()).ok()?;
-    Some((code.width(), code.to_colors().into_iter().map(|c| c == qrcode::Color::Dark).collect()))
+    Some((
+        code.width(),
+        code.to_colors()
+            .into_iter()
+            .map(|c| c == qrcode::Color::Dark)
+            .collect(),
+    ))
 }
 
 /// Light modules around a QR code (the standard's minimum).
@@ -371,14 +431,23 @@ pub const QUIET: usize = 4;
 
 /// Dark module squares of a QR code `width` modules wide drawn at `module` points from
 /// `origin`, quiet zone included: (x, y, size) in points.
-pub fn qr_squares(width: usize, modules: &[bool], origin: (f32, f32), module: f32) -> Vec<(f32, f32, f32)> {
+pub fn qr_squares(
+    width: usize,
+    modules: &[bool],
+    origin: (f32, f32),
+    module: f32,
+) -> Vec<(f32, f32, f32)> {
     modules
         .iter()
         .enumerate()
         .filter(|(_, dark)| **dark)
         .map(|(i, _)| {
             let (x, y) = (i % width + QUIET, i / width + QUIET);
-            (origin.0 + x as f32 * module, origin.1 + y as f32 * module, module)
+            (
+                origin.0 + x as f32 * module,
+                origin.1 + y as f32 * module,
+                module,
+            )
         })
         .collect()
 }
@@ -389,11 +458,27 @@ mod tests {
 
     #[test]
     fn prefs_round_trip_and_cap() {
-        let mut p = SecurePrefs { relay: RelayChoice::Custom(vec!["https://relay.example/".into()]), rendezvous: "sonobus2://rdv/x".into(), ..SecurePrefs::default() };
+        let mut p = SecurePrefs {
+            relay: RelayChoice::Custom(vec!["https://relay.example/".into()]),
+            rendezvous: "sonobus2://rdv/x".into(),
+            ..SecurePrefs::default()
+        };
         for i in 0..15 {
-            p.remember(SecureRecent { name: format!("s{i}"), broadcast: i % 2 == 0, how: How::Invite, invite: None, server: None });
+            p.remember(SecureRecent {
+                name: format!("s{i}"),
+                broadcast: i % 2 == 0,
+                how: How::Invite,
+                invite: None,
+                server: None,
+            });
         }
-        p.remember(SecureRecent { name: "tab\there".into(), broadcast: false, how: How::Name, invite: Some("sonobus2://join/abc".into()), server: Some("sonobus2://rdv/y".into()) });
+        p.remember(SecureRecent {
+            name: "tab\there".into(),
+            broadcast: false,
+            how: How::Name,
+            invite: Some("sonobus2://join/abc".into()),
+            server: Some("sonobus2://rdv/y".into()),
+        });
         assert_eq!(p.recents.len(), MAX_RECENTS);
         let mut f = PropertiesFile::default();
         p.store(&mut f);
@@ -401,30 +486,64 @@ mod tests {
         assert_eq!(back.relay, p.relay);
         assert_eq!(back.rendezvous, p.rendezvous);
         assert_eq!(back.recents.len(), MAX_RECENTS);
-        assert_eq!(back.recents[0].name, "tab here", "a tab cannot split the fields");
-        assert_eq!(back.recents[0].invite.as_deref(), Some("sonobus2://join/abc"));
+        assert_eq!(
+            back.recents[0].name, "tab here",
+            "a tab cannot split the fields"
+        );
+        assert_eq!(
+            back.recents[0].invite.as_deref(),
+            Some("sonobus2://join/abc")
+        );
         assert_eq!(back.recents[1], p.recents[1]);
         // defaults: n0's relays
-        assert_eq!(SecurePrefs::load(&PropertiesFile::default()).relay, RelayChoice::N0Default);
+        assert_eq!(
+            SecurePrefs::load(&PropertiesFile::default()).relay,
+            RelayChoice::N0Default
+        );
         let mut f = PropertiesFile::default();
-        SecurePrefs { relay: RelayChoice::None, ..SecurePrefs::default() }.store(&mut f);
+        SecurePrefs {
+            relay: RelayChoice::None,
+            ..SecurePrefs::default()
+        }
+        .store(&mut f);
         assert_eq!(SecurePrefs::load(&f).relay, RelayChoice::None);
     }
 
     #[test]
     fn playout_sync_round_trip_and_clamp() {
         let d = SecurePrefs::load(&PropertiesFile::default());
-        assert_eq!((d.playout_sync, d.playout_ms, d.playout()), (false, DEFAULT_PLAYOUT_MS, None));
+        assert_eq!(
+            (d.playout_sync, d.playout_ms, d.playout()),
+            (false, DEFAULT_PLAYOUT_MS, None)
+        );
         let mut f = PropertiesFile::default();
-        let p = SecurePrefs { playout_sync: true, playout_ms: 320, ..SecurePrefs::default() };
+        let p = SecurePrefs {
+            playout_sync: true,
+            playout_ms: 320,
+            ..SecurePrefs::default()
+        };
         p.store(&mut f);
         assert_eq!(SecurePrefs::load(&f), p);
         assert_eq!(p.playout(), Some(320));
         // off keeps the delay for next time
-        SecurePrefs { playout_sync: false, ..p.clone() }.store(&mut f);
-        assert_eq!((SecurePrefs::load(&f).playout_sync, SecurePrefs::load(&f).playout_ms), (false, 320));
+        SecurePrefs {
+            playout_sync: false,
+            ..p.clone()
+        }
+        .store(&mut f);
+        assert_eq!(
+            (
+                SecurePrefs::load(&f).playout_sync,
+                SecurePrefs::load(&f).playout_ms
+            ),
+            (false, 320)
+        );
         // a hand-edited file is clamped
-        for (text, want) in [("5", MIN_PLAYOUT_MS), ("60000", MAX_PLAYOUT_MS), ("junk", DEFAULT_PLAYOUT_MS)] {
+        for (text, want) in [
+            ("5", MIN_PLAYOUT_MS),
+            ("60000", MAX_PLAYOUT_MS),
+            ("junk", DEFAULT_PLAYOUT_MS),
+        ] {
             f.set(PLAYOUT_MS_KEY, text);
             assert_eq!(SecurePrefs::load(&f).playout_ms, want, "{text}");
         }
@@ -441,14 +560,21 @@ mod tests {
         assert_eq!(load_identity(&f), None);
         let id: [u8; 32] = std::array::from_fn(|i| 0x3f + i as u8);
         assert_eq!(short_id(&id), "3f40-4142-4344");
-        assert_eq!(relay_host("https://euw1-1.relay.example./"), "euw1-1.relay.example");
+        assert_eq!(
+            relay_host("https://euw1-1.relay.example./"),
+            "euw1-1.relay.example"
+        );
         assert_eq!(relay_host("http://127.0.0.1:3340/"), "127.0.0.1");
         assert_eq!(relay_host("https://[::1]:443/x"), "[::1]");
     }
 
     #[test]
     fn host_form_checks_and_password_hint() {
-        let mut f = HostForm { session: "jam".into(), lan: false, ..HostForm::default() };
+        let mut f = HostForm {
+            session: "jam".into(),
+            lan: false,
+            ..HostForm::default()
+        };
         assert_eq!(f.problem(), None, "an invite link alone needs nothing else");
         f.lan = true;
         assert!(f.problem().is_some());
@@ -480,7 +606,15 @@ mod tests {
     fn invite_previews() {
         let link = invite("Radio\u{202e} night", Some("https://relay.example./"));
         let p = InvitePreview::parse(&format!("  {link}\n")).unwrap();
-        assert_eq!((p.session.as_str(), p.host.as_str(), p.relay.as_deref(), p.broadcast), ("Radio night", "abab-abab-abab", Some("relay.example"), true));
+        assert_eq!(
+            (
+                p.session.as_str(),
+                p.host.as_str(),
+                p.relay.as_deref(),
+                p.broadcast
+            ),
+            ("Radio night", "abab-abab-abab", Some("relay.example"), true)
+        );
         assert_eq!(p.link, link);
         // the bare code and upper case parse too
         let bare = link.trim_start_matches(sonobus_net::auth::INVITE_URL_PREFIX);
@@ -493,13 +627,24 @@ mod tests {
     fn qr_code_of_an_invite() {
         let link = invite("Friday jam", Some("https://euw1-1.relay.n0.example.link./"));
         let text = qr_text(&link);
-        assert!(text.starts_with("sonobus2://join/") && text[16..].chars().all(|c| !c.is_ascii_lowercase()));
+        assert!(
+            text.starts_with("sonobus2://join/")
+                && text[16..].chars().all(|c| !c.is_ascii_lowercase())
+        );
         let (w, m) = qr_modules(&link).unwrap();
         // the encoder's matrix: a version-v code is 4v + 17 modules wide
         let code = qrcode::QrCode::new(text.as_bytes()).unwrap();
-        let qrcode::Version::Normal(v) = code.version() else { panic!("micro QR") };
+        let qrcode::Version::Normal(v) = code.version() else {
+            panic!("micro QR")
+        };
         assert_eq!(w, 4 * v as usize + 17);
-        assert_eq!(m, code.to_colors().into_iter().map(|c| c == qrcode::Color::Dark).collect::<Vec<_>>());
+        assert_eq!(
+            m,
+            code.to_colors()
+                .into_iter()
+                .map(|c| c == qrcode::Color::Dark)
+                .collect::<Vec<_>>()
+        );
         assert_eq!(m.len(), w * w);
         // the alphanumeric upper case is smaller than the link as is
         let plain = qrcode::QrCode::new(link.as_bytes()).unwrap();
@@ -507,7 +652,12 @@ mod tests {
         // finder patterns: the three corners are dark 7x7 frames
         for (x0, y0) in [(0, 0), (w - 7, 0), (0, w - 7)] {
             for k in 0..7 {
-                for (x, y) in [(x0 + k, y0), (x0, y0 + k), (x0 + 6, y0 + k), (x0 + k, y0 + 6)] {
+                for (x, y) in [
+                    (x0 + k, y0),
+                    (x0, y0 + k),
+                    (x0 + 6, y0 + k),
+                    (x0 + k, y0 + 6),
+                ] {
                     assert!(m[y * w + x], "finder at {x0},{y0}");
                 }
             }
@@ -516,7 +666,10 @@ mod tests {
         let sq = qr_squares(w, &m, (10.0, 20.0), 2.0);
         assert_eq!(sq.len(), m.iter().filter(|d| **d).count());
         let (lo, hi) = (QUIET as f32 * 2.0, (QUIET + w) as f32 * 2.0);
-        assert!(sq.iter().all(|&(x, y, s)| x - 10.0 >= lo && y - 20.0 >= lo && x - 10.0 + s <= hi && y - 20.0 + s <= hi));
+        assert!(sq.iter().all(|&(x, y, s)| x - 10.0 >= lo
+            && y - 20.0 >= lo
+            && x - 10.0 + s <= hi
+            && y - 20.0 + s <= hi));
         assert_eq!(sq[0], (10.0 + lo, 20.0 + lo, 2.0), "top-left finder corner");
     }
 }

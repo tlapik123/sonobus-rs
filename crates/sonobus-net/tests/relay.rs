@@ -4,8 +4,8 @@
 mod common;
 
 use std::net::{Ipv4Addr, Ipv6Addr};
-use std::sync::mpsc::channel;
 use std::sync::OnceLock;
+use std::sync::mpsc::channel;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
@@ -108,8 +108,8 @@ fn relay_only_connection_and_latency() {
     let haddr = online(&host);
     assert_eq!(haddr.relay.as_deref(), Some(&*format!("{}/", relay.url)));
     // the runtime announces its relay once it is known
-    let announced = std::iter::from_fn(|| host.events().recv_timeout(WAIT).ok())
-        .find_map(|e| match e {
+    let announced =
+        std::iter::from_fn(|| host.events().recv_timeout(WAIT).ok()).find_map(|e| match e {
             Event::LocalRelay(r) => Some(r),
             _ => None,
         });
@@ -119,7 +119,10 @@ fn relay_only_connection_and_latency() {
     // The peer info carries the relay URL the host announced.
     assert_eq!(hp.relay, haddr.relay);
     let p = jtx.path().unwrap();
-    assert!(!p.direct && p.relay == haddr.relay && p.remote.is_none(), "{p:?}");
+    assert!(
+        !p.direct && p.relay == haddr.relay && p.remote.is_none(),
+        "{p:?}"
+    );
 
     const N: u32 = 400;
     let mut buf = Vec::new();

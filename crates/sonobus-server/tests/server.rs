@@ -139,8 +139,9 @@ fn two_nets_meet_by_name_and_password() {
     // sources: distinct addresses
     let sources = if MANY_LOOPBACKS { 2 } else { 1 };
     assert!(
-        line.contains(&format!(" modern_conns=2 modern_sources={sources} modern_tags=1 modern_regs=2"))
-            && line.ends_with(" modern_refused=none")
+        line.contains(&format!(
+            " modern_conns=2 modern_sources={sources} modern_tags=1 modern_regs=2"
+        )) && line.ends_with(" modern_refused=none")
             && !line.contains("legacy"),
         "{line}"
     );
@@ -281,7 +282,10 @@ fn port_in_use_is_an_error() {
     })
     .err()
     .unwrap();
-    let want = format!("rendezvous: cannot bind UDP {}: ", held.local_addr().unwrap());
+    let want = format!(
+        "rendezvous: cannot bind UDP {}: ",
+        held.local_addr().unwrap()
+    );
     assert!(e.starts_with(&want), "{e}");
     let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
     let e = Daemon::start(&Settings {
@@ -342,7 +346,11 @@ fn relay_http_serves_a_home_relay() {
 #[test]
 fn relay_self_is_the_rendezvous_relay() {
     let args = |a: &[&str]| a.iter().map(|s| s.to_string()).collect::<Vec<_>>();
-    let e = parse(&args(&["--relay", "self", "--relay-http", "0.0.0.0:1"]), &[]).unwrap_err();
+    let e = parse(
+        &args(&["--relay", "self", "--relay-http", "0.0.0.0:1"]),
+        &[],
+    )
+    .unwrap_err();
     assert!(e.contains("no address clients can use"), "{e}");
     let Ok(Parsed::Run(s)) = parse(&args(&["--relay=self", "--relay-http=127.0.0.1:0"]), &[])
     else {
@@ -358,7 +366,10 @@ fn relay_self_is_the_rendezvous_relay() {
     .unwrap();
     let url = format!("http://{}", d.relay_addr().unwrap());
     let rdv = d.rendezvous_endpoint().unwrap();
-    assert!(rdv.relay.as_deref().unwrap_or("").starts_with(&url), "{rdv:?}");
+    assert!(
+        rdv.relay.as_deref().unwrap_or("").starts_with(&url),
+        "{rdv:?}"
+    );
     let text = d.rendezvous_addr().unwrap();
     assert!(text.contains(&format!("?relay={url}")), "{text}");
 }

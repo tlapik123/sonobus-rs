@@ -10,7 +10,11 @@ use sonobus_app::controller::{AppController, ConnectRequest, ControllerConfig};
 use sonobus_app::osc_control::OscConfig;
 
 fn controller() -> AppController {
-    AppController::new(ControllerConfig { settings_dir: None, use_devices: false }).expect("controller")
+    AppController::new(ControllerConfig {
+        settings_dir: None,
+        use_devices: false,
+    })
+    .expect("controller")
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -23,7 +27,11 @@ fn temp_dir(name: &str) -> std::path::PathBuf {
 fn until(c: &mut AppController, secs: u64, what: &str, cond: impl Fn(&AppController) -> bool) {
     let t = Instant::now();
     while !cond(c) {
-        assert!(t.elapsed() < Duration::from_secs(secs), "timed out: {what} ({})", c.vm().status);
+        assert!(
+            t.elapsed() < Duration::from_secs(secs),
+            "timed out: {what} ({})",
+            c.vm().status
+        );
         c.tick();
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -34,7 +42,13 @@ fn a_setup_file_cannot_turn_on_network_osc() {
     let dir = temp_dir("setup");
     // someone else's setup with network OSC on, their UDP port and language
     let mut theirs = controller();
-    theirs.set_osc_config(OscConfig { enabled: true, allow_network: true, receive_port: 1, target_host: "203.0.113.5".into(), ..OscConfig::default() });
+    theirs.set_osc_config(OscConfig {
+        enabled: true,
+        allow_network: true,
+        receive_port: 1,
+        target_host: "203.0.113.5".into(),
+        ..OscConfig::default()
+    });
     theirs.edit(|s| {
         s.params.wet = 0.3;
         s.extra.use_udp_port = 2;
@@ -43,7 +57,10 @@ fn a_setup_file_cannot_turn_on_network_osc() {
     let f = dir.join("band.sonobus");
     theirs.save_setup(&f).unwrap();
     let text = std::fs::read_to_string(&f).unwrap();
-    assert!(!text.contains("203.0.113.5") && !text.contains("OSCEnabled"), "own OSC config not shared");
+    assert!(
+        !text.contains("203.0.113.5") && !text.contains("OSCEnabled"),
+        "own OSC config not shared"
+    );
 
     let mut c = controller();
     c.load_setup(&f).unwrap();
@@ -63,19 +80,32 @@ fn rebuild_while_recording_reports_the_files() {
     c.start_recording();
     until(&mut c, 5, "recording", |c| c.vm().recording.is_some());
     std::thread::sleep(Duration::from_millis(200));
-    let setup = DeviceSetup { sample_rate: 44_100, ..c.audio_setup().clone() };
+    let setup = DeviceSetup {
+        sample_rate: 44_100,
+        ..c.audio_setup().clone()
+    };
     c.set_audio_setup(setup).unwrap();
     assert!(c.vm().recording.is_none());
-    assert!(!c.vm().last_recording.is_empty(), "files of the stopped recording");
+    assert!(
+        !c.vm().last_recording.is_empty(),
+        "files of the stopped recording"
+    );
     assert!(c.vm().last_recording[0].exists());
-    assert!(c.vm().status.contains("audio setup changed"), "{}", c.vm().status);
+    assert!(
+        c.vm().status.contains("audio setup changed"),
+        "{}",
+        c.vm().status
+    );
     let _ = std::fs::remove_dir_all(&dir);
 }
 
 #[test]
 fn a_failed_rebuild_keeps_an_engine() {
     let mut c = controller();
-    let bad = DeviceSetup { sample_rate: 0, ..c.audio_setup().clone() };
+    let bad = DeviceSetup {
+        sample_rate: 0,
+        ..c.audio_setup().clone()
+    };
     assert!(c.set_audio_setup(bad).is_err());
     assert!(c.vm().engine_error.is_some());
     c.tick(); // no panic: an engine runs
@@ -87,14 +117,20 @@ fn a_failed_rebuild_keeps_an_engine() {
 #[test]
 fn second_instance_on_one_settings_dir_saves_nothing() {
     let dir = temp_dir("two");
-    let cfg = || ControllerConfig { settings_dir: Some(dir.clone()), use_devices: false };
+    let cfg = || ControllerConfig {
+        settings_dir: Some(dir.clone()),
+        use_devices: false,
+    };
     let mut a = AppController::new(cfg()).unwrap();
     a.edit(|s| s.params.wet = 0.4);
     a.save().unwrap();
     let mut b = AppController::new(cfg()).unwrap();
     assert!(b.vm().settings_read_only && b.vm().status_is_error);
     assert!(!a.vm().settings_read_only);
-    assert!(dir.join("SonoBus.settings").exists(), "b's sentinel did not move a's settings");
+    assert!(
+        dir.join("SonoBus.settings").exists(),
+        "b's sentinel did not move a's settings"
+    );
     assert_eq!(b.vm().state.params.wet, 0.4, "b reads them");
     b.edit(|s| s.params.wet = 0.9);
     b.save().unwrap();
@@ -110,7 +146,11 @@ fn second_instance_on_one_settings_dir_saves_nothing() {
 #[test]
 fn hosting_stops_on_disconnect_unless_kept() {
     let mut c = controller();
-    let r = ConnectRequest { user: "a".into(), group: "g".into(), ..ConnectRequest::default() };
+    let r = ConnectRequest {
+        user: "a".into(),
+        group: "g".into(),
+        ..ConnectRequest::default()
+    };
     c.host_session(0, r.clone()).unwrap();
     c.disconnect();
     assert!(c.vm().hosting.is_none());
@@ -136,8 +176,16 @@ fn unblock() {
 // ---- secure sessions: secrets stay on this machine ---------------------------------------------
 
 fn secure_controller(dir: &std::path::Path) -> AppController {
-    let mut c = AppController::new(ControllerConfig { settings_dir: Some(dir.to_path_buf()), use_devices: false }).expect("controller");
-    c.net_place = sonobus_app::secure::NetPlace { bind_ip: std::net::Ipv4Addr::LOCALHOST.into(), port: 0, lan: sonobus_engine::modern::LanScope::Loopback };
+    let mut c = AppController::new(ControllerConfig {
+        settings_dir: Some(dir.to_path_buf()),
+        use_devices: false,
+    })
+    .expect("controller");
+    c.net_place = sonobus_app::secure::NetPlace {
+        bind_ip: std::net::Ipv4Addr::LOCALHOST.into(),
+        port: 0,
+        lan: sonobus_engine::modern::LanScope::Loopback,
+    };
     c.set_secure_relay(sonobus_engine::modern::RelayChoice::None);
     c
 }
@@ -145,15 +193,22 @@ fn secure_controller(dir: &std::path::Path) -> AppController {
 /// The identity key as stored in our settings file.
 fn stored_identity(dir: &std::path::Path) -> String {
     let text = std::fs::read_to_string(dir.join("SonoBus.settings")).unwrap();
-    let i = text.find("sonobusRsIdentityKey").expect("identity in our settings");
+    let i = text
+        .find("sonobusRsIdentityKey")
+        .expect("identity in our settings");
     let v = &text[i..];
     let v = &v[v.find("val=\"").unwrap() + 5..];
     v[..64].to_owned()
 }
 
-fn hosted_endpoint(c: &mut AppController, form: &sonobus_app::secure::HostForm) -> ([u8; 32], String) {
+fn hosted_endpoint(
+    c: &mut AppController,
+    form: &sonobus_app::secure::HostForm,
+) -> ([u8; 32], String) {
     c.host_secure("me", form);
-    until(c, 10, "hosting", |c| c.vm().secure.as_ref().is_some_and(|s| s.invite.is_some()));
+    until(c, 10, "hosting", |c| {
+        c.vm().secure.as_ref().is_some_and(|s| s.invite.is_some())
+    });
     let s = c.vm().secure.clone().unwrap();
     (s.endpoint_id, s.invite.unwrap())
 }
@@ -161,7 +216,12 @@ fn hosted_endpoint(c: &mut AppController, form: &sonobus_app::secure::HostForm) 
 #[test]
 fn identity_persists_and_secure_secrets_stay_out_of_shared_files() {
     let dir = temp_dir("identity");
-    let form = sonobus_app::secure::HostForm { session: "Kept".into(), lan: false, remember: true, ..Default::default() };
+    let form = sonobus_app::secure::HostForm {
+        session: "Kept".into(),
+        lan: false,
+        remember: true,
+        ..Default::default()
+    };
     let mut c = secure_controller(&dir);
     let key = stored_identity(&dir); // stored on first start
     let (id1, link) = hosted_endpoint(&mut c, &form);
@@ -171,39 +231,83 @@ fn identity_persists_and_secure_secrets_stay_out_of_shared_files() {
     let f = dir.join("mine.sonobus");
     c.save_setup(&f).unwrap();
     let setup = std::fs::read_to_string(&f).unwrap();
-    let shared = format!("{:?}", sonobus_app::settings::shareable(&c.engine().state()));
+    let shared = format!(
+        "{:?}",
+        sonobus_app::settings::shareable(&c.engine().state())
+    );
     for text in [&setup, &shared] {
-        assert!(!text.contains(&key) && !text.contains(&code) && !text.contains("sonobusRsSecure") && !text.contains("sonobusRsIdentity") && !text.contains("ModernPeerNames"), "{text}");
+        assert!(
+            !text.contains(&key)
+                && !text.contains(&code)
+                && !text.contains("sonobusRsSecure")
+                && !text.contains("sonobusRsIdentity")
+                && !text.contains("ModernPeerNames"),
+            "{text}"
+        );
     }
     assert!(c.group_link().is_none());
     let osc = format!("{:?}", sonobus_app::osc_control::state(&c, 0.0, false));
     assert!(!osc.contains(&code) && !osc.contains(&key));
     // a setup someone else saved cannot bring an identity or remembered sessions with it
     let mut theirs = c.engine().state();
-    theirs.extra.unknown.push(("sonobusRsIdentityKey".into(), sonobus_core::Var::String("00".repeat(32))));
+    theirs.extra.unknown.push((
+        "sonobusRsIdentityKey".into(),
+        sonobus_core::Var::String("00".repeat(32)),
+    ));
     sonobus_app::settings::keep_local(&mut theirs, &c.engine().state());
-    assert!(!theirs.extra.unknown.iter().any(|(k, _)| k.starts_with("sonobusRs")));
+    assert!(
+        !theirs
+            .extra
+            .unknown
+            .iter()
+            .any(|(k, _)| k.starts_with("sonobusRs"))
+    );
     c.shutdown();
     let settings = std::fs::read_to_string(dir.join("SonoBus.settings")).unwrap();
-    assert!(settings.contains(&code), "remembered with its link (the user asked)");
+    assert!(
+        settings.contains(&code),
+        "remembered with its link (the user asked)"
+    );
     drop(c);
 
     // a restart: the same identity, the remembered session hosts with the same link
     let mut c = secure_controller(&dir);
     assert_eq!(stored_identity(&dir), key);
     let r = &c.vm().secure_prefs.recents[0];
-    assert_eq!((r.name.as_str(), r.invite.as_deref()), ("Kept", Some(link.as_str())));
+    assert_eq!(
+        (r.name.as_str(), r.invite.as_deref()),
+        ("Kept", Some(link.as_str()))
+    );
     let (id2, link2) = hosted_endpoint(&mut c, &form);
     assert_eq!(id2, id1);
-    assert_eq!(sonobus_net::auth::Invite::parse(&link2).unwrap().seed, sonobus_net::auth::Invite::parse(&link).unwrap().seed);
+    assert_eq!(
+        sonobus_net::auth::Invite::parse(&link2).unwrap().seed,
+        sonobus_net::auth::Invite::parse(&link).unwrap().seed
+    );
     // without "remember": the session is remembered, its link is not
     c.forget_secure_recent(0);
-    c.host_secure("me", &sonobus_app::secure::HostForm { remember: false, ..form.clone() });
-    until(&mut c, 10, "remembered", |c| c.vm().secure_prefs.recents.first().is_some_and(|r| r.name == "Kept"));
+    c.host_secure(
+        "me",
+        &sonobus_app::secure::HostForm {
+            remember: false,
+            ..form.clone()
+        },
+    );
+    until(&mut c, 10, "remembered", |c| {
+        c.vm()
+            .secure_prefs
+            .recents
+            .first()
+            .is_some_and(|r| r.name == "Kept")
+    });
     assert_eq!(c.vm().secure_prefs.recents[0].invite, None);
     c.save().unwrap();
     let invite_now = c.vm().secure.as_ref().unwrap().invite.clone().unwrap();
-    assert!(!std::fs::read_to_string(dir.join("SonoBus.settings")).unwrap().contains(invite_now.trim_start_matches("sonobus2://join/")));
+    assert!(
+        !std::fs::read_to_string(dir.join("SonoBus.settings"))
+            .unwrap()
+            .contains(invite_now.trim_start_matches("sonobus2://join/"))
+    );
     // "Reset device identity": a new one, from the next session on
     c.leave_secure();
     c.reset_identity();
@@ -251,9 +355,15 @@ fn headless_prints_the_invite_only_when_asked() {
     let quiet = headless_output(&dir, &[]);
     assert!(quiet.contains("Hosting secure session: cli-jam"), "{quiet}");
     let key = stored_identity(&dir);
-    assert!(!quiet.contains("sonobus2://") && !quiet.contains("PIN") && !quiet.contains(&key), "{quiet}");
+    assert!(
+        !quiet.contains("sonobus2://") && !quiet.contains("PIN") && !quiet.contains(&key),
+        "{quiet}"
+    );
     let loud = headless_output(&dir, &["--print-invite"]);
-    assert!(loud.contains("invite: sonobus2://join/") && loud.contains("PIN: "), "{loud}");
+    assert!(
+        loud.contains("invite: sonobus2://join/") && loud.contains("PIN: "),
+        "{loud}"
+    );
     assert!(!loud.contains(&key), "never the identity");
     let _ = std::fs::remove_dir_all(&dir);
 }

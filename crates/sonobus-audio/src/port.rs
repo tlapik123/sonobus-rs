@@ -176,7 +176,14 @@ impl InputPort {
         let ratio = out_rate as f64 / in_rate as f64;
         let max_rel = 1.0 + 2.0 * MAX_DEVIATION;
         let resampler = if in_rate == out_rate {
-            Async::new_poly(ratio, max_rel, PolynomialDegree::Cubic, block, channels, FixedAsync::Output)
+            Async::new_poly(
+                ratio,
+                max_rel,
+                PolynomialDegree::Cubic,
+                block,
+                channels,
+                FixedAsync::Output,
+            )
         } else {
             let params = SincInterpolationParameters {
                 sinc_len: SINC_LEN,
@@ -217,7 +224,12 @@ impl InputPort {
             kp,
             ki: kp * WINDOW_SECS / TI_SECS,
         };
-        let input = ExternalInput { producer, channels, sample_rate: in_rate, shared };
+        let input = ExternalInput {
+            producer,
+            channels,
+            sample_rate: in_rate,
+            shared,
+        };
         (port, input)
     }
 
@@ -324,7 +336,11 @@ impl InputPort {
         }
         let dev = (p + self.integ).clamp(-MAX_DEVIATION, MAX_DEVIATION);
         let rel = 1.0 - dev;
-        if self.resampler.set_resample_ratio_relative(rel, true).is_ok() {
+        if self
+            .resampler
+            .set_resample_ratio_relative(rel, true)
+            .is_ok()
+        {
             self.shared.ratio_bits.store(rel.to_bits(), Relaxed);
         }
     }

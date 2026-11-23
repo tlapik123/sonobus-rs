@@ -38,7 +38,12 @@ fn input(n: usize, noise_all: bool) -> (Vec<f32>, Vec<f32>) {
 fn load(name: &str) -> Vec<f32> {
     let path = format!("{}/tests/data/{name}.f32", env!("CARGO_MANIFEST_DIR"));
     let bytes = std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
-    bytes.as_chunks::<4>().0.iter().map(|c| f32::from_le_bytes(*c)).collect()
+    bytes
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|c| f32::from_le_bytes(*c))
+        .collect()
 }
 
 /// Checks `got` (already decimated, channels concatenated) against `want`.
@@ -47,7 +52,10 @@ fn compare(name: &str, got: &[f32], want: &[f32]) -> f32 {
     let mut max_err = 0.0f32;
     for (i, (g, w)) in got.iter().zip(want).enumerate() {
         let err = (g - w).abs();
-        assert!(err <= TOL * w.abs().max(1.0), "{name}[{i}]: got {g}, want {w}");
+        assert!(
+            err <= TOL * w.abs().max(1.0),
+            "{name}[{i}]: got {g}, want {w}"
+        );
         max_err = max_err.max(err);
     }
     eprintln!("{name}: max abs error {max_err:e}");
@@ -55,13 +63,22 @@ fn compare(name: &str, got: &[f32], want: &[f32]) -> f32 {
 }
 
 fn decimate(l: &[f32], r: &[f32], step: usize) -> Vec<f32> {
-    l.iter().step_by(step).chain(r.iter().step_by(step)).copied().collect()
+    l.iter()
+        .step_by(step)
+        .chain(r.iter().step_by(step))
+        .copied()
+        .collect()
 }
 
 const REV_N: usize = 65536;
 const REV_DECIM: usize = 8;
 
-fn run_main(sr: u32, model: ReverbModel, noise_all: bool, mut step: impl FnMut(usize, &mut MainReverb)) -> Vec<f32> {
+fn run_main(
+    sr: u32,
+    model: ReverbModel,
+    noise_all: bool,
+    mut step: impl FnMut(usize, &mut MainReverb),
+) -> Vec<f32> {
     let (mut l, mut r) = input(REV_N, noise_all);
     let mut m = MainReverb::new(sr);
     m.set_model(model);
@@ -83,9 +100,11 @@ fn run_main(sr: u32, model: ReverbModel, noise_all: bool, mut step: impl FnMut(u
 #[test]
 fn main_reverb_models() {
     for (sr, sfx) in [(48000, "48k"), (44100, "44k")] {
-        for (model, name) in
-            [(ReverbModel::Freeverb, "freeverb"), (ReverbModel::MVerb, "mverb"), (ReverbModel::Zita, "zita")]
-        {
+        for (model, name) in [
+            (ReverbModel::Freeverb, "freeverb"),
+            (ReverbModel::MVerb, "mverb"),
+            (ReverbModel::Zita, "zita"),
+        ] {
             let name = format!("rev_{name}_{sfx}");
             let got = run_main(sr, model, false, |_, _| {});
             compare(&name, &got, &load(&name));
@@ -150,7 +169,10 @@ fn main_reverb_changes_switches_and_enable() {
         }
     }
     let silent_after = (171 * BS / REV_DECIM)..(180 * BS / REV_DECIM);
-    assert!(want[silent_after].iter().all(|x| *x == 0.0), "tail cut while disabled");
+    assert!(
+        want[silent_after].iter().all(|x| *x == 0.0),
+        "tail cut while disabled"
+    );
     compare("rev_switch_48k", &got, &want);
 }
 
@@ -175,7 +197,11 @@ fn input_reverb() {
             br.fill(0.0);
         }
     }
-    compare("inrev_48k", &decimate(&l, &r, REV_DECIM), &load("inrev_48k"));
+    compare(
+        "inrev_48k",
+        &decimate(&l, &r, REV_DECIM),
+        &load("inrev_48k"),
+    );
 }
 
 #[test]
@@ -204,7 +230,9 @@ fn monitor_delay() {
 
 /// Synthetic click (mirrors `click_sample` in the harness), as JUCE decodes 16-bit PCM.
 fn click(len: i32, mul: i32) -> Vec<f32> {
-    (0..len).map(|i| ((((i * mul) % 2000) - 1000) * (len - i) / (len / 16)) as i16 as f32 / 32768.0).collect()
+    (0..len)
+        .map(|i| ((((i * mul) % 2000) - 1000) * (len - i) / (len / 16)) as i16 as f32 / 32768.0)
+        .collect()
 }
 
 fn run_met(name: &str, sr: u32, mut step: impl FnMut(usize, &mut Metronome) -> (f64, bool)) {

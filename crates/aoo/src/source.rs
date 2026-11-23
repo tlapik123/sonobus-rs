@@ -269,7 +269,15 @@ pub struct Source {
     packet: Vec<u8>,
 }
 
-fn rings(setup: &Setup, buffersize_ms: i32) -> (Producer<f32>, Consumer<f32>, Producer<Record>, Consumer<Record>) {
+fn rings(
+    setup: &Setup,
+    buffersize_ms: i32,
+) -> (
+    Producer<f32>,
+    Consumer<f32>,
+    Producer<Record>,
+    Consumer<Record>,
+) {
     let bs = setup.blocksize.max(1) as usize;
     let frames = (buffersize_ms.max(0) as f64 * setup.samplerate as f64 * 0.001) as usize;
     let frames = frames.max(2 * bs);
@@ -463,7 +471,9 @@ impl Source {
 
     /// Move a sink to a new address (peer NAT rebinding).
     pub fn repoint_sink(&mut self, addr: SocketAddr, id: i32, new_addr: SocketAddr) -> bool {
-        self.find_sink(addr, id).map(|s| s.addr = new_addr).is_some()
+        self.find_sink(addr, id)
+            .map(|s| s.addr = new_addr)
+            .is_some()
     }
 
     pub fn poll_event(&mut self) -> Option<SourceEvent> {
@@ -621,8 +631,7 @@ impl Source {
         let Some(f) = self.format else { return };
         let nch = self.setup.nchannels as usize;
         let bs = f.blocksize as usize;
-        self.resampler
-            .setup(self.setup.blocksize as usize, bs, nch);
+        self.resampler.setup(self.setup.blocksize as usize, bs, nch);
         self.resampler
             .update(self.setup.samplerate as f64, f.samplerate as f64);
         self.block.resize(bs * nch, 0.0);
@@ -785,7 +794,8 @@ impl Source {
                 for _ in 0..self.opts.redundancy {
                     for (frame, data) in self.encoded[..total].chunks(maxframe).enumerate() {
                         for s in &self.sinks {
-                            let msg = if nframes == 1 && s.flags & PROTOCOL_FLAG_COMPACT_DATA as i32 != 0
+                            let msg = if nframes == 1
+                                && s.flags & PROTOCOL_FLAG_COMPACT_DATA as i32 != 0
                             {
                                 Message::CompactData {
                                     salt: self.salt,
@@ -941,7 +951,15 @@ mod tests {
         assert!(!a.process(&[&buf, &buf], TimeTag::from_secs(1.0)));
         assert!(collect(&mut s).is_empty());
         // a format request is queued but not answered while stopped
-        s.handle_message(addr(1), &Message::SourceFormat { src: 1, sink: 7, version: VERSION }, TimeTag(1));
+        s.handle_message(
+            addr(1),
+            &Message::SourceFormat {
+                src: 1,
+                sink: 7,
+                version: VERSION,
+            },
+            TimeTag(1),
+        );
         assert!(collect(&mut s).is_empty());
     }
 
@@ -990,7 +1008,13 @@ mod tests {
             .map(|(to, p)| (*to, std::str::from_utf8(&p[..2]).unwrap().to_owned()))
             .collect();
         assert!(kinds.contains(&(addr(2), "/d".into())));
-        assert_eq!(kinds.iter().filter(|(a, k)| *a == addr(1) && k == "/d").count(), 0);
+        assert_eq!(
+            kinds
+                .iter()
+                .filter(|(a, k)| *a == addr(1) && k == "/d")
+                .count(),
+            0
+        );
     }
 
     #[test]
@@ -1010,7 +1034,11 @@ mod tests {
             salt,
             requests: Requests::Pairs(pairs),
         };
-        s.handle_message(addr(1), &req(salt, &[(1, -1), (2, 2), (2, 9), (99, -1)]), TimeTag(1));
+        s.handle_message(
+            addr(1),
+            &req(salt, &[(1, -1), (2, 2), (2, 9), (99, -1)]),
+            TimeTag(1),
+        );
         let got: Vec<_> = collect(&mut s)
             .into_iter()
             .filter_map(|(_, p)| match parse(&p).unwrap() {
@@ -1022,7 +1050,11 @@ mod tests {
         // stale salt is ignored, unknown sink too
         s.handle_message(addr(1), &req(salt ^ 1, &[(1, -1)]), TimeTag(1));
         s.handle_message(addr(9), &req(salt, &[(1, -1)]), TimeTag(1));
-        assert!(collect(&mut s).iter().all(|(_, p)| !p.starts_with(b"/aoo/sink/7/data")));
+        assert!(
+            collect(&mut s)
+                .iter()
+                .all(|(_, p)| !p.starts_with(b"/aoo/sink/7/data"))
+        );
     }
 
     /// The block after `i32::MAX` restarts the stream with a new salt and a fresh format.
@@ -1040,7 +1072,9 @@ mod tests {
         a.process(&[&buf, &buf], TimeTag::from_secs(1.02));
         let msgs: Vec<_> = collect(&mut s).into_iter().map(|(_, p)| p).collect();
         let parsed: Vec<_> = msgs.iter().map(|p| parse(p).unwrap()).collect();
-        assert!(matches!(parsed[0], Message::CompactData { seq: i32::MAX, salt, .. } if salt == old));
+        assert!(
+            matches!(parsed[0], Message::CompactData { seq: i32::MAX, salt, .. } if salt == old)
+        );
         assert!(matches!(parsed[1], Message::SinkFormat { salt, .. } if salt != old));
         assert!(matches!(parsed[2], Message::CompactData { seq: 0, salt, .. } if salt != old));
     }
@@ -1049,19 +1083,52 @@ mod tests {
     fn invite_uninvite_ping_codecchange() {
         let (mut s, _a) = pcm_source(PcmBitDepth::Int16, 64);
         let t = TimeTag::from_secs(100.0);
-        s.handle_message(addr(1), &Message::SourceInvite { src: 1, sink: 7, flags: Some(1) }, t);
-        s.handle_message(addr(1), &Message::SourceInvite { src: 2, sink: 7, flags: Some(1) }, t);
+        s.handle_message(
+            addr(1),
+            &Message::SourceInvite {
+                src: 1,
+                sink: 7,
+                flags: Some(1),
+            },
+            t,
+        );
+        s.handle_message(
+            addr(1),
+            &Message::SourceInvite {
+                src: 2,
+                sink: 7,
+                flags: Some(1),
+            },
+            t,
+        );
         let e = s.poll_event().unwrap();
-        assert_eq!((e.addr, e.id, e.kind), (addr(1), 7, SourceEventKind::Invite { flags: 1 }));
+        assert_eq!(
+            (e.addr, e.id, e.kind),
+            (addr(1), 7, SourceEventKind::Invite { flags: 1 })
+        );
         assert!(s.poll_event().is_none());
         assert!(s.add_sink(addr(1), 7, 1));
         assert!(!s.add_sink(addr(1), 7, 1));
         // invites from listed sinks are ignored
-        s.handle_message(addr(1), &Message::SourceInvite { src: 1, sink: 7, flags: None }, t);
+        s.handle_message(
+            addr(1),
+            &Message::SourceInvite {
+                src: 1,
+                sink: 7,
+                flags: None,
+            },
+            t,
+        );
         assert!(s.poll_event().is_none());
         s.handle_message(
             addr(1),
-            &Message::SourcePing { src: 1, sink: 7, tt1: TimeTag::from_secs(99.5).0, tt2: 5, lost_blocks: 3 },
+            &Message::SourcePing {
+                src: 1,
+                sink: 7,
+                tt1: TimeTag::from_secs(99.5).0,
+                tt2: 5,
+                lost_blocks: 3,
+            },
             t,
         );
         match s.poll_event().unwrap().kind {
@@ -1090,7 +1157,10 @@ mod tests {
         match s.poll_event().unwrap().kind {
             SourceEventKind::CodecChanged { format } => {
                 // channels and samplerate stay ours, blocksize is validated
-                assert_eq!((format.nchannels, format.samplerate, format.blocksize), (2, 48000, 480));
+                assert_eq!(
+                    (format.nchannels, format.samplerate, format.blocksize),
+                    (2, 48000, 480)
+                );
             }
             k => panic!("{k:?}"),
         }
@@ -1111,8 +1181,11 @@ mod tests {
             collect(s)
                 .into_iter()
                 .filter_map(|(_, p)| match parse(&p).unwrap() {
-                    Message::CompactData { data, .. } => Some(f32::from_be_bytes(data[..4].try_into().unwrap())
-                        .max(f32::from_be_bytes(data[data.len() - 4..].try_into().unwrap()))),
+                    Message::CompactData { data, .. } => {
+                        Some(f32::from_be_bytes(data[..4].try_into().unwrap()).max(
+                            f32::from_be_bytes(data[data.len() - 4..].try_into().unwrap()),
+                        ))
+                    }
                     _ => None,
                 })
                 .collect::<Vec<_>>()

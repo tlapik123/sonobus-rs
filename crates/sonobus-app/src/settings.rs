@@ -25,7 +25,9 @@ pub const GLOBAL_STATE_FILE: &str = "GlobalState.xml";
 const RECENT_FILES_KEY: &str = "sonobusRsRecentAudioFiles";
 
 fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME").filter(|h| !h.is_empty()).map(PathBuf::from)
+    std::env::var_os("HOME")
+        .filter(|h| !h.is_empty())
+        .map(PathBuf::from)
 }
 
 /// This app's settings directory.
@@ -37,8 +39,13 @@ pub fn app_dir() -> Option<PathBuf> {
     } else if cfg!(target_os = "android") {
         None
     } else {
-        let xdg = std::env::var_os("XDG_CONFIG_HOME").filter(|x| !x.is_empty()).map(PathBuf::from);
-        Some(xdg.or_else(|| Some(home()?.join(".config")))?.join("sonobus-rs"))
+        let xdg = std::env::var_os("XDG_CONFIG_HOME")
+            .filter(|x| !x.is_empty())
+            .map(PathBuf::from);
+        Some(
+            xdg.or_else(|| Some(home()?.join(".config")))?
+                .join("sonobus-rs"),
+        )
     }
 }
 
@@ -57,7 +64,11 @@ pub fn upstream_settings_file() -> Option<PathBuf> {
 /// Upstream's default record location: `<music dir>/SonoBus` (P.cpp:733-744); on Android
 /// (no home) `None`, the caller picks a folder under the settings directory.
 pub fn default_record_dir() -> Option<PathBuf> {
-    let home = if cfg!(windows) { std::env::var_os("USERPROFILE").map(PathBuf::from) } else { home() };
+    let home = if cfg!(windows) {
+        std::env::var_os("USERPROFILE").map(PathBuf::from)
+    } else {
+        home()
+    };
     Some(home?.join("Music").join("SonoBus"))
 }
 
@@ -65,7 +76,11 @@ pub fn default_record_dir() -> Option<PathBuf> {
 /// percent-escaped).
 pub fn file_url(path: &Path) -> String {
     let p = path.to_string_lossy().replace('\\', "/");
-    let mut s = String::from(if p.starts_with('/') { "file://" } else { "file:///" });
+    let mut s = String::from(if p.starts_with('/') {
+        "file://"
+    } else {
+        "file:///"
+    });
     for b in p.bytes() {
         if b.is_ascii_alphanumeric() || b"-_.~/:".contains(&b) {
             s.push(b as char);
@@ -110,11 +125,22 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
     use std::io::Write;
     use std::sync::atomic::{AtomicU64, Ordering};
     static SEQ: AtomicU64 = AtomicU64::new(0);
-    let dir = path.parent().filter(|d| !d.as_os_str().is_empty()).unwrap_or(Path::new("."));
+    let dir = path
+        .parent()
+        .filter(|d| !d.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
     create_private_dir(dir)?;
-    let name = path.file_name().map_or("file".into(), |n| n.to_string_lossy().into_owned());
-    let nanos = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.subsec_nanos());
-    let tmp = dir.join(format!(".{name}.{}.{}{nanos}.tmp", std::process::id(), SEQ.fetch_add(1, Ordering::Relaxed)));
+    let name = path
+        .file_name()
+        .map_or("file".into(), |n| n.to_string_lossy().into_owned());
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.subsec_nanos());
+    let tmp = dir.join(format!(
+        ".{name}.{}.{}{nanos}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
     let mut o = std::fs::OpenOptions::new();
     o.write(true).create_new(true);
     #[cfg(unix)]
@@ -143,13 +169,20 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> io::Result<()> {
 pub fn keep_local(incoming: &mut AppState, local: &AppState) {
     let (e, l) = (&mut incoming.extra, &local.extra);
     e.use_udp_port = l.use_udp_port;
-    e.default_record_dir_url.clone_from(&l.default_record_dir_url);
+    e.default_record_dir_url
+        .clone_from(&l.default_record_dir_url);
     e.default_record_dir.clone_from(&l.default_record_dir);
     e.last_browse_dir.clone_from(&l.last_browse_dir);
     e.lang_override_code.clone_from(&l.lang_override_code);
-    let local_key = |k: &str| k.starts_with("OSC") || k.starts_with("Modern") || k.starts_with("sonobusRsSecure") || k == secure::IDENTITY_KEY;
+    let local_key = |k: &str| {
+        k.starts_with("OSC")
+            || k.starts_with("Modern")
+            || k.starts_with("sonobusRsSecure")
+            || k == secure::IDENTITY_KEY
+    };
     e.unknown.retain(|(k, _)| !local_key(k));
-    e.unknown.extend(l.unknown.iter().filter(|(k, _)| local_key(k)).cloned());
+    e.unknown
+        .extend(l.unknown.iter().filter(|(k, _)| local_key(k)).cloned());
     incoming.recents.clone_from(&local.recents);
 }
 
@@ -169,7 +202,12 @@ impl InstanceLock {
     /// `None`: another instance holds the directory (or the lock cannot be taken).
     pub fn acquire(dir: &Path) -> Option<InstanceLock> {
         create_private_dir(dir).ok()?;
-        let f = std::fs::OpenOptions::new().create(true).truncate(false).write(true).open(dir.join("instance.lock")).ok()?;
+        let f = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .write(true)
+            .open(dir.join("instance.lock"))
+            .ok()?;
         f.try_lock().ok()?;
         Some(InstanceLock(f))
     }
@@ -223,22 +261,39 @@ pub fn device_setup_xml(s: &DeviceSetup) -> String {
 /// Applies a stored `<DEVICESETUP>`: everything when we wrote it; from a stock file only the
 /// rate and buffer size (JUCE device names do not map to cpal devices).
 pub fn apply_device_setup_xml(xml: &str, s: &mut DeviceSetup) {
-    let Ok(e) = XmlElement::parse(xml) else { return };
-    let num = |k: &str| e.attribute(k).and_then(|v| v.trim().parse::<u32>().ok()).filter(|&v| v > 0);
+    let Ok(e) = XmlElement::parse(xml) else {
+        return;
+    };
+    let num = |k: &str| {
+        e.attribute(k)
+            .and_then(|v| v.trim().parse::<u32>().ok())
+            .filter(|&v| v > 0)
+    };
     if let Some(r) = num("audioDeviceRate") {
         s.sample_rate = r;
     }
     if let Some(b) = num("audioDeviceBufferSize") {
         s.block_size = b.clamp(16, 4096) as usize;
     }
-    let Some(enabled) = e.attribute("sonobusRsEnabled") else { return };
+    let Some(enabled) = e.attribute("sonobusRsEnabled") else {
+        return;
+    };
     s.enabled = enabled != "0";
-    s.host = e.attribute("deviceType").filter(|h| !h.is_empty()).map(str::to_owned);
+    s.host = e
+        .attribute("deviceType")
+        .filter(|h| !h.is_empty())
+        .map(str::to_owned);
     s.output = DeviceChoice::from_setting(e.attribute("sonobusRsOutput").unwrap_or_default());
     s.input = DeviceChoice::from_setting(e.attribute("sonobusRsInput").unwrap_or_default());
     s.input_channels = num("sonobusRsInputChannels").map(|c| c.min(64) as u16);
-    s.system_sound = e.attribute("sonobusRsSystemSound").filter(|v| !v.is_empty()).map(str::to_owned);
-    s.app_sound = e.attribute("sonobusRsAppSound").filter(|v| !v.is_empty()).map(str::to_owned);
+    s.system_sound = e
+        .attribute("sonobusRsSystemSound")
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned);
+    s.app_sound = e
+        .attribute("sonobusRsAppSound")
+        .filter(|v| !v.is_empty())
+        .map(str::to_owned);
     s.buffer_frames = num("sonobusRsBufferFrames");
 }
 
@@ -304,25 +359,46 @@ impl Store {
         (store, loaded)
     }
 
-    pub fn save(&mut self, state: &AppState, setup: &DeviceSetup, blocked: Vec<String>) -> io::Result<()> {
-        self.files(state, setup, blocked).into_iter().try_for_each(|(p, d)| write_atomic(&p, &d))
+    pub fn save(
+        &mut self,
+        state: &AppState,
+        setup: &DeviceSetup,
+        blocked: Vec<String>,
+    ) -> io::Result<()> {
+        self.files(state, setup, blocked)
+            .into_iter()
+            .try_for_each(|(p, d)| write_atomic(&p, &d))
     }
 
     /// What [`Self::save`] writes, for writing elsewhere (an autosave worker).
-    pub fn files(&mut self, state: &AppState, setup: &DeviceSetup, blocked: Vec<String>) -> Vec<(PathBuf, Vec<u8>)> {
+    pub fn files(
+        &mut self,
+        state: &AppState,
+        setup: &DeviceSetup,
+        blocked: Vec<String>,
+    ) -> Vec<(PathBuf, Vec<u8>)> {
         self.standalone.audio_setup = Some(device_setup_xml(setup));
         let text = files::save_settings(&mut self.props, &self.standalone, state);
         let mut out = vec![(self.dir.join(SETTINGS_FILE), text.into_bytes())];
         if blocked != self.global.blocked_addresses || !self.dir.join(GLOBAL_STATE_FILE).exists() {
             self.global.blocked_addresses = blocked;
-            out.push((self.dir.join(GLOBAL_STATE_FILE), self.global.to_xml_string().into_bytes()));
+            out.push((
+                self.dir.join(GLOBAL_STATE_FILE),
+                self.global.to_xml_string().into_bytes(),
+            ));
         }
         out
     }
 
     /// Recently loaded audio files, newest first (our key; stock has no such list).
     pub fn recent_files(&self) -> Vec<String> {
-        self.props.get(RECENT_FILES_KEY).unwrap_or_default().lines().filter(|l| !l.is_empty()).map(str::to_owned).collect()
+        self.props
+            .get(RECENT_FILES_KEY)
+            .unwrap_or_default()
+            .lines()
+            .filter(|l| !l.is_empty())
+            .map(str::to_owned)
+            .collect()
     }
 
     pub fn add_recent_file(&mut self, path: &Path) {
@@ -366,7 +442,11 @@ pub fn import_settings(path: &Path) -> io::Result<(AppState, DeviceSetup)> {
 }
 
 /// Loads a `.sonobus` setup onto `state` (and `setup` when it carries one).
-pub fn load_setup_file(path: &Path, state: &mut AppState, setup: &mut DeviceSetup) -> io::Result<()> {
+pub fn load_setup_file(
+    path: &Path,
+    state: &mut AppState,
+    setup: &mut DeviceSetup,
+) -> io::Result<()> {
     let data = read_capped(path)?;
     let (audio, err) = files::load_setup_checked(&data, state).map_err(invalid)?;
     if let Some(e) = err {
@@ -380,7 +460,10 @@ pub fn load_setup_file(path: &Path, state: &mut AppState, setup: &mut DeviceSetu
 
 /// Writes a `.sonobus` setup: without what stays on this machine ([`keep_local`]).
 pub fn save_setup_file(path: &Path, state: &AppState, setup: &DeviceSetup) -> io::Result<()> {
-    write_atomic(path, files::save_setup(&shareable(state), Some(&device_setup_xml(setup))).as_bytes())
+    write_atomic(
+        path,
+        files::save_setup(&shareable(state), Some(&device_setup_xml(setup))).as_bytes(),
+    )
 }
 
 #[cfg(test)]
@@ -388,7 +471,8 @@ mod tests {
     use super::*;
 
     fn temp_dir(name: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("sonobus-app-test-{name}-{}", std::process::id()));
+        let d =
+            std::env::temp_dir().join(format!("sonobus-app-test-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         d
     }
@@ -417,7 +501,14 @@ mod tests {
             r#"<DEVICESETUP deviceType="ALSA" audioOutputDeviceName="x" audioDeviceRate="96000" audioDeviceBufferSize="512"/>"#,
             &mut d,
         );
-        assert_eq!(d, DeviceSetup { sample_rate: 96000, block_size: 512, ..DeviceSetup::default() });
+        assert_eq!(
+            d,
+            DeviceSetup {
+                sample_rate: 96000,
+                block_size: 512,
+                ..DeviceSetup::default()
+            }
+        );
     }
 
     #[test]
@@ -429,8 +520,15 @@ mod tests {
         state.params.wet = 0.5;
         state.params.met_tempo = 133.0;
         state.extra.last_username = "Zoë".into();
-        state.extra.unknown.push(("forkKey".into(), sonobus_core::Var::String("kept".into())));
-        let setup = DeviceSetup { sample_rate: 44100, enabled: false, ..DeviceSetup::default() };
+        state
+            .extra
+            .unknown
+            .push(("forkKey".into(), sonobus_core::Var::String("kept".into())));
+        let setup = DeviceSetup {
+            sample_rate: 44100,
+            enabled: false,
+            ..DeviceSetup::default()
+        };
         store.save(&state, &setup, vec!["10.1.2.3".into()]).unwrap();
 
         let (_, l) = Store::open(dir.clone());
@@ -469,13 +567,32 @@ mod tests {
         // a drive letter path: the URL's leading slash goes on Windows only
         let u = file_url(Path::new(r"C:\Music\a.wav"));
         assert_eq!(u, "file:///C:/Music/a.wav");
-        assert_eq!(url_path(&u).unwrap(), Path::new(if cfg!(windows) { "C:/Music/a.wav" } else { "/C:/Music/a.wav" }));
+        assert_eq!(
+            url_path(&u).unwrap(),
+            Path::new(if cfg!(windows) {
+                "C:/Music/a.wav"
+            } else {
+                "/C:/Music/a.wav"
+            })
+        );
         let u = file_url(p);
         let dir = temp_dir("boards");
         let mut b = files::Soundboards::default();
-        b.boards.push(files::Soundboard { name: "Jingles".into(), samples: vec![files::SoundSample { name: "a".into(), file_url: u, ..Default::default() }] });
+        b.boards.push(files::Soundboard {
+            name: "Jingles".into(),
+            samples: vec![files::SoundSample {
+                name: "a".into(),
+                file_url: u,
+                ..Default::default()
+            }],
+        });
         save_soundboards(&dir.join(SOUNDBOARDS_FILE), &b).unwrap();
-        assert_eq!(load_soundboards(&dir.join(SOUNDBOARDS_FILE)).unwrap().boards, b.boards);
+        assert_eq!(
+            load_soundboards(&dir.join(SOUNDBOARDS_FILE))
+                .unwrap()
+                .boards,
+            b.boards
+        );
         let (mut store, _) = Store::open(dir.clone());
         store.add_recent_file(Path::new("/a.wav"));
         store.add_recent_file(Path::new("/b.wav"));
@@ -506,35 +623,66 @@ mod tests {
         mine.extra.use_udp_port = 12000;
         mine.extra.lang_override_code = "de".into();
         mine.extra.default_record_dir_url = "file:///home/zoe/rec".into();
-        mine.extra.unknown.push(("OSCTargetIPAddress".into(), sonobus_core::Var::String("10.9.9.9".into())));
-        mine.extra.unknown.push(("OSCEnabled".into(), sonobus_core::Var::Bool(true)));
-        mine.extra.unknown.push(("forkKey".into(), sonobus_core::Var::Bool(true)));
-        mine.extra.unknown.push(("ModernPeerNames".into(), sonobus_core::Var::String("ab12\u{1f}bob".into())));
+        mine.extra.unknown.push((
+            "OSCTargetIPAddress".into(),
+            sonobus_core::Var::String("10.9.9.9".into()),
+        ));
+        mine.extra
+            .unknown
+            .push(("OSCEnabled".into(), sonobus_core::Var::Bool(true)));
+        mine.extra
+            .unknown
+            .push(("forkKey".into(), sonobus_core::Var::Bool(true)));
+        mine.extra.unknown.push((
+            "ModernPeerNames".into(),
+            sonobus_core::Var::String("ab12\u{1f}bob".into()),
+        ));
         mine.recents.push(Default::default());
         let f = dir.join("shared.sonobus");
         save_setup_file(&f, &mine, &DeviceSetup::default()).unwrap();
         let text = std::fs::read_to_string(&f).unwrap();
-        assert!(!text.contains("10.9.9.9") && !text.contains("OSCEnabled") && !text.contains("12000"), "{text}");
+        assert!(
+            !text.contains("10.9.9.9") && !text.contains("OSCEnabled") && !text.contains("12000"),
+            "{text}"
+        );
         assert!(!text.contains("home/zoe/rec"));
-        assert!(!text.contains("ModernPeerNames") && !text.contains("ab12"), "who we met stays here");
+        assert!(
+            !text.contains("ModernPeerNames") && !text.contains("ab12"),
+            "who we met stays here"
+        );
         // loading someone's file keeps ours: their OSC, port, folder, language never apply
         let mut theirs = AppState::new(false);
         theirs.params.wet = 0.25;
         theirs.extra.last_username = "mallory".into();
         theirs.extra.use_udp_port = 1;
         theirs.extra.lang_override_code = "ja".into();
-        theirs.extra.unknown.push(("OSCEnabled".into(), sonobus_core::Var::Bool(true)));
-        theirs.extra.unknown.push(("OSCAllowNetwork".into(), sonobus_core::Var::Bool(true)));
+        theirs
+            .extra
+            .unknown
+            .push(("OSCEnabled".into(), sonobus_core::Var::Bool(true)));
+        theirs
+            .extra
+            .unknown
+            .push(("OSCAllowNetwork".into(), sonobus_core::Var::Bool(true)));
         let raw = dir.join("theirs.sonobus");
         write_atomic(&raw, files::save_setup(&theirs, None).as_bytes()).unwrap();
         let mut st = mine.clone();
         let mut su = DeviceSetup::default();
         load_setup_file(&raw, &mut st, &mut su).unwrap();
         keep_local(&mut st, &mine);
-        assert_eq!((st.params.wet, st.extra.last_username.as_str()), (0.25, "mallory"));
-        assert_eq!((st.extra.use_udp_port, st.extra.lang_override_code.as_str()), (12000, "de"));
+        assert_eq!(
+            (st.params.wet, st.extra.last_username.as_str()),
+            (0.25, "mallory")
+        );
+        assert_eq!(
+            (st.extra.use_udp_port, st.extra.lang_override_code.as_str()),
+            (12000, "de")
+        );
         assert!(!st.extra.unknown.iter().any(|(k, _)| k == "OSCAllowNetwork"));
-        assert!(st.extra.unknown.contains(&("OSCTargetIPAddress".into(), sonobus_core::Var::String("10.9.9.9".into()))));
+        assert!(st.extra.unknown.contains(&(
+            "OSCTargetIPAddress".into(),
+            sonobus_core::Var::String("10.9.9.9".into())
+        )));
         assert_eq!(st.recents.len(), 1);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -546,18 +694,32 @@ mod tests {
         std::fs::write(dir.join("X.tmp"), b"mine").unwrap();
         write_atomic(&dir.join("X.sonobus"), b"one").unwrap();
         write_atomic(&dir.join("X.sonobus"), b"two").unwrap();
-        assert_eq!(std::fs::read(dir.join("X.tmp")).unwrap(), b"mine", "a user's X.tmp survives");
+        assert_eq!(
+            std::fs::read(dir.join("X.tmp")).unwrap(),
+            b"mine",
+            "a user's X.tmp survives"
+        );
         assert_eq!(std::fs::read(dir.join("X.sonobus")).unwrap(), b"two");
-        let left: Vec<_> = std::fs::read_dir(&dir).unwrap().flatten().map(|e| e.file_name()).collect();
+        let left: Vec<_> = std::fs::read_dir(&dir)
+            .unwrap()
+            .flatten()
+            .map(|e| e.file_name())
+            .collect();
         assert_eq!(left.len(), 2, "no temporary files left: {left:?}");
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
-            let mode = std::fs::metadata(dir.join("X.sonobus")).unwrap().permissions().mode();
+            let mode = std::fs::metadata(dir.join("X.sonobus"))
+                .unwrap()
+                .permissions()
+                .mode();
             assert_eq!(mode & 0o777, 0o600);
             let sub = dir.join("new/inner");
             create_private_dir(&sub).unwrap();
-            assert_eq!(std::fs::metadata(&sub).unwrap().permissions().mode() & 0o777, 0o700);
+            assert_eq!(
+                std::fs::metadata(&sub).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
         }
         // the instance lock: one holder at a time, free again when dropped
         let a = InstanceLock::acquire(&dir).expect("first");

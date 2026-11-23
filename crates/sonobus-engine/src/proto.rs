@@ -287,10 +287,7 @@ pub(crate) fn commit_cache_of(h: &mut Host, p: &PeerCore) {
         p.format_index as i32,
     );
     h.model.commit_cache(p.slot, net);
-    if let Some(m) = h.model.peers[p.slot]
-        .as_ref()
-        .filter(|m| !m.key.is_empty())
-    {
+    if let Some(m) = h.model.peers[p.slot].as_ref().filter(|m| !m.key.is_empty()) {
         let solo = PeerSolo {
             soloed: m.params.soloed,
             groups: m.params.group_solo.clone(),
@@ -302,7 +299,8 @@ pub(crate) fn commit_cache_of(h: &mut Host, p: &PeerCore) {
 
 /// A known peer's remembered solo flags (by its cache key), if "Remember Peer Solo" is on.
 pub(crate) fn restore_solo(h: &mut Host, slot: usize, user: &str) {
-    if user.is_empty() || !options::get_bool(&h.model.state.extra, options::REMEMBER_PEER_SOLO, true)
+    if user.is_empty()
+        || !options::get_bool(&h.model.state.extra, options::REMEMBER_PEER_SOLO, true)
     {
         return;
     }
@@ -569,7 +567,10 @@ pub(crate) trait Proto {
 
     fn set_jitter_mode(&mut self, h: &mut Host, i: usize, mode: JitterMode) {
         let now = h.now_ms();
-        let _ = self.peer_mut(i).jitter.set_mode(mode, now, h.cfg.block_ms());
+        let _ = self
+            .peer_mut(i)
+            .jitter
+            .set_mode(mode, now, h.cfg.block_ms());
         self.apply_buffer(h, i);
     }
 
@@ -626,7 +627,11 @@ pub(crate) trait Proto {
     }
 
     /// [`Self::send_chat`] to the peers `to` selects (by table index).
-    fn send_chat_where(&mut self, msg: &ChatMessage, to: &dyn Fn(usize) -> bool) -> Result<(), String> {
+    fn send_chat_where(
+        &mut self,
+        msg: &ChatMessage,
+        to: &dyn Fn(usize) -> bool,
+    ) -> Result<(), String> {
         let m = SbMessage::Chat {
             group: &msg.group,
             from: &msg.from,
@@ -1147,19 +1152,32 @@ mod tests {
         };
         feed(&mut s, &mut h, 0, &chat);
         assert_eq!(s.c.chat.back().unwrap().from, "bob");
-        feed(&mut s, &mut h, 0, &SbMessage::SuggestLatency {
-            from: "alice",
-            latency_ms: f32::INFINITY,
-        });
-        feed(&mut s, &mut h, 0, &SbMessage::SuggestLatency {
-            from: "alice",
-            latency_ms: 1e9,
-        });
+        feed(
+            &mut s,
+            &mut h,
+            0,
+            &SbMessage::SuggestLatency {
+                from: "alice",
+                latency_ms: f32::INFINITY,
+            },
+        );
+        feed(
+            &mut s,
+            &mut h,
+            0,
+            &SbMessage::SuggestLatency {
+                from: "alice",
+                latency_ms: 1e9,
+            },
+        );
         let notes: Vec<_> = h.notes.drain(..).collect();
-        assert_eq!(notes, [Notification::LatencyMatchRequested {
-            from: "bob".into(),
-            latency_ms: jitter::MAX_PEER_LATENCY_MS,
-        }]);
+        assert_eq!(
+            notes,
+            [Notification::LatencyMatchRequested {
+                from: "bob".into(),
+                latency_ms: jitter::MAX_PEER_LATENCY_MS,
+            }]
+        );
         // a peer without a connection name (legacy direct connection): the body's cleaned
         // name, else its address; blocked notices name the sending peer the same way
         let p = PeerCore::add(&mut h, 1, "", "g", "direct").unwrap();
@@ -1176,21 +1194,33 @@ mod tests {
         assert_eq!(s.c.chat.back().unwrap().from, "carol");
         feed(&mut s, &mut h, 1, &chat(""));
         assert_eq!(s.c.chat.back().unwrap().from, "0.0.0.0:0");
-        feed(&mut s, &mut h, 0, &SbMessage::BlockedInfo {
-            from: "mallory",
-            blocked: true,
-        });
-        assert!(crate::tests::events(&mut h).contains(&Event::BlockedByPeer {
-            id: s.peers[0].id,
-            user: "bob".into(),
-            blocked: true,
-        }));
+        feed(
+            &mut s,
+            &mut h,
+            0,
+            &SbMessage::BlockedInfo {
+                from: "mallory",
+                blocked: true,
+            },
+        );
+        assert!(
+            crate::tests::events(&mut h).contains(&Event::BlockedByPeer {
+                id: s.peers[0].id,
+                user: "bob".into(),
+                blocked: true,
+            })
+        );
         // an unrequested latency table is ignored
-        feed(&mut s, &mut h, 0, &SbMessage::LatInfo(vec![LatEntry {
-            src_name: "x".into(),
-            dest_name: "y".into(),
-            latency_ms: 5.0,
-        }]));
+        feed(
+            &mut s,
+            &mut h,
+            0,
+            &SbMessage::LatInfo(vec![LatEntry {
+                src_name: "x".into(),
+                dest_name: "y".into(),
+                latency_ms: 5.0,
+            }]),
+        );
         assert!(s.c.lat_info.is_empty());
     }
 }

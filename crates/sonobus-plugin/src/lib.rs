@@ -17,8 +17,8 @@ pub mod params;
 pub mod session;
 
 use std::num::NonZeroU32;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -39,10 +39,19 @@ const MAX_PEER_OUTPUTS: usize = 2 * AUX_BUSES;
 /// editor is closed).
 const PARAM_POLL: Duration = Duration::from_millis(10);
 
-const AUX_IN_NAMES: [&str; AUX_BUSES] =
-    ["Aux 1 In", "Aux 2 In", "Aux 3 In", "Aux 4 In", "Aux 5 In", "Aux 6 In", "Aux 7 In", "Aux 8 In"];
-const AUX_OUT_NAMES: [&str; AUX_BUSES] =
-    ["Aux 1 Out", "Aux 2 Out", "Aux 3 Out", "Aux 4 Out", "Aux 5 Out", "Aux 6 Out", "Aux 7 Out", "Aux 8 Out"];
+const AUX_IN_NAMES: [&str; AUX_BUSES] = [
+    "Aux 1 In", "Aux 2 In", "Aux 3 In", "Aux 4 In", "Aux 5 In", "Aux 6 In", "Aux 7 In", "Aux 8 In",
+];
+const AUX_OUT_NAMES: [&str; AUX_BUSES] = [
+    "Aux 1 Out",
+    "Aux 2 Out",
+    "Aux 3 Out",
+    "Aux 4 Out",
+    "Aux 5 Out",
+    "Aux 6 Out",
+    "Aux 7 Out",
+    "Aux 8 Out",
+];
 
 const NAMES: PortNames = PortNames {
     layout: None,
@@ -84,7 +93,12 @@ impl SonoBus {
                 move || sync_params(&params, &session, &stop)
             })
             .expect("spawn parameter thread");
-        SonoBus { params, session, rt: None, sync: Some((stop, handle)) }
+        SonoBus {
+            params,
+            session,
+            rt: None,
+            sync: Some((stop, handle)),
+        }
     }
 
     pub fn session(&self) -> &Arc<Session> {
@@ -103,7 +117,9 @@ impl SonoBus {
 fn sync_params(params: &std::sync::Weak<SbParams>, session: &Session, stop: &AtomicBool) {
     let mut last = None;
     while !stop.load(Ordering::Acquire) {
-        let Some(params) = params.upgrade() else { return };
+        let Some(params) = params.upgrade() else {
+            return;
+        };
         if session.take_resync() {
             // after a state load: metronome and monitor solo start off (P.cpp:8778-8786)
             let mut p = params.to_core();
@@ -199,7 +215,11 @@ impl Plugin for SonoBus {
     ) -> bool {
         let ch = |c: Option<NonZeroU32>| c.map_or(0, |c| c.get() as usize);
         let main_inputs = ch(layout.main_input_channels);
-        let aux_inputs: usize = layout.aux_input_ports.iter().map(|c| c.get() as usize).sum();
+        let aux_inputs: usize = layout
+            .aux_input_ports
+            .iter()
+            .map(|c| c.get() as usize)
+            .sum();
         let peer_outputs = layout.aux_output_ports.len();
         let cfg = AudioConfig {
             sample_rate: buffer_config.sample_rate.round() as u32,
@@ -208,7 +228,11 @@ impl Plugin for SonoBus {
             output_channels: ch(layout.main_output_channels),
         };
         // hosts may activate again with the same configuration (e.g. after a state load)
-        if self.rt.as_ref().is_some_and(|r| r.cfg == cfg && r.peer_outputs == peer_outputs) {
+        if self
+            .rt
+            .as_ref()
+            .is_some_and(|r| r.cfg == cfg && r.peer_outputs == peer_outputs)
+        {
             return true;
         }
         self.rt = None;
@@ -216,7 +240,13 @@ impl Plugin for SonoBus {
             Ok(mut audio) => {
                 audio.set_peer_outputs(peer_outputs, 2);
                 let inputs = vec![vec![0.0; cfg.block_size]; cfg.input_channels];
-                self.rt = Some(Rt { audio, cfg, peer_outputs, main_inputs, inputs });
+                self.rt = Some(Rt {
+                    audio,
+                    cfg,
+                    peer_outputs,
+                    main_inputs,
+                    inputs,
+                });
                 true
             }
             Err(e) => {
@@ -256,7 +286,11 @@ impl Plugin for SonoBus {
         let sources = main[..rt.main_inputs.min(main.len())]
             .iter()
             .map(|c| &**c)
-            .chain(aux.inputs.iter_mut().flat_map(|b| b.as_slice().iter().map(|c| &**c)));
+            .chain(
+                aux.inputs
+                    .iter_mut()
+                    .flat_map(|b| b.as_slice().iter().map(|c| &**c)),
+            );
         for (dst, src) in rt.inputs.iter_mut().zip(sources) {
             dst[..n].copy_from_slice(&src[..n]);
         }
@@ -265,10 +299,18 @@ impl Plugin for SonoBus {
         let mut it = main.iter_mut().map(|c| &mut c[..n]);
         let mut outs: [&mut [f32]; 2] = std::array::from_fn(|_| it.next().unwrap_or(&mut []));
         let n_out = rt.cfg.output_channels.min(2);
-        let mut it = aux.outputs.iter_mut().flat_map(|b| b.as_slice().iter_mut().map(|c| &mut c[..n]));
-        let mut peers: [&mut [f32]; MAX_PEER_OUTPUTS] = std::array::from_fn(|_| it.next().unwrap_or(&mut []));
+        let mut it = aux
+            .outputs
+            .iter_mut()
+            .flat_map(|b| b.as_slice().iter_mut().map(|c| &mut c[..n]));
+        let mut peers: [&mut [f32]; MAX_PEER_OUTPUTS] =
+            std::array::from_fn(|_| it.next().unwrap_or(&mut []));
         let np = (2 * rt.peer_outputs).min(MAX_PEER_OUTPUTS);
-        rt.audio.process_with_peer_outputs(&ins[..rt.inputs.len()], &mut outs[..n_out], &mut peers[..np]);
+        rt.audio.process_with_peer_outputs(
+            &ins[..rt.inputs.len()],
+            &mut outs[..n_out],
+            &mut peers[..np],
+        );
         ProcessStatus::Normal
     }
 }
@@ -279,7 +321,11 @@ impl ClapPlugin for SonoBus {
     const CLAP_DESCRIPTION: Option<&'static str> = Some("SonoBus network audio (Rust port)");
     const CLAP_MANUAL_URL: Option<&'static str> = None;
     const CLAP_SUPPORT_URL: Option<&'static str> = None;
-    const CLAP_FEATURES: &'static [ClapFeature] = &[ClapFeature::AudioEffect, ClapFeature::Stereo, ClapFeature::Utility];
+    const CLAP_FEATURES: &'static [ClapFeature] = &[
+        ClapFeature::AudioEffect,
+        ClapFeature::Stereo,
+        ClapFeature::Utility,
+    ];
 }
 
 impl Vst3Plugin for SonoBus {
@@ -287,9 +333,11 @@ impl Vst3Plugin for SonoBus {
     // instrument variant `IBus`) has JUCE's component UID
     // ABCDEF01-9182FAEB-536F6E6F-4E427573 ('Sono' 'NBus'); never reuse it, so both can be
     // installed side by side.
-    const VST3_CLASS_ID: [u8; 16] = *b"\x2b\x1d\x5f\xd3\xc0\xe5\x54\xfb\x5b\x92\x4a\x2b\x69\xd9\xf6\x0d";
+    const VST3_CLASS_ID: [u8; 16] =
+        *b"\x2b\x1d\x5f\xd3\xc0\xe5\x54\xfb\x5b\x92\x4a\x2b\x69\xd9\xf6\x0d";
     // upstream: "Fx|Network"
-    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] = &[Vst3SubCategory::Fx, Vst3SubCategory::Network];
+    const VST3_SUBCATEGORIES: &'static [Vst3SubCategory] =
+        &[Vst3SubCategory::Fx, Vst3SubCategory::Network];
 }
 
 nice_export_clap!(SonoBus);

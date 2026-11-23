@@ -28,13 +28,19 @@ fn instance(lang: &str) -> Host {
     let dir = tmp_dir(&format!("editor-{lang}"));
     let mut st = sonobus_core::state::AppState::new(true);
     st.extra.lang_override_code = lang.into();
-    std::fs::write(dir.join(sonobus_plugin::session::PLUGIN_DEFAULT_FILE), sonobus_core::files::save_plugin_default(&st)).unwrap();
+    std::fs::write(
+        dir.join(sonobus_plugin::session::PLUGIN_DEFAULT_FILE),
+        sonobus_core::files::save_plugin_default(&st),
+    )
+    .unwrap();
     let mut h = Host::with_dir(440.0, Some(dir));
     // a project's language does not apply
     let mut theirs = h.plugin.session().state();
     theirs.extra.lang_override_code = "ja".into();
     let mut bytes = Vec::new();
-    theirs.to_tree_scoped(sonobus_core::state::Scope::FULL).write(&mut bytes);
+    theirs
+        .to_tree_scoped(sonobus_core::state::Scope::FULL)
+        .write(&mut bytes);
     h.plugin.session().load_state_bytes(&bytes).unwrap();
     assert_eq!(h.plugin.session().state().extra.lang_override_code, lang);
     assert!(h.activate(SR, BLOCK as u32, 0));
@@ -64,11 +70,18 @@ fn two_instances_in_two_languages_and_reopening() {
     drop(ea);
     let mut ea = editor(sa.clone());
     ea.run();
-    assert_eq!(sa.with_app(|app| (app.page, app.chat_text.clone())), Some((Page::Chat, "draft".into())));
+    assert_eq!(
+        sa.with_app(|app| (app.page, app.chat_text.clone())),
+        Some((Page::Chat, "draft".into()))
+    );
     sa.with_app(|app| app.open_page(Page::Main));
     ea.run();
-    ea.get_by_label("Alle Eingangssignale stumm schalten").click_accesskit();
+    ea.get_by_label("Alle Eingangssignale stumm schalten")
+        .click_accesskit();
     ea.run();
     assert!(sa.state().params.main_in_mute, "UI edit reached the engine");
-    assert!(a.plugin.sb_params().main_in_mute.value(), "and the host parameter");
+    assert!(
+        a.plugin.sb_params().main_in_mute.value(),
+        "and the host parameter"
+    );
 }

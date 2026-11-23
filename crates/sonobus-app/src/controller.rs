@@ -25,16 +25,24 @@ use std::sync::mpsc::{Receiver, Sender, channel};
 use std::time::{Duration, Instant};
 
 use sonobus_core::state::{AppState, ChannelGroup, Params, ServerConnectionInfo};
-use sonobus_engine::modern::{DiscoveredSession, HostOptions, LanScope, NetOptions, PeerAddr, RelayChoice, SessionEvent, SessionMode, SessionRole, SessionStatus};
+use sonobus_engine::modern::{
+    DiscoveredSession, HostOptions, LanScope, NetOptions, PeerAddr, RelayChoice, SessionEvent,
+    SessionMode, SessionRole, SessionStatus,
+};
 use sonobus_engine::{
-    ChatMessage, Connection, Engine, EngineConfig, Event, FileStatus, GroupJoin, LatEntry, LocalTime, MeterLevels,
-    Notification, PeerId, RecordingStatus, Snapshot, Soundboards, SuggestGroup, VoiceStatus,
+    ChatMessage, Connection, Engine, EngineConfig, Event, FileStatus, GroupJoin, LatEntry,
+    LocalTime, MeterLevels, Notification, PeerId, RecordingStatus, Snapshot, Soundboards,
+    SuggestGroup, VoiceStatus,
 };
 
-use crate::audio::{AudioManager, AudioStatus, DeviceSetup, ExternalSlot, ExternalSpec, SYSTEM_SOUND_CHANNELS};
+use crate::audio::{
+    AudioManager, AudioStatus, DeviceSetup, ExternalSlot, ExternalSpec, SYSTEM_SOUND_CHANNELS,
+};
 use crate::links::{self, DEFAULT_SERVER_HOST, Link};
 use crate::osc_control::{self, Osc, OscConfig, OscStatus};
-use crate::secure::{self, HostForm, How, InvitePreview, JoinMethod, NetPlace, SecurePrefs, SecureRecent};
+use crate::secure::{
+    self, HostForm, How, InvitePreview, JoinMethod, NetPlace, SecurePrefs, SecureRecent,
+};
 use crate::settings::{self, Store};
 use crate::tr;
 
@@ -293,7 +301,9 @@ fn default_user(state: &AppState) -> String {
     if !state.extra.last_username.is_empty() {
         return state.extra.last_username.clone();
     }
-    std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "sonobus-user".into())
+    std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_else(|_| "sonobus-user".into())
 }
 
 /// IPv4 LAN addresses of this device for "host a session": the primary one (the route to a
@@ -316,7 +326,9 @@ pub fn lan_addresses() -> Vec<IpAddr> {
 
 /// Local wall-clock time for recording names, as upstream.
 pub fn now_time() -> LocalTime {
-    let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_or(0, |d| d.as_secs());
+    let secs = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |d| d.as_secs());
     local_time(secs)
 }
 
@@ -327,7 +339,9 @@ pub fn local_time(secs: u64) -> LocalTime {
         // POSIX; not in the libc crate
         fn tzset();
     }
-    let Ok(t) = libc::time_t::try_from(secs) else { return utc_time(secs) };
+    let Ok(t) = libc::time_t::try_from(secs) else {
+        return utc_time(secs);
+    };
     // SAFETY: tzset only reads the environment; localtime_r writes only `tm`, which is a
     // plain C struct for which all-zero is a valid value.
     let mut tm: libc::tm = unsafe { std::mem::zeroed() };
@@ -369,7 +383,14 @@ pub fn local_time(secs: u64) -> LocalTime {
     if unsafe { SystemTimeToTzSpecificLocalTime(std::ptr::null(), &utc, &mut l) } == 0 {
         return u;
     }
-    LocalTime { year: l.wYear, month: l.wMonth as u8, day: l.wDay as u8, hour: l.wHour as u8, minute: l.wMinute as u8, second: l.wSecond as u8 }
+    LocalTime {
+        year: l.wYear,
+        month: l.wMonth as u8,
+        day: l.wDay as u8,
+        hour: l.wHour as u8,
+        minute: l.wMinute as u8,
+        second: l.wSecond as u8,
+    }
 }
 
 #[cfg(not(any(unix, windows)))]
@@ -404,7 +425,9 @@ pub fn utc_time(secs: u64) -> LocalTime {
 fn source_starts(s: &DeviceSetup) -> (Option<i32>, Option<i32>) {
     let dev = i32::from(s.device_input_channels());
     let sys = s.shares_sound().then_some(dev);
-    let ext = s.external.map(|_| dev + sys.map_or(0, |_| i32::from(SYSTEM_SOUND_CHANNELS)));
+    let ext = s
+        .external
+        .map(|_| dev + sys.map_or(0, |_| i32::from(SYSTEM_SOUND_CHANNELS)));
     (sys, ext)
 }
 
@@ -415,13 +438,26 @@ fn source_starts(s: &DeviceSetup) -> (Option<i32>, Option<i32>) {
 /// limiter, not monitored: the device already plays it), and a device that comes back gets
 /// a group again. Without this, a mic opening fewer channels than before, or no mic at all,
 /// left the capture inside the mic's group. Returns true when a source group was added.
-pub fn fit_input_groups(groups: &mut Vec<ChannelGroup>, old: &DeviceSetup, new: &DeviceSetup) -> bool {
-    let (od, nd) = (i32::from(old.device_input_channels()), i32::from(new.device_input_channels()));
+pub fn fit_input_groups(
+    groups: &mut Vec<ChannelGroup>,
+    old: &DeviceSetup,
+    new: &DeviceSetup,
+) -> bool {
+    let (od, nd) = (
+        i32::from(old.device_input_channels()),
+        i32::from(new.device_input_channels()),
+    );
     let ((old_sys, old_ext), (new_sys, new_ext)) = (source_starts(old), source_starts(new));
     let ext_ch = new.external.map_or(0, |e| i32::from(e.channels));
-    let source_ranges = [new_sys.map(|s| (s, i32::from(SYSTEM_SOUND_CHANNELS))), new_ext.map(|s| (s, ext_ch))];
+    let source_ranges = [
+        new_sys.map(|s| (s, i32::from(SYSTEM_SOUND_CHANNELS))),
+        new_ext.map(|s| (s, ext_ch)),
+    ];
     let on_source = |g: &ChannelGroup| {
-        source_ranges.iter().flatten().any(|&(s, n)| g.chan_start < s + n && s < g.chan_start + g.num_channels)
+        source_ranges
+            .iter()
+            .flatten()
+            .any(|&(s, n)| g.chan_start < s + n && s < g.chan_start + g.num_channels)
     };
     let mut keep = Vec::with_capacity(groups.len());
     for mut g in groups.drain(..) {
@@ -452,7 +488,10 @@ pub fn fit_input_groups(groups: &mut Vec<ChannelGroup>, old: &DeviceSetup, new: 
         groups.insert(0, g);
     }
     let mut added = false;
-    let sources = [(new_sys, SYSTEM_SOUND_CHANNELS), (new_ext, new.external.map_or(0, |e| e.channels))];
+    let sources = [
+        (new_sys, SYSTEM_SOUND_CHANNELS),
+        (new_ext, new.external.map_or(0, |e| e.channels)),
+    ];
     for (start, n) in sources {
         let Some(start) = start else { continue };
         if n > 0 && !groups.iter().any(|g| g.chan_start == start) {
@@ -497,7 +536,10 @@ pub fn recording_main_file(files: &[PathBuf]) -> Option<&PathBuf> {
     if files.len() == 1 {
         return files.first();
     }
-    files.iter().find(|f| f.file_stem().is_some_and(|s| s.to_string_lossy().ends_with("-MIX")))
+    files.iter().find(|f| {
+        f.file_stem()
+            .is_some_and(|s| s.to_string_lossy().ends_with("-MIX"))
+    })
 }
 
 const CHAT_LINES: usize = 500;
@@ -519,7 +561,6 @@ fn clean_snapshot(s: &mut Snapshot) {
     }
 }
 
-
 const SENTINEL: &str = "SENTINEL";
 
 /// Crash sentinel (SonoStandaloneFilterApp.cpp:147-177): a `SENTINEL` left from the last launch
@@ -529,7 +570,10 @@ fn crash_sentinel(dir: &Path) -> bool {
     let sentinel = dir.join(SENTINEL);
     if sentinel.exists() {
         let t = now_time();
-        let name = format!("POSSIBLY_BAD_{:04}-{:02}-{:02}_{:02}.{:02}.{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second);
+        let name = format!(
+            "POSSIBLY_BAD_{:04}-{:02}-{:02}_{:02}.{:02}.{:02}",
+            t.year, t.month, t.day, t.hour, t.minute, t.second
+        );
         let _ = std::fs::rename(dir.join(settings::SETTINGS_FILE), dir.join(name));
         return true;
     }
@@ -599,7 +643,10 @@ impl AppController {
     pub fn new(cfg: ControllerConfig) -> io::Result<Self> {
         // one instance writes a settings directory; a second one reads it and saves nothing
         // (its crash sentinel would move the first one's settings aside)
-        let lock = cfg.settings_dir.as_deref().and_then(settings::InstanceLock::acquire);
+        let lock = cfg
+            .settings_dir
+            .as_deref()
+            .and_then(settings::InstanceLock::acquire);
         let read_only = cfg.settings_dir.is_some() && lock.is_none();
         let crashed = !read_only && cfg.settings_dir.as_deref().is_some_and(crash_sentinel);
         let (store, loaded) = match cfg.settings_dir.clone() {
@@ -611,7 +658,12 @@ impl AppController {
         };
         let (state, mut setup, blocked, warnings) = match loaded {
             Some(l) => (l.state, l.setup, l.blocked, l.warnings),
-            None => (AppState::new(false), DeviceSetup::default(), Vec::new(), Vec::new()),
+            None => (
+                AppState::new(false),
+                DeviceSetup::default(),
+                Vec::new(),
+                Vec::new(),
+            ),
         };
         if !cfg.use_devices {
             setup.enabled = false;
@@ -650,13 +702,20 @@ impl AppController {
         let _lang = crate::i18n::scope(c.lang);
         c.vm.settings_read_only = read_only;
         if read_only {
-            c.set_status(tr("Another SonoBus is using these settings: changes made here are not saved."), true);
+            c.set_status(
+                tr("Another SonoBus is using these settings: changes made here are not saved."),
+                true,
+            );
         }
         if crashed {
-            c.set_status(tr("Looks like you crashed on launch last time, restoring default settings!"), true);
+            c.set_status(
+                tr("Looks like you crashed on launch last time, restoring default settings!"),
+                true,
+            );
         }
         if let Some(st) = &c.store {
-            (c.vm.recent_setups, c.vm.recent_files) = (st.standalone.recent_setup_files.clone(), st.recent_files());
+            (c.vm.recent_setups, c.vm.recent_files) =
+                (st.standalone.recent_setup_files.clone(), st.recent_files());
             c.vm.secure_prefs = SecurePrefs::load(&st.props);
             // a second instance gets a session identity of its own (not the first one's)
             c.identity = secure::load_identity(&st.props).filter(|_| !read_only);
@@ -670,7 +729,10 @@ impl AppController {
         }
         c.start_engine(state)?;
         c.engine().set_blocked_addresses(blocked);
-        if c.identity.is_none() && !read_only && let Some(st) = &mut c.store {
+        if c.identity.is_none()
+            && !read_only
+            && let Some(st) = &mut c.store
+        {
             // first start: keep the identity the engine made (invite links name it)
             let id = c.engine.as_deref().expect("engine running").identity_key();
             secure::store_identity(&mut st.props, &id);
@@ -732,7 +794,8 @@ impl AppController {
     fn started(&mut self) {
         self.refresh_state();
         // the fork's editor sends the full state on start whenever OSC is enabled
-        self.osc.configure(OscConfig::load(&self.vm.state.extra), true);
+        self.osc
+            .configure(OscConfig::load(&self.vm.state.extra), true);
         self.vm.osc = self.osc.status();
         if self.vm.state.params.reconnect_last
             && let Some(r) = self.vm.state.recents.first()
@@ -774,7 +837,11 @@ impl AppController {
             state.input_groups.push(g);
         }
         self.engine_inputs = audio.input_channels;
-        let (engine, rt) = Engine::new(EngineConfig { audio, udp_port: port, state })?;
+        let (engine, rt) = Engine::new(EngineConfig {
+            audio,
+            udp_port: port,
+            state,
+        })?;
         engine.set_soundboards(self.vm.soundboards.clone());
         if let Some(id) = self.identity {
             engine.set_identity_key(id);
@@ -824,9 +891,14 @@ impl AppController {
     /// load).
     pub fn refresh_state(&mut self) {
         self.vm.state = self.engine().state();
-        let solo = sonobus_engine::options::get_string(&self.vm.state.extra, sonobus_engine::options::INPUT_SOLO_STATES);
+        let solo = sonobus_engine::options::get_string(
+            &self.vm.state.extra,
+            sonobus_engine::options::INPUT_SOLO_STATES,
+        );
         self.vm.input_solo = sonobus_engine::options::flags_from_str(&solo);
-        self.vm.input_solo.resize(self.vm.state.input_groups.len(), false);
+        self.vm
+            .input_solo
+            .resize(self.vm.state.input_groups.len(), false);
     }
 
     // ---- ticking ------------------------------------------------------------------------------
@@ -841,16 +913,29 @@ impl AppController {
                     self.vm.connecting = false;
                     self.set_status(format!("{}{e}", tr("Connect failed: ")), true);
                 }
-                Job::Direct(Ok(addr)) => self.set_status(format!("{} {addr}", tr("Connecting...")), false),
-                Job::Direct(Err(e)) => self.set_status(format!("{}{e}", tr("Connect failed: ")), true),
-                Job::RecordFailed(dir, e) => {
-                    self.set_status(format!("{} {}: {e}", tr("Error creating writer for "), dir.display()), true)
+                Job::Direct(Ok(addr)) => {
+                    self.set_status(format!("{} {addr}", tr("Connecting...")), false)
                 }
+                Job::Direct(Err(e)) => {
+                    self.set_status(format!("{}{e}", tr("Connect failed: ")), true)
+                }
+                Job::RecordFailed(dir, e) => self.set_status(
+                    format!(
+                        "{} {}: {e}",
+                        tr("Error creating writer for "),
+                        dir.display()
+                    ),
+                    true,
+                ),
                 Job::Secure(g, res) if g == self.secure_gen => {
                     self.vm.secure_starting = false;
                     if let Err(e) = res {
-                        (self.secure_start, self.pending_recent, self.remember_invite) = (None, None, None);
-                        self.set_status(format!("{}: {e}", tr("Could not start the secure session")), true);
+                        (self.secure_start, self.pending_recent, self.remember_invite) =
+                            (None, None, None);
+                        self.set_status(
+                            format!("{}: {e}", tr("Could not start the secure session")),
+                            true,
+                        );
                     }
                 }
                 Job::Secure(..) => {} // an older start
@@ -868,7 +953,8 @@ impl AppController {
             self.refresh_state();
         }
         let e = self.engine();
-        (self.vm.recording, self.vm.file, self.vm.voices) = (e.recording_status(), e.file_status(), e.soundboard_status());
+        (self.vm.recording, self.vm.file, self.vm.voices) =
+            (e.recording_status(), e.file_status(), e.soundboard_status());
         if self.latency_match_open {
             self.vm.latency_match = Some(self.engine().latency_match_info());
         }
@@ -905,7 +991,11 @@ impl AppController {
             // the files are written on a worker: no disk wait on the UI thread
             self.last_save = Instant::now();
             if let Some(files) = self.save_files() {
-                self.saving = Some(std::thread::spawn(move || files.into_iter().try_for_each(|(p, d)| settings::write_atomic(&p, &d))));
+                self.saving = Some(std::thread::spawn(move || {
+                    files
+                        .into_iter()
+                        .try_for_each(|(p, d)| settings::write_atomic(&p, &d))
+                }));
             }
         }
     }
@@ -993,14 +1083,18 @@ impl AppController {
     /// Stage-2 notifications; true when the settings may have changed.
     fn on_notification(&mut self, n: Notification) -> bool {
         match n {
-            Notification::RecordingStarted { path } => {
-                self.set_status(format!("{}{}", tr("Recording audio to: "), path.display()), false)
-            }
+            Notification::RecordingStarted { path } => self.set_status(
+                format!("{}{}", tr("Recording audio to: "), path.display()),
+                false,
+            ),
             Notification::RecordingStopped { files, error } => {
                 match error {
                     Some(e) => self.set_status(format!("{}: {e}", tr("Recording stopped")), true),
                     None => {
-                        let first = files.first().map(|f| f.display().to_string()).unwrap_or_default();
+                        let first = files
+                            .first()
+                            .map(|f| f.display().to_string())
+                            .unwrap_or_default();
                         self.set_status(format!("{}{first}", tr("Last recorded file: ")), false);
                         if self.vm.state.extra.record_finish_open
                             && let Some(f) = recording_main_file(&files).cloned()
@@ -1012,15 +1106,29 @@ impl AppController {
                 }
                 self.vm.last_recording = files;
             }
-            Notification::RecordingError { error } => self.set_status(format!("{}: {error}", tr("Recording error")), true),
-            Notification::RecordingDroppedFrames { frames } => {
-                self.set_status(format!("{}: {frames}", tr("Recording: the disk could not keep up, frames lost")), true)
+            Notification::RecordingError { error } => {
+                self.set_status(format!("{}: {error}", tr("Recording error")), true)
             }
-            Notification::PlaybackError { error } => self.set_status(format!("{}: {error}", tr("Cannot play file")), true),
+            Notification::RecordingDroppedFrames { frames } => self.set_status(
+                format!(
+                    "{}: {frames}",
+                    tr("Recording: the disk could not keep up, frames lost")
+                ),
+                true,
+            ),
+            Notification::PlaybackError { error } => {
+                self.set_status(format!("{}: {error}", tr("Cannot play file")), true)
+            }
             Notification::FileFinished | Notification::SampleFinished { .. } => {}
-            Notification::LatencyMeasured { id, round_trip_ms, estimated_ms } => {
+            Notification::LatencyMeasured {
+                id,
+                round_trip_ms,
+                estimated_ms,
+            } => {
                 self.vm.latency_tests.retain(|t| t.0 != id);
-                self.vm.latency_tests.push((id, round_trip_ms, estimated_ms));
+                self.vm
+                    .latency_tests
+                    .push((id, round_trip_ms, estimated_ms));
             }
             Notification::LatencyMatchReady => {}
             Notification::LatencyMatchRequested { from, latency_ms } => {
@@ -1032,7 +1140,9 @@ impl AppController {
             Notification::GroupSuggested(mut g) => {
                 g.user = crate::clean(&g.user, NAME_LEN);
                 g.group = crate::clean(&g.group, NAME_LEN);
-                g.others.iter_mut().for_each(|o| *o = crate::clean(o, NAME_LEN));
+                g.others
+                    .iter_mut()
+                    .for_each(|o| *o = crate::clean(o, NAME_LEN));
                 self.vm.group_suggestion = Some(g);
             }
         }
@@ -1064,7 +1174,13 @@ impl AppController {
                 password: r.group_password.clone(),
                 public: r.public,
             });
-            let res = engine.connect(r.host.trim(), r.port, r.user.trim(), &r.user_password, group);
+            let res = engine.connect(
+                r.host.trim(),
+                r.port,
+                r.user.trim(),
+                &r.user_password,
+                group,
+            );
             let _ = tx.send(Job::Connected(res));
         });
     }
@@ -1114,7 +1230,10 @@ impl AppController {
         match links::parse_link(text) {
             Some(l) => {
                 form.apply_link(&l);
-                self.set_status(tr("Filled in Group from link! Press 'Connect to Group' to join..."), false);
+                self.set_status(
+                    tr("Filled in Group from link! Press 'Connect to Group' to join..."),
+                    false,
+                );
                 true
             }
             None => false,
@@ -1128,7 +1247,13 @@ impl AppController {
         }
         let r = self.vm.request.as_ref()?;
         let group = self.vm.snapshot.group.as_ref()?;
-        Some(links::share_link(&r.host, r.port, group, &r.group_password, r.public))
+        Some(links::share_link(
+            &r.host,
+            r.port,
+            group,
+            &r.group_password,
+            r.public,
+        ))
     }
 
     /// Acts on the command line (SonoStandaloneFilterApp.cpp:380-430): loads a setup, fills
@@ -1141,7 +1266,10 @@ impl AppController {
                 path = self.setup_folder().join(f);
             }
             if let Err(e) = self.load_setup(&path) {
-                self.set_status(format!("{}: {} {e}", tr("Error while loading"), path.display()), true);
+                self.set_status(
+                    format!("{}: {} {e}", tr("Error while loading"), path.display()),
+                    true,
+                );
             }
         }
         let mut form = self.default_request();
@@ -1162,7 +1290,11 @@ impl AppController {
         if let Some(u) = &cli.user {
             form.user = u.clone();
         }
-        if let Some(r) = cli.relay.as_deref().and_then(|r| links::relay_choice(r).ok()) {
+        if let Some(r) = cli
+            .relay
+            .as_deref()
+            .and_then(|r| links::relay_choice(r).ok())
+        {
             self.set_secure_relay(r);
         }
         if let Some(name) = &cli.secure_host {
@@ -1205,7 +1337,9 @@ impl AppController {
     fn known_server(&self, host: &str, port: u16) -> bool {
         let d = ConnectRequest::default();
         (host.eq_ignore_ascii_case(&d.host) && port == d.port)
-            || self.vm.state.recents.iter().any(|r| r.server_host.eq_ignore_ascii_case(host) && r.server_port == i32::from(port))
+            || self.vm.state.recents.iter().any(|r| {
+                r.server_host.eq_ignore_ascii_case(host) && r.server_port == i32::from(port)
+            })
     }
 
     /// Answers the confirmation of a link to an unknown server: connect, or forget it.
@@ -1226,9 +1360,16 @@ impl AppController {
         let handle = start_server(port)?;
         let port = handle.local_addr().port();
         let addresses = lan_addresses();
-        let local = addresses.first().copied().unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        let local = addresses
+            .first()
+            .copied()
+            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
         self.vm.hosting = Some((port, addresses.clone()));
-        self.server = Some(HostedServer { _handle: handle, port, addresses });
+        self.server = Some(HostedServer {
+            _handle: handle,
+            port,
+            addresses,
+        });
         (r.host, r.port) = (local.to_string(), port);
         self.connect(r);
         Ok(())
@@ -1248,7 +1389,11 @@ impl AppController {
     fn secure_net(&self, user: &str) -> NetOptions {
         let user = user.trim();
         NetOptions {
-            name: if user.is_empty() { default_user(&self.vm.state) } else { user.to_owned() },
+            name: if user.is_empty() {
+                default_user(&self.vm.state)
+            } else {
+                user.to_owned()
+            },
             bind_ip: self.net_place.bind_ip,
             port: self.net_place.port,
             relay: self.vm.secure_prefs.relay.clone(),
@@ -1273,7 +1418,12 @@ impl AppController {
 
     /// Starts `started` on a worker (binding, a rendezvous address lookup): the outcome comes
     /// back as a job, the session shows in [`ViewModel::secure`].
-    fn spawn_secure(&mut self, net: NetOptions, rdv: Option<sonobus_net::RdvAddr>, mut started: Started) {
+    fn spawn_secure(
+        &mut self,
+        net: NetOptions,
+        rdv: Option<sonobus_net::RdvAddr>,
+        mut started: Started,
+    ) {
         if let Started::Host(o) = &mut started {
             // chosen here, so a restart on a new engine keeps the invite link
             o.seed.get_or_insert_with(sonobus_net::auth::random_seed);
@@ -1302,7 +1452,9 @@ impl AppController {
     fn rdv_addr(&mut self, text: &str) -> Result<Option<sonobus_net::RdvAddr>, ()> {
         match text.trim() {
             "" => Ok(None),
-            t => sonobus_net::RdvAddr::parse(t).map(Some).map_err(|e| self.set_status(format!("{}: {e}", tr("Rendezvous server address")), true)),
+            t => sonobus_net::RdvAddr::parse(t).map(Some).map_err(|e| {
+                self.set_status(format!("{}: {e}", tr("Rendezvous server address")), true)
+            }),
         }
     }
 
@@ -1311,13 +1463,23 @@ impl AppController {
         if let Some(p) = f.problem() {
             return self.set_status(tr(p), true);
         }
-        let Ok(rdv) = self.rdv_addr(&f.register_at) else { return };
+        let Ok(rdv) = self.rdv_addr(&f.register_at) else {
+            return;
+        };
         let name = crate::clean(f.session.trim(), NAME_LEN);
         let mut o = HostOptions::new(f.session.trim());
-        o.mode = if f.broadcast { SessionMode::Broadcast } else { SessionMode::Mesh };
+        o.mode = if f.broadcast {
+            SessionMode::Broadcast
+        } else {
+            SessionMode::Mesh
+        };
         o.password = (!f.password.is_empty()).then(|| f.password.clone());
         o.pin = f.pin;
-        o.lan = if f.lan { self.net_place.lan } else { LanScope::Off };
+        o.lan = if f.lan {
+            self.net_place.lan
+        } else {
+            LanScope::Off
+        };
         o.rendezvous = f.rendezvous_here;
         o.max_listeners = (f.broadcast && f.max_listeners > 0).then_some(f.max_listeners as usize);
         o.playout_ms = self.vm.secure_prefs.playout().filter(|_| f.broadcast);
@@ -1335,7 +1497,13 @@ impl AppController {
             self.save_secure_prefs();
         }
         self.begin_secure(user);
-        let recent = SecureRecent { name, broadcast: f.broadcast, how: How::Hosted, invite: None, server: rdv.as_ref().map(ToString::to_string) };
+        let recent = SecureRecent {
+            name,
+            broadcast: f.broadcast,
+            how: How::Hosted,
+            invite: None,
+            server: rdv.as_ref().map(ToString::to_string),
+        };
         self.pending_recent = Some((recent, f.remember));
         let net = self.secure_net(user);
         self.spawn_secure(net, rdv, Started::Host(o));
@@ -1348,22 +1516,52 @@ impl AppController {
                 let Some(p) = InvitePreview::parse(&text) else {
                     return self.set_status(tr("This is not a secure session invite link."), true);
                 };
-                let r = SecureRecent { name: p.session, broadcast: p.broadcast, how: How::Invite, invite: remember.then(|| p.link.clone()), server: None };
+                let r = SecureRecent {
+                    name: p.session,
+                    broadcast: p.broadcast,
+                    how: How::Invite,
+                    invite: remember.then(|| p.link.clone()),
+                    server: None,
+                };
                 (Started::Invite(p.link), None, r)
             }
             JoinMethod::Lan(d, secret) => {
-                let r = SecureRecent { name: crate::clean(&d.session, NAME_LEN), broadcast: false, how: How::Lan, invite: None, server: None };
+                let r = SecureRecent {
+                    name: crate::clean(&d.session, NAME_LEN),
+                    broadcast: false,
+                    how: How::Lan,
+                    invite: None,
+                    server: None,
+                };
                 (Started::Lan(d, secret.trim().to_owned()), None, r)
             }
-            JoinMethod::Name { server, session, password } => {
+            JoinMethod::Name {
+                server,
+                session,
+                password,
+            } => {
                 let Ok(Some(a)) = self.rdv_addr(&server) else {
                     return self.set_status(tr("Enter the rendezvous server address."), true);
                 };
                 self.vm.secure_prefs.rendezvous = server.trim().to_owned();
                 self.save_secure_prefs();
-                let r = SecureRecent { name: crate::clean(session.trim(), NAME_LEN), broadcast: false, how: How::Name, invite: None, server: Some(a.to_string()) };
-                let placeholder = PeerAddr { id: a.id, addrs: Vec::new(), relay: a.relay.clone() };
-                (Started::Name(placeholder, session.trim().to_owned(), password), Some(a), r)
+                let r = SecureRecent {
+                    name: crate::clean(session.trim(), NAME_LEN),
+                    broadcast: false,
+                    how: How::Name,
+                    invite: None,
+                    server: Some(a.to_string()),
+                };
+                let placeholder = PeerAddr {
+                    id: a.id,
+                    addrs: Vec::new(),
+                    relay: a.relay.clone(),
+                };
+                (
+                    Started::Name(placeholder, session.trim().to_owned(), password),
+                    Some(a),
+                    r,
+                )
             }
         };
         self.begin_secure(user);
@@ -1382,7 +1580,9 @@ impl AppController {
     /// Host: a new invite link (earlier links stop working), removing `remove` from the session
     /// first if given. Returns the new link.
     pub fn rotate_invite(&mut self, remove: Option<PeerId>) -> Option<String> {
-        let who = remove.and_then(|id| self.vm.snapshot.peers.iter().find(|p| p.id == id)).map(|p| p.user.clone());
+        let who = remove
+            .and_then(|id| self.vm.snapshot.peers.iter().find(|p| p.id == id))
+            .map(|p| p.user.clone());
         let Some(link) = self.engine().rotate_session_key(remove) else {
             if remove.is_some() {
                 self.set_status(tr("Nobody was removed: that connection is gone. Try again from the current list.").to_owned(), true);
@@ -1390,7 +1590,12 @@ impl AppController {
             return None;
         };
         let msg = match who {
-            Some(u) => format!("{u}: {}", tr("removed from the session. The invite link changed: earlier links no longer work. If the session has a password or PIN, change it too: they still know it.")),
+            Some(u) => format!(
+                "{u}: {}",
+                tr(
+                    "removed from the session. The invite link changed: earlier links no longer work. If the session has a password or PIN, change it too: they still know it."
+                )
+            ),
             None => tr("New invite link: earlier links no longer work.").to_owned(),
         };
         self.set_status(msg, false);
@@ -1474,13 +1679,21 @@ impl AppController {
         if let Some(st) = &mut self.store {
             secure::store_identity(&mut st.props, &id);
             // invite links remembered as hosted name the old identity
-            self.vm.secure_prefs.recents.iter_mut().filter(|r| r.how == How::Hosted).for_each(|r| r.invite = None);
+            self.vm
+                .secure_prefs
+                .recents
+                .iter_mut()
+                .filter(|r| r.how == How::Hosted)
+                .for_each(|r| r.invite = None);
             self.save_secure_prefs();
         }
         if let Err(e) = self.save() {
             self.set_status(format!("{}: {e}", tr("Error while saving")), true);
         } else {
-            self.set_status(tr("New device identity: it applies from the next secure session."), false);
+            self.set_status(
+                tr("New device identity: it applies from the next secure session."),
+                false,
+            );
         }
     }
 
@@ -1519,7 +1732,12 @@ impl AppController {
             self.save_secure_prefs();
         }
         if let (Some(name), Some(inv)) = (&self.remember_invite, &s.invite)
-            && let Some(r) = self.vm.secure_prefs.recents.iter_mut().find(|r| r.how == How::Hosted && &r.name == name)
+            && let Some(r) = self
+                .vm
+                .secure_prefs
+                .recents
+                .iter_mut()
+                .find(|r| r.how == How::Hosted && &r.name == name)
             && r.invite.as_ref() != Some(inv)
         {
             r.invite = Some(inv.clone());
@@ -1527,9 +1745,15 @@ impl AppController {
         }
         if self.vm.status == tr("Starting the secure session...") {
             if s.role == SessionRole::Host {
-                self.set_status(format!("{}{}", tr("Hosting secure session: "), s.session), false);
+                self.set_status(
+                    format!("{}{}", tr("Hosting secure session: "), s.session),
+                    false,
+                );
             } else if s.peers > 0 {
-                self.set_status(format!("{}{}", tr("Joined secure session: "), s.session), false);
+                self.set_status(
+                    format!("{}{}", tr("Joined secure session: "), s.session),
+                    false,
+                );
             }
         }
     }
@@ -1537,9 +1761,16 @@ impl AppController {
     /// Session notices in the status line, calmly: none of them is our fault.
     fn on_session_event(&mut self, e: SessionEvent) {
         let secs = |d: Duration| format!("{} s", d.as_secs_f32().ceil() as u64);
-        let joining = self.vm.secure.as_ref().is_some_and(|s| s.role != SessionRole::Host && s.peers == 0);
+        let joining = self
+            .vm
+            .secure
+            .as_ref()
+            .is_some_and(|s| s.role != SessionRole::Host && s.peers == 0);
         let msg = match e {
-            SessionEvent::JoinFailed { reason, retry_after } => {
+            SessionEvent::JoinFailed {
+                reason,
+                retry_after,
+            } => {
                 let mut m = if reason == "authentication failed" {
                     tr("Could not join: the invite link, PIN or password was not accepted (an invite link stops working when the host replaces it).").to_owned()
                 } else {
@@ -1557,8 +1788,19 @@ impl AppController {
             // `Ended` (session full) follows and says so
             SessionEvent::SessionFull => return,
             SessionEvent::InviteChanged(_) => return,
-            SessionEvent::PathChanged { id, direct, relay, rtt_ms } => {
-                let who = self.vm.snapshot.peers.iter().find(|p| p.id == id).map_or_else(String::new, |p| p.user.clone());
+            SessionEvent::PathChanged {
+                id,
+                direct,
+                relay,
+                rtt_ms,
+            } => {
+                let who = self
+                    .vm
+                    .snapshot
+                    .peers
+                    .iter()
+                    .find(|p| p.id == id)
+                    .map_or_else(String::new, |p| p.user.clone());
                 let how = match (direct, relay) {
                     (true, _) => tr("direct connection").to_owned(),
                     (false, Some(r)) => format!("{} {}", tr("relayed via"), secure::relay_host(&r)),
@@ -1567,7 +1809,12 @@ impl AppController {
                 format!("{who}: {how}, {rtt_ms:.0} ms")
             }
             SessionEvent::PasswordJoinFailed { failed_total } => {
-                format!("{} {failed_total}", tr("Someone tried to join with a wrong PIN or password. Failed attempts so far:"))
+                format!(
+                    "{} {failed_total}",
+                    tr(
+                        "Someone tried to join with a wrong PIN or password. Failed attempts so far:"
+                    )
+                )
             }
             SessionEvent::IncomingFailed { count, last_reason } => {
                 format!("{} {count} ({last_reason})", tr("Connections refused:"))
@@ -1578,14 +1825,39 @@ impl AppController {
             }
             SessionEvent::Throttled { ip, retry_after } => {
                 let from = ip.map_or_else(String::new, |ip| format!(" ({ip})"));
-                format!("{}{from} {} {}.", tr("Join attempts are paused after wrong guesses"), tr("Try again in"), secs(retry_after))
+                format!(
+                    "{}{from} {} {}.",
+                    tr("Join attempts are paused after wrong guesses"),
+                    tr("Try again in"),
+                    secs(retry_after)
+                )
             }
-            SessionEvent::RendezvousFailed { reason, retry_after } => {
-                format!("{}: {reason}. {} {}.", tr("The rendezvous server cannot be reached"), tr("Trying again in"), secs(retry_after))
+            SessionEvent::RendezvousFailed {
+                reason,
+                retry_after,
+            } => {
+                format!(
+                    "{}: {reason}. {} {}.",
+                    tr("The rendezvous server cannot be reached"),
+                    tr("Trying again in"),
+                    secs(retry_after)
+                )
             }
             // the host rotated it itself (and said so); a password join learns it on the way in
-            SessionEvent::SessionKeyChanged if joining || self.vm.secure.as_ref().is_some_and(|s| s.role == SessionRole::Host) => return,
-            SessionEvent::SessionKeyChanged => tr("The session has a new key: invite links shared before no longer work.").to_owned(),
+            SessionEvent::SessionKeyChanged
+                if joining
+                    || self
+                        .vm
+                        .secure
+                        .as_ref()
+                        .is_some_and(|s| s.role == SessionRole::Host) =>
+            {
+                return;
+            }
+            SessionEvent::SessionKeyChanged => {
+                tr("The session has a new key: invite links shared before no longer work.")
+                    .to_owned()
+            }
             SessionEvent::Ended { reason } => {
                 self.leave_secure();
                 secure::ended_text(&reason)
@@ -1643,7 +1915,8 @@ impl AppController {
     /// turning "send state on start" on while enabled, sends the full state, as the fork does.
     pub fn set_osc_config(&mut self, cfg: OscConfig) {
         let old = self.vm.osc.config.clone();
-        let dump = cfg.enabled && cfg.send_state_on_start && (!old.enabled || !old.send_state_on_start);
+        let dump =
+            cfg.enabled && cfg.send_state_on_start && (!old.enabled || !old.send_state_on_start);
         let stored = cfg.clone();
         self.edit(move |s| stored.store(&mut s.extra));
         self.osc.configure(cfg, dump);
@@ -1664,7 +1937,11 @@ impl AppController {
         }
         let now = Instant::now();
         if self.osc.feedback_due(now) {
-            let fb = osc_control::state(self, self.engine().receive_sync_padding(), self.ptt.is_some());
+            let fb = osc_control::state(
+                self,
+                self.engine().receive_sync_padding(),
+                self.ptt.is_some(),
+            );
             self.osc.feedback(now, fb);
         }
         self.osc.meters(now, &self.vm.snapshot.peers);
@@ -1680,7 +1957,9 @@ impl AppController {
             }
             (false, Some((recv, send))) => {
                 self.ptt = None;
-                self.edit(move |s| (s.params.main_recv_mute, s.params.main_send_mute) = (recv, send));
+                self.edit(move |s| {
+                    (s.params.main_recv_mute, s.params.main_send_mute) = (recv, send)
+                });
             }
             _ => {}
         }
@@ -1690,7 +1969,10 @@ impl AppController {
         self.edit(|s| {
             let n = s.input_groups.len();
             if n < sonobus_core::state::MAX_CHANGROUPS {
-                let start = s.input_groups.last().map_or(0, |g| g.chan_start + g.num_channels);
+                let start = s
+                    .input_groups
+                    .last()
+                    .map_or(0, |g| g.chan_start + g.num_channels);
                 let mut g = ChannelGroup::input_default(start as usize, s.is_plugin);
                 g.chan_start = start;
                 s.input_groups.push(g);
@@ -1716,7 +1998,10 @@ impl AppController {
     /// sound or a platform input adds an input group for it.
     pub fn set_audio_setup(&mut self, mut setup: DeviceSetup) -> io::Result<()> {
         if self.audio.is_none() {
-            return Err(io::Error::new(io::ErrorKind::Unsupported, "the host does the audio"));
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "the host does the audio",
+            ));
         }
         if !self.use_devices {
             setup.enabled = false;
@@ -1748,14 +2033,16 @@ impl AppController {
         }
     }
 
-
     /// Sets (or removes, `None`) the platform-pushed input, e.g. Android playback capture once
     /// its `AudioRecord` reports its format. No-op when unchanged.
     pub fn set_external_input(&mut self, spec: Option<ExternalSpec>) -> io::Result<()> {
         if self.setup.external == spec {
             return Ok(());
         }
-        let setup = DeviceSetup { external: spec, ..self.setup.clone() };
+        let setup = DeviceSetup {
+            external: spec,
+            ..self.setup.clone()
+        };
         self.set_audio_setup(setup)
     }
 
@@ -1763,7 +2050,10 @@ impl AppController {
     /// [`crate::audio::push_external`]). Stays valid across engine rebuilds.
     /// Hosted: a slot nothing reads.
     pub fn external_input(&self) -> ExternalSlot {
-        self.audio.as_ref().map(AudioManager::external_input).unwrap_or_default()
+        self.audio
+            .as_ref()
+            .map(AudioManager::external_input)
+            .unwrap_or_default()
     }
 
     /// Drops the engine (freeing its UDP port, unless a connect job still holds it) and
@@ -1773,11 +2063,17 @@ impl AppController {
         let blocked = self.engine().blocked_addresses();
         let mut secure = self.secure_start.take();
         if let Some((_, _, Started::Host(o))) = &mut secure
-            && let Some(inv) = self.vm.secure.as_ref().and_then(|s| s.invite.as_deref()).and_then(|l| sonobus_net::auth::Invite::parse(l).ok())
+            && let Some(inv) = self
+                .vm
+                .secure
+                .as_ref()
+                .and_then(|s| s.invite.as_deref())
+                .and_then(|l| sonobus_net::auth::Invite::parse(l).ok())
         {
             o.seed = Some(inv.seed); // the current key (rotations included): links stay valid
         }
-        let rejoin = (secure.is_none() && (self.vm.snapshot.connection != Connection::Disconnected || self.vm.connecting))
+        let rejoin = (secure.is_none()
+            && (self.vm.snapshot.connection != Connection::Disconnected || self.vm.connecting))
             .then(|| self.vm.request.clone())
             .flatten();
         // the old engine's last notifications (a recording it stopped) arrive through this
@@ -1787,8 +2083,17 @@ impl AppController {
         while let Some(n) = notes.poll() {
             match n {
                 Notification::RecordingStopped { files, error: None } if recording => {
-                    let first = files.first().map(|f| f.display().to_string()).unwrap_or_default();
-                    self.set_status(format!("{} {first}", tr("Recording stopped because the audio setup changed. Recorded:")), true);
+                    let first = files
+                        .first()
+                        .map(|f| f.display().to_string())
+                        .unwrap_or_default();
+                    self.set_status(
+                        format!(
+                            "{} {first}",
+                            tr("Recording stopped because the audio setup changed. Recorded:")
+                        ),
+                        true,
+                    );
                     self.vm.last_recording = files;
                 }
                 n => {
@@ -1796,7 +2101,14 @@ impl AppController {
                 }
             }
         }
-        (state, Carry { blocked, rejoin, secure })
+        (
+            state,
+            Carry {
+                blocked,
+                rejoin,
+                secure,
+            },
+        )
     }
 
     fn carry_over(&mut self, c: Carry) {
@@ -1823,13 +2135,18 @@ impl AppController {
             let mut any_port = state.clone();
             any_port.extra.use_udp_port = 0;
             if self.start_engine(any_port.clone()).is_err() {
-                self.setup = DeviceSetup { enabled: false, ..DeviceSetup::default() };
+                self.setup = DeviceSetup {
+                    enabled: false,
+                    ..DeviceSetup::default()
+                };
                 self.vm.audio_setup = self.setup.clone();
-                self.start_engine(any_port).map_err(|e| io::Error::other(format!("no engine: {e}")))?;
+                self.start_engine(any_port)
+                    .map_err(|e| io::Error::other(format!("no engine: {e}")))?;
             }
             // the settings keep the wanted UDP port
             let port = state.extra.use_udp_port;
-            self.engine().update_state(move |s| s.extra.use_udp_port = port);
+            self.engine()
+                .update_state(move |s| s.extra.use_udp_port = port);
         } else {
             self.vm.engine_error = None;
         }
@@ -1849,7 +2166,10 @@ impl AppController {
     /// gets the settings once the old engine is gone (its UDP port free) and returns the new
     /// one. The session stays: chat, status, blocked addresses, the connect request; a joined
     /// group is rejoined. On error the controller has no engine and must be dropped.
-    pub fn swap_engine(&mut self, build: impl FnOnce(AppState) -> io::Result<Arc<Engine>>) -> io::Result<()> {
+    pub fn swap_engine(
+        &mut self,
+        build: impl FnOnce(AppState) -> io::Result<Arc<Engine>>,
+    ) -> io::Result<()> {
         let _lang = crate::i18n::scope(self.lang);
         let (state, carry) = self.release_engine();
         let engine = build(state)?;
@@ -1879,7 +2199,9 @@ impl AppController {
             let _ = h.join(); // an autosave in flight goes first
         }
         match self.save_files() {
-            Some(files) => files.into_iter().try_for_each(|(p, d)| settings::write_atomic(&p, &d)),
+            Some(files) => files
+                .into_iter()
+                .try_for_each(|(p, d)| settings::write_atomic(&p, &d)),
             None => Ok(()),
         }
     }
@@ -1893,7 +2215,11 @@ impl AppController {
         let engine = self.engine.as_deref().expect("engine running");
         let state = engine.state();
         let blocked = engine.blocked_addresses();
-        let files = store.files(&state, &self.setup, blocked.iter().map(ToString::to_string).collect());
+        let files = store.files(
+            &state,
+            &self.setup,
+            blocked.iter().map(ToString::to_string).collect(),
+        );
         self.vm.blocked = blocked;
         self.vm.state = state;
         self.vm.recent_setups = store.standalone.recent_setup_files.clone();
@@ -1904,8 +2230,9 @@ impl AppController {
     pub fn import_upstream(&mut self, path: Option<&Path>) -> io::Result<()> {
         let path = match path {
             Some(p) => p.to_path_buf(),
-            None => settings::upstream_settings_file()
-                .ok_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no SonoBus settings location"))?,
+            None => settings::upstream_settings_file().ok_or_else(|| {
+                io::Error::new(io::ErrorKind::NotFound, "no SonoBus settings location")
+            })?,
         };
         let (mut state, setup) = settings::import_settings(&path)?;
         settings::keep_local(&mut state, &self.engine().state());
@@ -1918,7 +2245,10 @@ impl AppController {
         if boards.exists() {
             self.set_soundboards(settings::load_soundboards(&boards)?);
         }
-        self.set_status(format!("{} {}", tr("Imported settings from"), path.display()), false);
+        self.set_status(
+            format!("{} {}", tr("Imported settings from"), path.display()),
+            false,
+        );
         Ok(())
     }
 
@@ -2004,7 +2334,11 @@ impl AppController {
     }
 
     pub fn toggle_recording(&mut self) {
-        if self.vm.recording.is_some() { self.stop_recording() } else { self.start_recording() }
+        if self.vm.recording.is_some() {
+            self.stop_recording()
+        } else {
+            self.start_recording()
+        }
     }
 
     // ---- file playback ------------------------------------------------------------------------
@@ -2034,7 +2368,10 @@ impl AppController {
         self.vm.soundboards = boards;
         let res = match (&mut self.host, &self.vm.settings_dir) {
             (Some(h), _) => h.soundboards_changed(&self.vm.soundboards),
-            (None, Some(dir)) => settings::save_soundboards(&dir.join(settings::SOUNDBOARDS_FILE), &self.vm.soundboards),
+            (None, Some(dir)) => settings::save_soundboards(
+                &dir.join(settings::SOUNDBOARDS_FILE),
+                &self.vm.soundboards,
+            ),
             (None, None) => Ok(()),
         };
         if let Err(e) = res {
@@ -2148,8 +2485,16 @@ impl AppController {
             self.engine().try_send_chat_to(ids, text)
         } else {
             let peers = &self.vm.snapshot.peers;
-            let names: Vec<&str> = ids.iter().filter_map(|id| peers.iter().find(|p| p.id == *id)).map(|p| p.user.as_str()).collect();
-            if names.len() < ids.len() { Err(tr("That user has left").to_owned()) } else { self.engine().try_send_chat(&names, text) }
+            let names: Vec<&str> = ids
+                .iter()
+                .filter_map(|id| peers.iter().find(|p| p.id == *id))
+                .map(|p| p.user.as_str())
+                .collect();
+            if names.len() < ids.len() {
+                Err(tr("That user has left").to_owned())
+            } else {
+                self.engine().try_send_chat(&names, text)
+            }
         };
         match sent {
             Ok(m) => self.push_chat(m),
@@ -2175,7 +2520,13 @@ impl AppController {
             return;
         }
         let group = self.vm.snapshot.group.clone().unwrap_or_default();
-        self.push_chat(ChatMessage { own: false, group, from: String::new(), targets: String::new(), message: text });
+        self.push_chat(ChatMessage {
+            own: false,
+            group,
+            from: String::new(),
+            targets: String::new(),
+            message: text,
+        });
     }
 
     pub fn mark_chat_read(&mut self) {
@@ -2214,7 +2565,10 @@ mod tests {
     #[test]
     fn civil_time() {
         let t = utc_time(1_700_000_000);
-        assert_eq!((t.year, t.month, t.day, t.hour, t.minute, t.second), (2023, 11, 14, 22, 13, 20));
+        assert_eq!(
+            (t.year, t.month, t.day, t.hour, t.minute, t.second),
+            (2023, 11, 14, 22, 13, 20)
+        );
         let t = utc_time(951_782_400); // 2000-02-29
         assert_eq!((t.year, t.month, t.day), (2000, 2, 29));
         assert_eq!(utc_time(0).year, 1970);
@@ -2223,17 +2577,33 @@ mod tests {
     #[test]
     fn input_groups_follow_the_opened_channels() {
         use crate::audio::{DeviceChoice, ExternalSpec};
-        let span = |gs: &[ChannelGroup]| gs.iter().map(|g| (g.name.clone(), g.chan_start, g.num_channels)).collect::<Vec<_>>();
+        let span = |gs: &[ChannelGroup]| {
+            gs.iter()
+                .map(|g| (g.name.clone(), g.chan_start, g.num_channels))
+                .collect::<Vec<_>>()
+        };
         let mic = |n: i32| {
             let mut g = ChannelGroup::input_default(0, false);
             g.num_channels = n;
             g
         };
         let ss = |s: i32| ("System Sound".to_owned(), s, 2);
-        let ext = Some(ExternalSpec { channels: 2, sample_rate: 48000 });
+        let ext = Some(ExternalSpec {
+            channels: 2,
+            sample_rate: 48000,
+        });
         let stereo = DeviceSetup::default();
-        let mono = DeviceSetup { input: DeviceChoice::Id("mono".into()), input_channels: Some(1), external: ext, ..DeviceSetup::default() };
-        let no_mic = DeviceSetup { input: DeviceChoice::None, external: ext, ..DeviceSetup::default() };
+        let mono = DeviceSetup {
+            input: DeviceChoice::Id("mono".into()),
+            input_channels: Some(1),
+            external: ext,
+            ..DeviceSetup::default()
+        };
+        let no_mic = DeviceSetup {
+            input: DeviceChoice::None,
+            external: ext,
+            ..DeviceSetup::default()
+        };
         // the mic opens one channel: the capture (channels 1-2) gets its own group, the mic's
         // is cut to channel 0
         let mut g = vec![mic(2)];
@@ -2245,24 +2615,39 @@ mod tests {
         assert_eq!(span(&g), [ss(0)]);
         // a mic group the engine made with no device input (one channel at 0) goes too
         let mut g = vec![mic(1)];
-        let none = DeviceSetup { input: DeviceChoice::None, ..DeviceSetup::default() };
+        let none = DeviceSetup {
+            input: DeviceChoice::None,
+            ..DeviceSetup::default()
+        };
         fit_input_groups(&mut g, &none, &no_mic);
         assert_eq!(span(&g), [ss(0)]);
         // the mic comes back: the capture group moves behind it, the mic gets a group again
-        let with_ext = DeviceSetup { external: ext, ..DeviceSetup::default() };
+        let with_ext = DeviceSetup {
+            external: ext,
+            ..DeviceSetup::default()
+        };
         assert!(!fit_input_groups(&mut g, &no_mic, &with_ext));
         assert_eq!(span(&g), [(String::new(), 0, 2), ss(2)]);
         // system sound on as well: it comes first, the platform input after it
-        let both = DeviceSetup { system_sound: Some("out".into()), ..with_ext.clone() };
+        let both = DeviceSetup {
+            system_sound: Some("out".into()),
+            ..with_ext.clone()
+        };
         assert!(fit_input_groups(&mut g, &with_ext, &both));
         assert_eq!(span(&g), [(String::new(), 0, 2), ss(4), ss(2)]);
         // capture off: its group goes; a user group on unused channels stays
         let mut extra = mic(1);
         extra.chan_start = 8;
         g.push(extra);
-        let sys_only = DeviceSetup { system_sound: Some("out".into()), ..DeviceSetup::default() };
+        let sys_only = DeviceSetup {
+            system_sound: Some("out".into()),
+            ..DeviceSetup::default()
+        };
         fit_input_groups(&mut g, &both, &sys_only);
-        assert_eq!(span(&g), [(String::new(), 0, 2), ss(2), (String::new(), 8, 1)]);
+        assert_eq!(
+            span(&g),
+            [(String::new(), 0, 2), ss(2), (String::new(), 8, 1)]
+        );
         // nothing left: the engine still gets a group
         let mut g = vec![mic(2)];
         fit_input_groups(&mut g, &stereo, &none);
@@ -2273,7 +2658,10 @@ mod tests {
     fn main_recording_file() {
         let one = [PathBuf::from("/r/S_1.flac")];
         assert_eq!(recording_main_file(&one), Some(&one[0]));
-        let many = [PathBuf::from("/r/S/S-SELF.flac"), PathBuf::from("/r/S/S-MIX.flac")];
+        let many = [
+            PathBuf::from("/r/S/S-SELF.flac"),
+            PathBuf::from("/r/S/S-MIX.flac"),
+        ];
         assert_eq!(recording_main_file(&many), Some(&many[1]));
         assert_eq!(recording_main_file(&many[..1]), Some(&many[0]));
     }

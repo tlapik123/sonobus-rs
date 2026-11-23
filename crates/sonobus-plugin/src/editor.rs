@@ -12,7 +12,9 @@ use nice_plug::context::gui::GuiContext;
 use nice_plug::editor::dpi::LogicalSize;
 use nice_plug::prelude::*;
 use nice_plug_egui::resizable_window::ResizableWindow;
-use nice_plug_egui::{EguiEditor, EguiEditorState, EguiNiceSettings, NiceEguiApp, RepaintNotifier, create_egui_editor};
+use nice_plug_egui::{
+    EguiEditor, EguiEditorState, EguiNiceSettings, NiceEguiApp, RepaintNotifier, create_egui_editor,
+};
 
 use crate::session::Session;
 
@@ -24,15 +26,30 @@ const DEFAULT_SIZE: (f32, f32) = (800.0, 600.0);
 fn saved_size(session: &Session) -> egui::Vec2 {
     let e = session.state().extra;
     let pick = |v: i32, min: f32, def: f32| if v as f32 >= min { v as f32 } else { def };
-    egui::vec2(pick(e.last_window_width, MIN_SIZE.0, DEFAULT_SIZE.0), pick(e.last_window_height, MIN_SIZE.1, DEFAULT_SIZE.1))
+    egui::vec2(
+        pick(e.last_window_width, MIN_SIZE.0, DEFAULT_SIZE.0),
+        pick(e.last_window_height, MIN_SIZE.1, DEFAULT_SIZE.1),
+    )
 }
 
 pub fn create(session: Arc<Session>) -> Option<EguiEditor<SbEditor>> {
     let size = saved_size(&session);
     let state = EguiEditorState::from_size(LogicalSize::new(size.x, size.y), 1.0);
-    let hint = ResizeHint::resizable().with_min_logical_size(LogicalSize::new(MIN_SIZE.0, MIN_SIZE.1));
-    let settings = EguiNiceSettings::new().with_tile("SonoBus RS").with_resize_hint(hint);
-    create_egui_editor(state, RepaintNotifier::new(), settings, SbEditor { session, gui: None, wanted_size: None })
+    let hint =
+        ResizeHint::resizable().with_min_logical_size(LogicalSize::new(MIN_SIZE.0, MIN_SIZE.1));
+    let settings = EguiNiceSettings::new()
+        .with_tile("SonoBus RS")
+        .with_resize_hint(hint);
+    create_egui_editor(
+        state,
+        RepaintNotifier::new(),
+        settings,
+        SbEditor {
+            session,
+            gui: None,
+            wanted_size: None,
+        },
+    )
 }
 
 pub struct SbEditor {
@@ -57,7 +74,10 @@ impl NiceEguiApp for SbEditor {
     }
 
     fn resized(&mut self, size: nice_plug_egui::baseview::WindowSize) {
-        let (w, h) = (size.logical.width.round() as i32, size.logical.height.round() as i32);
+        let (w, h) = (
+            size.logical.width.round() as i32,
+            size.logical.height.round() as i32,
+        );
         self.session.set_window_size(w, h);
     }
 
@@ -69,11 +89,14 @@ impl NiceEguiApp for SbEditor {
         }
         let Some(gui) = self.gui.clone() else { return };
         let session = self.session.clone();
-        ResizableWindow::new("sonobus").min_size(egui::vec2(MIN_SIZE.0, MIN_SIZE.1)).show(ui, |ui| {
-            if !session.frame(&gui, ui) {
-                ui.label("Not active: the host has not started audio processing yet.");
-                ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
-            }
-        });
+        ResizableWindow::new("sonobus")
+            .min_size(egui::vec2(MIN_SIZE.0, MIN_SIZE.1))
+            .show(ui, |ui| {
+                if !session.frame(&gui, ui) {
+                    ui.label("Not active: the host has not started audio processing yet.");
+                    ui.ctx()
+                        .request_repaint_after(std::time::Duration::from_millis(200));
+                }
+            });
     }
 }

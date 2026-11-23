@@ -78,7 +78,10 @@ fn until(nodes: &mut [&mut Node], settle: Duration, done: impl Fn(&[&mut Node]) 
         assert!(
             Instant::now() < end,
             "timed out: {:?}",
-            nodes.iter().map(|n| (n.live.len(), &n.closed, &n.failed)).collect::<Vec<_>>()
+            nodes
+                .iter()
+                .map(|n| (n.live.len(), &n.closed, &n.failed))
+                .collect::<Vec<_>>()
         );
         std::thread::sleep(Duration::from_millis(10));
     }
@@ -185,7 +188,13 @@ fn simultaneous_newcomers_converge_to_full_mesh() {
             .map(|i| member(&format!("n{i}"), 10 + i as u8, K, hid))
             .collect();
         let addr = |n: &Node| n.net.local_addr().clone();
-        let via = [addr(&h), addr(&h), addr(&news[0]), addr(&news[1]), addr(&news[2])];
+        let via = [
+            addr(&h),
+            addr(&h),
+            addr(&news[0]),
+            addr(&news[1]),
+            addr(&news[2]),
+        ];
         for (n, to) in news.iter().zip(via) {
             n.net.connect(to, Join::Key);
         }
@@ -341,7 +350,9 @@ fn rotation_cuts_a_removed_member_off_from_everyone_without_notice() {
     assert_eq!(p.net.authority(), Some(hid), "the password join's acceptor");
     let (&hr, _) = h.live.iter().find(|(_, x)| x.id == r.id()).unwrap();
     h.net.close(hr, sonobus_net::rt::CloseReason::Removed);
-    until(&mut [&mut h, &mut r], Duration::ZERO, |n| n[0].live.len() == 2);
+    until(&mut [&mut h, &mut r], Duration::ZERO, |n| {
+        n[0].live.len() == 2
+    });
     let seed = h.net.rotate_session_key(Duration::ZERO);
     let k2 = auth::key_from_seed(&seed);
     let t0 = Instant::now();
@@ -350,13 +361,21 @@ fn rotation_cuts_a_removed_member_off_from_everyone_without_notice() {
     });
     let took = t0.elapsed();
     eprintln!("removed member cut off after {took:?}");
-    assert!(took >= sonobus_net::rt::KEY_PROOF_TIMEOUT - Duration::from_millis(200), "{took:?}");
+    assert!(
+        took >= sonobus_net::rt::KEY_PROOF_TIMEOUT - Duration::from_millis(200),
+        "{took:?}"
+    );
     for n in [&a, &p] {
         assert_eq!(n.keys.last(), Some(&k2));
         assert!(n.live.values().all(|x| x.id != r.id()));
     }
     // r learnt why, from the host and from both members
-    assert_eq!(r.closed.iter().filter(|c| *c == "removed").count(), 3, "{:?}", r.closed);
+    assert_eq!(
+        r.closed.iter().filter(|c| *c == "removed").count(),
+        3,
+        "{:?}",
+        r.closed
+    );
     // the rest stay connected: no false removals after the proofs
     until(&mut [&mut h, &mut a, &mut p], Duration::from_secs(1), |n| {
         n.iter().all(|n| n.live.len() == 2)
@@ -376,7 +395,9 @@ fn close_flushes_queued_frames_with_a_reason() {
     }));
     let mut a = member("a", 2, K, h.id());
     a.net.connect(h.net.local_addr().clone(), Join::Key);
-    until(&mut [&mut h, &mut a], Duration::ZERO, |n| n.iter().all(|n| n.live.len() == 1));
+    until(&mut [&mut h, &mut a], Duration::ZERO, |n| {
+        n.iter().all(|n| n.live.len() == 1)
+    });
     let (&ha, _) = h.live.iter().next().unwrap();
     for i in 0..20u8 {
         h.net
@@ -389,7 +410,10 @@ fn close_flushes_queued_frames_with_a_reason() {
     let reason = loop {
         assert!(Instant::now() < end, "timed out");
         match a.net.events().recv_timeout(Duration::from_millis(50)) {
-            Ok(Event::Control { frame: sonobus_net::wire::Frame::AppOsc(b), .. }) => got.push(b[0]),
+            Ok(Event::Control {
+                frame: sonobus_net::wire::Frame::AppOsc(b),
+                ..
+            }) => got.push(b[0]),
             Ok(Event::Closed { reason, .. }) => break reason,
             _ => {}
         }
@@ -399,7 +423,9 @@ fn close_flushes_queued_frames_with_a_reason() {
     // a host leaving tells its members so
     let mut b = member("b", 3, K, h.id());
     b.net.connect(h.net.local_addr().clone(), Join::Key);
-    until(&mut [&mut h, &mut b], Duration::ZERO, |n| n[1].live.len() == 1);
+    until(&mut [&mut h, &mut b], Duration::ZERO, |n| {
+        n[1].live.len() == 1
+    });
     drop(h);
     until(&mut [&mut b], Duration::ZERO, |n| n[0].live.is_empty());
     assert_eq!(b.closed, ["host left"]);
@@ -429,17 +455,24 @@ fn close_then_rotate_never_sends_the_new_key_to_the_removed_member() {
         let mut a = member("a", 2, K, hid);
         let mut r = member("r", 3, K, hid);
         a.net.connect(inv.clone(), Join::Key);
-        until(&mut [&mut h, &mut a], Duration::ZERO, |n| n[1].live.len() == 1);
+        until(&mut [&mut h, &mut a], Duration::ZERO, |n| {
+            n[1].live.len() == 1
+        });
         r.net.connect(inv, Join::Key);
         until(&mut [&mut h, &mut a, &mut r], Duration::ZERO, full_mesh);
         let hr = conn_to(&h, r.id());
         h.net.close(hr, sonobus_net::rt::CloseReason::Removed);
         let k2 = auth::key_from_seed(&h.net.rotate_session_key(Duration::ZERO));
         // whatever h wrote to r arrives before r sees the close
-        until(&mut [&mut h, &mut a, &mut r], Duration::from_millis(300), |n| {
-            n[2].live.values().all(|p| p.id != hid)
-        });
-        assert!(!r.keys.contains(&k2), "trial {trial}: the removed member got the new key");
+        until(
+            &mut [&mut h, &mut a, &mut r],
+            Duration::from_millis(300),
+            |n| n[2].live.values().all(|p| p.id != hid),
+        );
+        assert!(
+            !r.keys.contains(&k2),
+            "trial {trial}: the removed member got the new key"
+        );
         assert_eq!(r.closed.first().map(String::as_str), Some("removed"));
     }
 }
@@ -491,7 +524,12 @@ fn handshake_overlapping_a_rotation_must_prove_the_new_key() {
             }
         })
         .await;
-        assert_eq!(close, Ok(Some(CloseReason::Removed as u8)), "{:?}", t0.elapsed());
+        assert_eq!(
+            close,
+            Ok(Some(CloseReason::Removed as u8)),
+            "{:?}",
+            t0.elapsed()
+        );
         assert!(t0.elapsed() >= KEY_PROOF_TIMEOUT - Duration::from_millis(200));
     });
 }
@@ -516,9 +554,27 @@ fn proof_of_a_key_two_rotations_ahead_is_kept() {
         let (k2, k3) = ([2u8; 32], [3u8; 32]);
         let proof = auth::rekey_proof(&k3, &e, &me, &qa.id);
         wf(&mut c.send, &Frame::KeyProof(proof)).await.unwrap();
-        wf(&mut c.send, &Frame::Rekey(Rekey { key: k2, grace_ms: 0, evicted: None })).await.unwrap();
+        wf(
+            &mut c.send,
+            &Frame::Rekey(Rekey {
+                key: k2,
+                grace_ms: 0,
+                evicted: None,
+            }),
+        )
+        .await
+        .unwrap();
         tokio::time::sleep(Duration::from_millis(300)).await;
-        wf(&mut c.send, &Frame::Rekey(Rekey { key: k3, grace_ms: 0, evicted: None })).await.unwrap();
+        wf(
+            &mut c.send,
+            &Frame::Rekey(Rekey {
+                key: k3,
+                grace_ms: 0,
+                evicted: None,
+            }),
+        )
+        .await
+        .unwrap();
         let end = tokio::time::timeout(KEY_PROOF_TIMEOUT + Duration::from_secs(2), async {
             loop {
                 match rf(&mut c.recv).await {
@@ -553,13 +609,20 @@ fn rotation_reaches_members_whose_authority_is_another_member() {
     let mut c = member("c", 2, K, hid);
     c.net.set_password(Some("pw".into())).unwrap();
     c.net.connect(h.net.local_addr(), Join::Key);
-    until(&mut [&mut h, &mut c], Duration::ZERO, |n| n[1].live.len() == 1);
+    until(&mut [&mut h, &mut c], Duration::ZERO, |n| {
+        n[1].live.len() == 1
+    });
     let mut d = Node::new(simple(Config {
         bind_ip: lo(3).into(),
         ..cfg("d", None, None)
     }));
-    d.net.connect(c.net.local_addr(), Join::Password("pw".into()));
-    until(&mut [&mut h, &mut c, &mut d], Duration::from_millis(300), full_mesh);
+    d.net
+        .connect(c.net.local_addr(), Join::Password("pw".into()));
+    until(
+        &mut [&mut h, &mut c, &mut d],
+        Duration::from_millis(300),
+        full_mesh,
+    );
     assert_eq!(d.net.authority(), Some(c.id()));
     let k2 = auth::key_from_seed(&h.net.rotate_session_key(Duration::ZERO));
     pump_for(
@@ -588,7 +651,9 @@ fn evicted_member_never_gets_the_key_from_its_authority() {
         let mut c = member("c", 2, K, hid);
         c.net.set_password(Some("pw".into())).unwrap();
         c.net.connect(h.net.local_addr(), Join::Key);
-        until(&mut [&mut h, &mut c], Duration::ZERO, |n| n[1].live.len() == 1);
+        until(&mut [&mut h, &mut c], Duration::ZERO, |n| {
+            n[1].live.len() == 1
+        });
         let ca = c.net.local_addr();
         let joiner = |name: &str, ip: u8| {
             let n = Node::new(simple(Config {
@@ -601,7 +666,11 @@ fn evicted_member_never_gets_the_key_from_its_authority() {
         let mut r = joiner("r", 3);
         until(&mut [&mut h, &mut c, &mut r], Duration::ZERO, full_mesh);
         let mut d = joiner("d", 4);
-        until(&mut [&mut h, &mut c, &mut r, &mut d], Duration::from_millis(300), full_mesh);
+        until(
+            &mut [&mut h, &mut c, &mut r, &mut d],
+            Duration::from_millis(300),
+            full_mesh,
+        );
         assert_eq!(r.net.authority(), Some(c.id()));
         let k2 = remove(&h, r.id());
         pump_for(
@@ -628,7 +697,8 @@ fn pw_joiner(name: &str, ip: u8, via: &Node) -> Node {
         bind_ip: lo(ip).into(),
         ..cfg(name, None, None)
     }));
-    n.net.connect(via.net.local_addr(), Join::Password("pw".into()));
+    n.net
+        .connect(via.net.local_addr(), Join::Password("pw".into()));
     n
 }
 
@@ -650,7 +720,11 @@ fn eviction_follows_the_rekey_down_a_chain_of_password_joins() {
         until(&mut [&mut h, &mut a, &mut b], Duration::ZERO, full_mesh);
         b.net.set_password(Some("pw".into())).unwrap();
         let mut r = pw_joiner("r", 4, &b);
-        until(&mut [&mut h, &mut a, &mut b, &mut r], Duration::from_millis(300), full_mesh);
+        until(
+            &mut [&mut h, &mut a, &mut b, &mut r],
+            Duration::from_millis(300),
+            full_mesh,
+        );
         assert_eq!(
             [a.net.authority(), b.net.authority(), r.net.authority()],
             [Some(h.id()), Some(a.id()), Some(b.id())]
@@ -687,11 +761,17 @@ fn a_second_rotation_removing_a_delegated_member_never_leaks_its_key() {
         let mut c = member("c", 2, K, hid);
         c.net.set_password(Some("pw".into())).unwrap();
         c.net.connect(h.net.local_addr(), Join::Key);
-        until(&mut [&mut h, &mut c], Duration::ZERO, |n| n[1].live.len() == 1);
+        until(&mut [&mut h, &mut c], Duration::ZERO, |n| {
+            n[1].live.len() == 1
+        });
         let mut r = pw_joiner("r", 3, &c);
         until(&mut [&mut h, &mut c, &mut r], Duration::ZERO, full_mesh);
         let mut d = pw_joiner("d", 4, &c);
-        until(&mut [&mut h, &mut c, &mut r, &mut d], Duration::from_millis(300), full_mesh);
+        until(
+            &mut [&mut h, &mut c, &mut r, &mut d],
+            Duration::from_millis(300),
+            full_mesh,
+        );
         let rid = r.id();
         c.key_delay = Duration::from_millis(200);
         let k2 = auth::key_from_seed(&h.net.rotate_session_key(Duration::ZERO));
@@ -702,7 +782,10 @@ fn a_second_rotation_removing_a_delegated_member_never_leaks_its_key() {
             &mut [&mut h, &mut c, &mut r, &mut d],
             KEY_PROOF_TIMEOUT + Duration::from_millis(1500),
         );
-        assert!(!r.keys.contains(&k3), "trial {trial}: r got the key that removed it");
+        assert!(
+            !r.keys.contains(&k3),
+            "trial {trial}: r got the key that removed it"
+        );
         assert!(r.live.is_empty(), "trial {trial}: {:?}", r.live);
         assert_eq!(c.keys, [k2, k3], "trial {trial}");
         assert_eq!(d.keys.last(), Some(&k3), "trial {trial}");

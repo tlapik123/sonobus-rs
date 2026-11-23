@@ -102,7 +102,11 @@ fn latency_run() -> Duration {
     let mut seqs: Vec<u32> = got.iter().map(|g| g.0).collect();
     seqs.sort();
     seqs.dedup();
-    assert!(seqs.len() >= N as usize * 99 / 100, "{} of {N} arrived", seqs.len());
+    assert!(
+        seqs.len() >= N as usize * 99 / 100,
+        "{} of {N} arrived",
+        seqs.len()
+    );
     assert!(reordered < N as usize / 100);
     let mut lat: Vec<u64> = got.iter().map(|g| g.1).collect();
     lat.sort();
@@ -206,7 +210,10 @@ fn pake_join_learns_key_and_key_proves_to_third() {
 }
 
 #[test]
-#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
+#[cfg_attr(
+    not(any(target_os = "linux", windows)),
+    ignore = "needs distinct loopback addresses"
+)]
 fn wrong_password_backs_off_per_address() {
     let host = simple(cfg("host", None, Some("right")));
     let joiner = simple(cfg("joiner", None, None));

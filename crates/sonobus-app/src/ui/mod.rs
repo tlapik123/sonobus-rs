@@ -132,7 +132,9 @@ impl Capabilities {
     pub fn has(&self, page: Page) -> bool {
         match page {
             Page::AudioSetup => self.audio_setup,
-            Page::File(FileAction::LoadSetup | FileAction::SaveSetup | FileAction::ImportSonoBus) => self.settings_files,
+            Page::File(
+                FileAction::LoadSetup | FileAction::SaveSetup | FileAction::ImportSonoBus,
+            ) => self.settings_files,
             _ => true,
         }
     }
@@ -190,7 +192,11 @@ pub struct SonobusApp {
     /// OSC push to talk is not released by the next frame).
     ptt_key: bool,
     /// This device's LAN addresses, looked up off the UI thread now and then.
-    lan: (Option<std::time::Instant>, Vec<std::net::IpAddr>, Option<std::sync::mpsc::Receiver<Vec<std::net::IpAddr>>>),
+    lan: (
+        Option<std::time::Instant>,
+        Vec<std::net::IpAddr>,
+        Option<std::sync::mpsc::Receiver<Vec<std::net::IpAddr>>>,
+    ),
     /// A running "Trim to New".
     pub trim: Option<std::sync::mpsc::Receiver<std::io::Result<std::path::PathBuf>>>,
     /// The connect page's protocol: compatible (legacy) groups or secure sessions.
@@ -212,18 +218,29 @@ pub struct SonobusApp {
 impl SonobusApp {
     /// `form` pre-fills the connect page (from the command line or a link).
     pub fn new(ctrl: AppController, form: ConnectRequest) -> Self {
-        let connected = ctrl.vm().snapshot.connection != Connection::Disconnected || ctrl.vm().connecting;
-        let caps = if ctrl.is_hosted() { Capabilities::PLUGIN } else { Capabilities::STANDALONE };
+        let connected =
+            ctrl.vm().snapshot.connection != Connection::Disconnected || ctrl.vm().connecting;
+        let caps = if ctrl.is_hosted() {
+            Capabilities::PLUGIN
+        } else {
+            Capabilities::STANDALONE
+        };
         SonobusApp {
             caps,
             // a secure session (or one asked for on the command line) shows the secure side
-            protocol: if ctrl.vm().secure.is_some() || ctrl.vm().secure_starting || ctrl.vm().pending_invite.is_some() {
+            protocol: if ctrl.vm().secure.is_some()
+                || ctrl.vm().secure_starting
+                || ctrl.vm().pending_invite.is_some()
+            {
                 Protocol::Secure
             } else {
                 Protocol::Compatible
             },
             secure_tab: SecureTab::Host,
-            host_form: crate::secure::HostForm { lan: caps.lan_advertise_default, ..Default::default() },
+            host_form: crate::secure::HostForm {
+                lan: caps.lan_advertise_default,
+                ..Default::default()
+            },
             join: JoinForm::default(),
             relay_url: String::new(),
             show_qr: true,
@@ -280,16 +297,30 @@ impl SonobusApp {
             Page::File(a) => {
                 let dir = self.ctrl.setup_folder();
                 self.path_text = match a {
-                    FileAction::LoadSetup => self.ctrl.vm().recent_setups.last().cloned().unwrap_or_default(),
-                    FileAction::SaveSetup => dir.join("MySetup.sonobus").to_string_lossy().into_owned(),
+                    FileAction::LoadSetup => self
+                        .ctrl
+                        .vm()
+                        .recent_setups
+                        .last()
+                        .cloned()
+                        .unwrap_or_default(),
+                    FileAction::SaveSetup => {
+                        dir.join("MySetup.sonobus").to_string_lossy().into_owned()
+                    }
                     FileAction::ImportSonoBus => crate::settings::upstream_settings_file()
                         .map(|p| p.to_string_lossy().into_owned())
                         .unwrap_or_default(),
-                    FileAction::OpenAudio => self.ctrl.vm().recent_files.first().cloned().unwrap_or_else(|| {
-                        let mut d = self.ctrl.record_dir().to_string_lossy().into_owned();
-                        d.push(std::path::MAIN_SEPARATOR);
-                        d
-                    }),
+                    FileAction::OpenAudio => self
+                        .ctrl
+                        .vm()
+                        .recent_files
+                        .first()
+                        .cloned()
+                        .unwrap_or_else(|| {
+                            let mut d = self.ctrl.record_dir().to_string_lossy().into_owned();
+                            d.push(std::path::MAIN_SEPARATOR);
+                            d
+                        }),
                     FileAction::RecordDir => self.ctrl.record_dir().to_string_lossy().into_owned(),
                     FileAction::SampleFile => self
                         .sample_edit
@@ -307,7 +338,14 @@ impl SonobusApp {
             Page::SuggestGroup => {
                 self.suggest = SuggestForm {
                     group: crate::links::random_group_name(),
-                    users: self.ctrl.vm().snapshot.peers.iter().map(|p| p.user.clone()).collect(),
+                    users: self
+                        .ctrl
+                        .vm()
+                        .snapshot
+                        .peers
+                        .iter()
+                        .map(|p| p.user.clone())
+                        .collect(),
                     ..SuggestForm::default()
                 };
             }
@@ -322,13 +360,16 @@ impl SonobusApp {
     /// while no frame is drawn.
     pub fn tick(&mut self) {
         self.ctrl.tick();
-        let Some(c) = self.platform.as_ref().map(|p| p.capture()) else { return };
+        let Some(c) = self.platform.as_ref().map(|p| p.capture()) else {
+            return;
+        };
         if c.state == crate::platform::CaptureState::Running
             && c.format.is_some()
             && self.ctrl.audio_setup().external != c.format
             && let Err(e) = self.ctrl.set_external_input(c.format)
         {
-            self.ctrl.set_status(format!("{}: {e}", tr("Audio setup failed")), true);
+            self.ctrl
+                .set_status(format!("{}: {e}", tr("Audio setup failed")), true);
         }
     }
 
@@ -349,7 +390,10 @@ impl SonobusApp {
             self.page = Page::Main; // left the group meanwhile
         }
         // "On this network" looks only while it is shown
-        let joining = self.page == Page::Connect && self.protocol == Protocol::Secure && self.secure_tab == SecureTab::Join && self.ctrl.vm().secure.is_none();
+        let joining = self.page == Page::Connect
+            && self.protocol == Protocol::Secure
+            && self.secure_tab == SecureTab::Join
+            && self.ctrl.vm().secure.is_none();
         if !joining && self.lan_tried {
             self.lan_tried = false;
             self.ctrl.lan_browse(false);
@@ -366,29 +410,39 @@ impl SonobusApp {
         egui::Panel::top("top_bar").show(ui, |ui| self.top_bar(ui));
         egui::Panel::bottom("status_bar").show(ui, |ui| self.status_bar(ui));
         if wide && self.show_chat && self.page != Page::Chat {
-            egui::Panel::right("chat_panel").default_size(280.0).resizable(true).show(ui, |ui| {
-                pages::chat(self, ui);
-            });
+            egui::Panel::right("chat_panel")
+                .default_size(280.0)
+                .resizable(true)
+                .show(ui, |ui| {
+                    pages::chat(self, ui);
+                });
         }
         if wide && self.show_soundboard && self.page != Page::Soundboard {
-            egui::Panel::right("soundboard_panel").default_size(300.0).resizable(true).show(ui, |ui| {
-                egui::ScrollArea::vertical().id_salt("sb_scroll").show(ui, |ui| media::soundboard(self, ui));
-            });
+            egui::Panel::right("soundboard_panel")
+                .default_size(300.0)
+                .resizable(true)
+                .show(ui, |ui| {
+                    egui::ScrollArea::vertical()
+                        .id_salt("sb_scroll")
+                        .show(ui, |ui| media::soundboard(self, ui));
+                });
         }
         egui::CentralPanel::default().show(ui, |ui| {
-            egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| match self.page {
-                Page::Connect => connect::page(self, ui),
-                Page::Main => mixer::page(self, ui),
-                Page::AudioSetup => pages::audio_setup(self, ui),
-                Page::Options => pages::options(self, ui),
-                Page::Effects(t) => pages::effects(self, ui, t),
-                Page::Chat => pages::chat(self, ui),
-                Page::File(a) => pages::file(self, ui, a),
-                Page::Soundboard => media::soundboard(self, ui),
-                Page::SampleEdit => media::sample_edit(self, ui),
-                Page::LatencyMatch => session::latency_match(self, ui),
-                Page::SuggestGroup => session::suggest_group(self, ui),
-            });
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| match self.page {
+                    Page::Connect => connect::page(self, ui),
+                    Page::Main => mixer::page(self, ui),
+                    Page::AudioSetup => pages::audio_setup(self, ui),
+                    Page::Options => pages::options(self, ui),
+                    Page::Effects(t) => pages::effects(self, ui, t),
+                    Page::Chat => pages::chat(self, ui),
+                    Page::File(a) => pages::file(self, ui, a),
+                    Page::Soundboard => media::soundboard(self, ui),
+                    Page::SampleEdit => media::sample_edit(self, ui),
+                    Page::LatencyMatch => session::latency_match(self, ui),
+                    Page::SuggestGroup => session::suggest_group(self, ui),
+                });
         });
         if self.confirm_quit {
             self.quit_dialog(ui.ctx());
@@ -488,7 +542,11 @@ impl SonobusApp {
 
     /// Whether we send audio at all: a broadcast listener does not (its send controls go).
     pub fn sends(&self) -> bool {
-        self.ctrl.vm().secure.as_ref().is_none_or(|s| s.role != sonobus_engine::modern::SessionRole::Listener)
+        self.ctrl
+            .vm()
+            .secure
+            .as_ref()
+            .is_none_or(|s| s.role != sonobus_engine::modern::SessionRole::Listener)
     }
 
     fn toggle_chat(&mut self, wide: bool) {
@@ -508,7 +566,8 @@ impl SonobusApp {
         if wide {
             self.show_soundboard = !self.show_soundboard;
             let shown = self.show_soundboard;
-            self.ctrl.edit(move |s| s.extra.last_soundboard_shown = shown);
+            self.ctrl
+                .edit(move |s| s.extra.last_soundboard_shown = shown);
             if self.page == Page::Soundboard {
                 self.page = Page::Main;
             }
@@ -521,12 +580,20 @@ impl SonobusApp {
 
     /// Files dropped on the window: onto the soundboard as new samples, else into playback.
     fn dropped_files(&mut self, ctx: &egui::Context) {
-        let files: Vec<std::path::PathBuf> = ctx.input(|i| i.raw.dropped_files.iter().map(|f| f.path().to_path_buf()).filter(|p| !p.as_os_str().is_empty()).collect());
+        let files: Vec<std::path::PathBuf> = ctx.input(|i| {
+            i.raw
+                .dropped_files
+                .iter()
+                .map(|f| f.path().to_path_buf())
+                .filter(|p| !p.as_os_str().is_empty())
+                .collect()
+        });
         for f in files {
             if self.soundboard_visible {
                 media::add_sample_file(self, &f);
             } else if let Err(e) = self.ctrl.load_file(&f) {
-                self.ctrl.set_status(format!("{}: {e}", tr("Cannot play file")), true);
+                self.ctrl
+                    .set_status(format!("{}: {e}", tr("Cannot play file")), true);
             }
         }
     }
@@ -550,10 +617,19 @@ impl SonobusApp {
         {
             (self.lan.1, self.lan.2) = (v, None);
         }
-        if self.lan.2.is_none() && self.lan.0.is_none_or(|t| t.elapsed() >= Duration::from_secs(10)) {
+        if self.lan.2.is_none()
+            && self
+                .lan
+                .0
+                .is_none_or(|t| t.elapsed() >= Duration::from_secs(10))
+        {
             let (tx, rx) = std::sync::mpsc::channel();
             std::thread::spawn(move || tx.send(crate::controller::lan_addresses()));
-            self.lan = (Some(std::time::Instant::now()), std::mem::take(&mut self.lan.1), Some(rx));
+            self.lan = (
+                Some(std::time::Instant::now()),
+                std::mem::take(&mut self.lan.1),
+                Some(rx),
+            );
         }
         &self.lan.1
     }
@@ -563,7 +639,9 @@ impl SonobusApp {
         let mut stop = false;
         if let Some((port, addrs)) = &self.ctrl.vm().hosting {
             ui.horizontal_wrapped(|ui| {
-                let a = addrs.first().map_or("127.0.0.1".into(), ToString::to_string);
+                let a = addrs
+                    .first()
+                    .map_or("127.0.0.1".into(), ToString::to_string);
                 ui.label(RichText::new(format!("{} {a}:{port}", tr("Hosting on"))).strong());
                 stop = ui.small_button(tr("Stop Hosting")).clicked();
             });
@@ -605,14 +683,31 @@ impl SonobusApp {
                     sonobus_engine::modern::SessionRole::Member => tr("Member"),
                     sonobus_engine::modern::SessionRole::Listener => tr("Listener"),
                 };
-                ui.label(format!("| {} | {role} | {}: {}", s.session, tr("User Count"), vm.snapshot.peers.len() + 1));
+                ui.label(format!(
+                    "| {} | {role} | {}: {}",
+                    s.session,
+                    tr("User Count"),
+                    vm.snapshot.peers.len() + 1
+                ));
             } else if let Some(g) = &vm.snapshot.group {
-                ui.label(format!("| {}{g} | {}: {}", tr("Group: "), tr("User Count"), vm.snapshot.peers.len() + 1));
+                ui.label(format!(
+                    "| {}{g} | {}: {}",
+                    tr("Group: "),
+                    tr("User Count"),
+                    vm.snapshot.peers.len() + 1
+                ));
             }
             if !vm.status.is_empty() {
-                let color = if vm.status_is_error { Color32::from_rgb(230, 90, 80) } else { ui.visuals().text_color() };
+                let color = if vm.status_is_error {
+                    Color32::from_rgb(230, 90, 80)
+                } else {
+                    ui.visuals().text_color()
+                };
                 ui.label(RichText::new(&vm.status).color(color));
-                clear = ui.small_button(tr("Clear")).on_hover_text(tr("Clear status message")).clicked();
+                clear = ui
+                    .small_button(tr("Clear"))
+                    .on_hover_text(tr("Clear status message"))
+                    .clicked();
             }
         });
         if clear {
@@ -621,7 +716,10 @@ impl SonobusApp {
     }
 
     fn shortcuts(&mut self, ctx: &egui::Context) {
-        if self.caps.app_window && ctx.input(|i| i.viewport().close_requested()) && !self.allowed_to_close {
+        if self.caps.app_window
+            && ctx.input(|i| i.viewport().close_requested())
+            && !self.allowed_to_close
+        {
             if self.ctrl.vm().snapshot.connection == Connection::Connected {
                 ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
                 self.confirm_quit = true;
@@ -632,7 +730,12 @@ impl SonobusApp {
         if self.ctrl.vm().state.extra.disable_key_shortcuts {
             return;
         }
-        if self.page == Page::SampleEdit && self.sample_edit.as_ref().is_some_and(|e| e.capturing_hotkey) {
+        if self.page == Page::SampleEdit
+            && self
+                .sample_edit
+                .as_ref()
+                .is_some_and(|e| e.capturing_hotkey)
+        {
             return; // the next key is the sample's hotkey
         }
         let typing = ctx.egui_wants_keyboard_input();
@@ -683,8 +786,13 @@ impl SonobusApp {
         if hit(cmd(Key::Comma)) {
             self.open_page(Page::Options);
         }
-        if hit(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, Key::C))
-            && let Some(link) = self.ctrl.group_link().or_else(|| self.ctrl.vm().secure.as_ref()?.invite.clone())
+        if hit(KeyboardShortcut::new(
+            Modifiers::COMMAND | Modifiers::ALT,
+            Key::C,
+        )) && let Some(link) = self
+            .ctrl
+            .group_link()
+            .or_else(|| self.ctrl.vm().secure.as_ref()?.invite.clone())
         {
             ctx.copy_text(link);
         }
@@ -714,10 +822,18 @@ impl SonobusApp {
             }
         }
         if self.ctrl.vm().snapshot.group.is_some() {
-            if hit(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, Key::L)) {
+            if hit(KeyboardShortcut::new(
+                Modifiers::COMMAND | Modifiers::ALT,
+                Key::L,
+            )) {
                 self.open_page(Page::LatencyMatch);
             }
-            if self.ctrl.vm().secure.is_none() && hit(KeyboardShortcut::new(Modifiers::COMMAND | Modifiers::ALT, Key::S)) {
+            if self.ctrl.vm().secure.is_none()
+                && hit(KeyboardShortcut::new(
+                    Modifiers::COMMAND | Modifiers::ALT,
+                    Key::S,
+                ))
+            {
                 self.open_page(Page::SuggestGroup);
             }
         }
@@ -757,7 +873,11 @@ impl eframe::App for SonobusApp {
 /// A row of controls: wraps on wide screens, stacks on phones (a slider with its value and
 /// label is a nested horizontal layout that a wrapping row cannot break).
 fn row<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
-    if ui.available_width() < 520.0 { ui.vertical(add).inner } else { ui.horizontal_wrapped(add).inner }
+    if ui.available_width() < 520.0 {
+        ui.vertical(add).inner
+    } else {
+        ui.horizontal_wrapped(add).inner
+    }
 }
 
 /// A framed on/off button (upstream's MUTE/SOLO style toggles).
@@ -771,25 +891,52 @@ fn toggle(ui: &mut Ui, value: &mut bool, text: &str) -> Response {
 }
 
 /// A text field with a visible label that is also its accessible name.
-fn text_field(ui: &mut Ui, label: &str, value: &mut String, hint: &str, password: bool) -> Response {
+fn text_field(
+    ui: &mut Ui,
+    label: &str,
+    value: &mut String,
+    hint: &str,
+    password: bool,
+) -> Response {
     ui.horizontal(|ui| {
         let l = ui.label(label);
-        ui.add(egui::TextEdit::singleline(value).hint_text(hint).password(password).desired_width(220.0))
-            .labelled_by(l.id)
+        ui.add(
+            egui::TextEdit::singleline(value)
+                .hint_text(hint)
+                .password(password)
+                .desired_width(220.0),
+        )
+        .labelled_by(l.id)
     })
     .inner
 }
 
 /// Slider over a JUCE-skewed range (`proportion = ((v - min) / (max - min))^skew`), stepped.
-fn skew_slider(ui: &mut Ui, value: &mut f32, spec: ParamSpec, label: &str, unit: &'static str) -> Response {
+fn skew_slider(
+    ui: &mut Ui,
+    value: &mut f32,
+    spec: ParamSpec,
+    label: &str,
+    unit: &'static str,
+) -> Response {
     let span = spec.max - spec.min;
     let to_p = |v: f32| ((v - spec.min) / span).clamp(0.0, 1.0).powf(spec.skew) as f64;
     let from_p = move |p: f64| {
         let v = spec.min + span * (p.clamp(0.0, 1.0) as f32).powf(1.0 / spec.skew);
-        if spec.step > 0.0 { (spec.min + ((v - spec.min) / spec.step).round() * spec.step).clamp(spec.min, spec.max) } else { v }
+        if spec.step > 0.0 {
+            (spec.min + ((v - spec.min) / spec.step).round() * spec.step).clamp(spec.min, spec.max)
+        } else {
+            v
+        }
     };
     let mut p = to_p(*value);
-    let decimals = if spec.step >= 1.0 { 0 } else if spec.step >= 0.1 || span > 10.0 { 1 } else { 2 };
+    let decimals = if spec.step >= 1.0 {
+        0
+    } else if spec.step >= 0.1 || span > 10.0 {
+        1
+    } else {
+        2
+    };
     let r = ui.add(
         egui::Slider::new(&mut p, 0.0..=1.0)
             .text(label.trim_end_matches([':', ' ']))
@@ -806,7 +953,13 @@ fn skew_slider(ui: &mut Ui, value: &mut f32, spec: ParamSpec, label: &str, unit:
 }
 
 const fn spec(min: f32, max: f32, step: f32, skew: f32, default: f32) -> ParamSpec {
-    ParamSpec { min, max, step, skew, default }
+    ParamSpec {
+        min,
+        max,
+        step,
+        skew,
+        default,
+    }
 }
 
 /// Gain slider in dB over a linear 0..max gain (upstream level sliders show dB).
@@ -824,21 +977,41 @@ fn meter(ui: &mut Ui, levels: &MeterLevels, label: &str) -> Response {
     let n = levels.peak.len().max(1);
     let w = ui.available_width().clamp(60.0, 240.0);
     let bar_h = 5.0;
-    let (rect, resp) = ui.allocate_exact_size(egui::vec2(w, 2.0 + (bar_h + 1.0) * n as f32 + 9.0), egui::Sense::hover());
+    let (rect, resp) = ui.allocate_exact_size(
+        egui::vec2(w, 2.0 + (bar_h + 1.0) * n as f32 + 9.0),
+        egui::Sense::hover(),
+    );
     let p = ui.painter();
     let bars = egui::Rect::from_min_size(rect.min, egui::vec2(w, 2.0 + (bar_h + 1.0) * n as f32));
     p.rect_filled(bars, 2.0, ui.visuals().extreme_bg_color);
     let frac = |v: f32| ((db(v) + 60.0) / 60.0).clamp(0.0, 1.0);
-    let colour = |v: f32| if v >= 0.99 { Color32::RED } else if db(v) > -6.0 { Color32::YELLOW } else { Color32::from_rgb(60, 180, 90) };
+    let colour = |v: f32| {
+        if v >= 0.99 {
+            Color32::RED
+        } else if db(v) > -6.0 {
+            Color32::YELLOW
+        } else {
+            Color32::from_rgb(60, 180, 90)
+        }
+    };
     let now = ui.input(|i| i.time);
     let hold_id = resp.id.with("hold");
     let mut holds: Vec<(f32, f64)> = ui.data(|d| d.get_temp(hold_id)).unwrap_or_default();
     holds.resize(levels.peak.len(), (0.0, 0.0));
     for c in 0..levels.peak.len() {
         let y = bars.top() + 1.0 + (bar_h + 1.0) * c as f32;
-        let bar = |v: f32| egui::Rect::from_min_size(egui::pos2(bars.left(), y), egui::vec2(bars.width() * frac(v), bar_h));
+        let bar = |v: f32| {
+            egui::Rect::from_min_size(
+                egui::pos2(bars.left(), y),
+                egui::vec2(bars.width() * frac(v), bar_h),
+            )
+        };
         let peak = levels.peak[c];
-        p.rect_filled(bar(levels.rms.get(c).copied().unwrap_or(0.0)), 0.0, colour(peak).gamma_multiply(0.7));
+        p.rect_filled(
+            bar(levels.rms.get(c).copied().unwrap_or(0.0)),
+            0.0,
+            colour(peak).gamma_multiply(0.7),
+        );
         let x = bars.left() + bars.width() * frac(peak);
         p.vline(x, y..=y + bar_h, egui::Stroke::new(1.5, colour(peak)));
         let h = &mut holds[c];
@@ -854,10 +1027,24 @@ fn meter(ui: &mut Ui, levels: &MeterLevels, label: &str) -> Response {
     let tick = ui.visuals().weak_text_color();
     for d in [-48.0f32, -36.0, -24.0, -12.0, -6.0, 0.0] {
         let x = bars.left() + bars.width() * (d + 60.0) / 60.0;
-        p.vline(x, bars.bottom()..=bars.bottom() + 2.0, egui::Stroke::new(1.0, tick));
+        p.vline(
+            x,
+            bars.bottom()..=bars.bottom() + 2.0,
+            egui::Stroke::new(1.0, tick),
+        );
         if w >= 140.0 || d == -24.0 || d == 0.0 {
-            let align = if d == 0.0 { egui::Align2::RIGHT_TOP } else { egui::Align2::CENTER_TOP };
-            p.text(egui::pos2(x, bars.bottom() + 1.0), align, format!("{}", d.abs()), egui::FontId::proportional(7.5), tick);
+            let align = if d == 0.0 {
+                egui::Align2::RIGHT_TOP
+            } else {
+                egui::Align2::CENTER_TOP
+            };
+            p.text(
+                egui::pos2(x, bars.bottom() + 1.0),
+                align,
+                format!("{}", d.abs()),
+                egui::FontId::proportional(7.5),
+                tick,
+            );
         }
     }
     let peak_db = levels.peak.iter().copied().fold(0.0, f32::max);
@@ -879,42 +1066,91 @@ enum Icon {
 }
 
 fn paint_icon(p: &egui::Painter, c: egui::Pos2, icon: Icon, colour: Color32) {
-    let tri = |pts: [egui::Pos2; 3]| egui::Shape::convex_polygon(pts.to_vec(), colour, egui::Stroke::NONE);
+    let tri = |pts: [egui::Pos2; 3]| {
+        egui::Shape::convex_polygon(pts.to_vec(), colour, egui::Stroke::NONE)
+    };
     let r = 6.0;
     match icon {
         Icon::Record => {
             p.circle_filled(c, r, colour);
         }
         Icon::Play => {
-            p.add(tri([c + egui::vec2(-r * 0.7, -r), c + egui::vec2(-r * 0.7, r), c + egui::vec2(r, 0.0)]));
+            p.add(tri([
+                c + egui::vec2(-r * 0.7, -r),
+                c + egui::vec2(-r * 0.7, r),
+                c + egui::vec2(r, 0.0),
+            ]));
         }
         Icon::Pause => {
             for dx in [-r * 0.5, r * 0.5] {
-                p.rect_filled(egui::Rect::from_center_size(c + egui::vec2(dx, 0.0), egui::vec2(r * 0.6, r * 2.0)), 1.0, colour);
+                p.rect_filled(
+                    egui::Rect::from_center_size(
+                        c + egui::vec2(dx, 0.0),
+                        egui::vec2(r * 0.6, r * 2.0),
+                    ),
+                    1.0,
+                    colour,
+                );
             }
         }
         Icon::ToStart => {
-            p.rect_filled(egui::Rect::from_center_size(c + egui::vec2(-r * 0.8, 0.0), egui::vec2(2.0, r * 2.0)), 0.0, colour);
-            p.add(tri([c + egui::vec2(r, -r), c + egui::vec2(r, r), c + egui::vec2(-r * 0.5, 0.0)]));
+            p.rect_filled(
+                egui::Rect::from_center_size(
+                    c + egui::vec2(-r * 0.8, 0.0),
+                    egui::vec2(2.0, r * 2.0),
+                ),
+                0.0,
+                colour,
+            );
+            p.add(tri([
+                c + egui::vec2(r, -r),
+                c + egui::vec2(r, r),
+                c + egui::vec2(-r * 0.5, 0.0),
+            ]));
         }
         Icon::Loop => {
             p.circle_stroke(c, r * 0.9, egui::Stroke::new(2.0, colour));
-            p.add(tri([c + egui::vec2(r * 0.9 - 4.0, -2.0), c + egui::vec2(r * 0.9 + 4.0, -2.0), c + egui::vec2(r * 0.9, 3.0)]));
+            p.add(tri([
+                c + egui::vec2(r * 0.9 - 4.0, -2.0),
+                c + egui::vec2(r * 0.9 + 4.0, -2.0),
+                c + egui::vec2(r * 0.9, 3.0),
+            ]));
         }
         Icon::Lock | Icon::Unlock => {
             // body, and the shackle: closed, or lifted and open on the right
-            p.rect_filled(egui::Rect::from_center_size(c + egui::vec2(0.0, r * 0.45), egui::vec2(r * 1.6, r * 1.1)), 1.5, colour);
+            p.rect_filled(
+                egui::Rect::from_center_size(
+                    c + egui::vec2(0.0, r * 0.45),
+                    egui::vec2(r * 1.6, r * 1.1),
+                ),
+                1.5,
+                colour,
+            );
             let lift = if icon == Icon::Lock { 0.0 } else { r * 0.45 };
             let top = c + egui::vec2(0.0, -r * 0.35 - lift);
             let stroke = egui::Stroke::new(1.8, colour);
-            let arc: Vec<egui::Pos2> = (0..=12).map(|i| {
-                let a = std::f32::consts::PI * (1.0 + i as f32 / 12.0);
-                top + egui::vec2(a.cos(), a.sin()) * r * 0.55
-            }).collect();
+            let arc: Vec<egui::Pos2> = (0..=12)
+                .map(|i| {
+                    let a = std::f32::consts::PI * (1.0 + i as f32 / 12.0);
+                    top + egui::vec2(a.cos(), a.sin()) * r * 0.55
+                })
+                .collect();
             p.add(egui::Shape::line(arc, stroke));
-            p.line_segment([top + egui::vec2(-r * 0.55, 0.0), c + egui::vec2(-r * 0.55, 0.0)], stroke);
+            p.line_segment(
+                [
+                    top + egui::vec2(-r * 0.55, 0.0),
+                    c + egui::vec2(-r * 0.55, 0.0),
+                ],
+                stroke,
+            );
             if icon == Icon::Lock {
-                p.line_segment([top + egui::vec2(r * 0.55, 0.0), c + egui::vec2(r * 0.55, 0.0)], stroke);
+                p.line_segment(
+                    [
+                        top + egui::vec2(r * 0.55, 0.0),
+                        c + egui::vec2(r * 0.55, 0.0),
+                    ],
+                    stroke,
+                );
             }
         }
     }
@@ -922,8 +1158,16 @@ fn paint_icon(p: &egui::Painter, c: egui::Pos2, icon: Icon, colour: Color32) {
 
 /// A button whose face is a painted symbol; `name` is its accessible name and tooltip.
 fn icon_button(ui: &mut Ui, icon: Icon, name: &str, selected: bool) -> Response {
-    let r = ui.add(egui::Button::new("").selected(selected).min_size(egui::vec2(34.0, 26.0)));
-    let colour = if icon == Icon::Record { Color32::from_rgb(220, 60, 60) } else { ui.visuals().widgets.style(&r).fg_stroke.color };
+    let r = ui.add(
+        egui::Button::new("")
+            .selected(selected)
+            .min_size(egui::vec2(34.0, 26.0)),
+    );
+    let colour = if icon == Icon::Record {
+        Color32::from_rgb(220, 60, 60)
+    } else {
+        ui.visuals().widgets.style(&r).fg_stroke.color
+    };
     paint_icon(ui.painter(), r.rect.center(), icon, colour);
     r.widget_info(|| egui::WidgetInfo::selected(egui::Role::Button, true, selected, name));
     r.on_hover_text(name)
@@ -932,7 +1176,11 @@ fn icon_button(ui: &mut Ui, icon: Icon, name: &str, selected: bool) -> Response 
 /// `m:ss` (or `h:mm:ss`).
 fn hms(secs: f64) -> String {
     let s = secs.max(0.0) as u64;
-    if s >= 3600 { format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60) } else { format!("{}:{:02}", s / 60, s % 60) }
+    if s >= 3600 {
+        format!("{}:{:02}:{:02}", s / 3600, s / 60 % 60, s % 60)
+    } else {
+        format!("{}:{:02}", s / 60, s % 60)
+    }
 }
 
 /// Loads system CJK fonts as fallbacks when the language needs them (egui's bundled fonts
@@ -945,12 +1193,17 @@ pub fn install_fonts(ctx: &egui::Context) {
         return;
     }
     for (i, path) in crate::i18n::CJK_FONTS.iter().enumerate() {
-        let Ok(bytes) = std::fs::read(path) else { continue };
+        let Ok(bytes) = std::fs::read(path) else {
+            continue;
+        };
         ctx.add_font(egui::epaint::text::FontInsert::new(
             &format!("cjk{i}"),
             egui::FontData::from_owned(bytes),
             [egui::FontFamily::Proportional, egui::FontFamily::Monospace]
-                .map(|family| egui::epaint::text::InsertFontFamily { family, priority: egui::epaint::text::FontPriority::Lowest })
+                .map(|family| egui::epaint::text::InsertFontFamily {
+                    family,
+                    priority: egui::epaint::text::FontPriority::Lowest,
+                })
                 .to_vec(),
         ));
     }

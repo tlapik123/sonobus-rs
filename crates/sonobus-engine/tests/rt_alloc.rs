@@ -318,7 +318,11 @@ fn modern_session_process_does_not_allocate() {
     let mut b = Node::new(&[660.0, 770.0], 2, state(groups(&[(0, 1), (1, 1)])));
     let mut rig = Rig::new();
     rig.run(&mut [&mut a, &mut b], 0.2);
-    let link = a.e.host_session(&net("a"), HostOptions::new("rt")).unwrap().invite.unwrap();
+    let link =
+        a.e.host_session(&net("a"), HostOptions::new("rt"))
+            .unwrap()
+            .invite
+            .unwrap();
     b.e.join_invite(&net("b"), &link).unwrap();
     rig.run(&mut [&mut a, &mut b], 2.0);
     let snap = a.snap();

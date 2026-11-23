@@ -10,9 +10,9 @@ use android_activity::AndroidApp;
 use android_activity::input::{ImeOptions, InputType, TextInputAction, TextInputState, TextSpan};
 use eframe::egui;
 use jni::JNIEnv;
+use jni::JavaVM;
 use jni::objects::{GlobalRef, JByteBuffer, JClass, JString, JValue};
 use jni::sys::{jboolean, jfloat, jint};
-use jni::JavaVM;
 use sonobus_app::audio::{DeviceChoice, ExternalSlot};
 use sonobus_app::controller::{AppController, ControllerConfig};
 use sonobus_app::platform::{AppInfo, CaptureStatus, CaptureTarget, Platform};
@@ -61,7 +61,9 @@ fn call(name: &str, sig: &str, args: &[JValue<'_, '_>]) {
         log(&format!("NativeBridge.{name}: bridge not initialised"));
         return;
     };
-    let Ok(mut env) = b.vm.attach_current_thread_permanently() else { return };
+    let Ok(mut env) = b.vm.attach_current_thread_permanently() else {
+        return;
+    };
     let class: &JClass<'_> = b.class.as_obj().into();
     if let Err(e) = env.call_static_method(class, name, sig, args) {
         let _ = env.exception_describe();
@@ -114,7 +116,10 @@ fn android_main(app: AndroidApp) {
         return;
     }
     let settings_dir = app.internal_data_path().map(|p| p.join("settings"));
-    let ctrl = match AppController::new(ControllerConfig { settings_dir, use_devices: true }) {
+    let ctrl = match AppController::new(ControllerConfig {
+        settings_dir,
+        use_devices: true,
+    }) {
         Ok(c) => c,
         Err(e) => {
             log(&format!("cannot start the engine: {e}"));
@@ -132,8 +137,15 @@ fn android_main(app: AndroidApp) {
     let _ = APP.set(shared.clone());
     keep_alive(shared.clone());
 
-    let options = eframe::NativeOptions { android_app: Some(app.clone()), ..Default::default() };
-    let shell = Shell { app: shared, android: app, ime_set: false };
+    let options = eframe::NativeOptions {
+        android_app: Some(app.clone()),
+        ..Default::default()
+    };
+    let shell = Shell {
+        app: shared,
+        android: app,
+        ime_set: false,
+    };
     if let Err(e) = eframe::run_native("SonoBus", options, Box::new(|_cc| Ok(Box::new(shell)))) {
         log(&format!("UI stopped: {e}"));
     }
@@ -153,11 +165,17 @@ fn keep_alive(app: Arc<Mutex<SonobusApp>>) {
                     let mut a = lock(&app);
                     a.tick();
                     let vm = a.ctrl.vm();
-                    vm.snapshot.connection != Connection::Disconnected || vm.connecting || vm.hosting.is_some()
+                    vm.snapshot.connection != Connection::Disconnected
+                        || vm.connecting
+                        || vm.hosting.is_some()
                 };
                 if now != active {
                     active = now;
-                    call("setSessionActive", "(Z)V", &[JValue::Bool(u8::from(active))]);
+                    call(
+                        "setSessionActive",
+                        "(Z)V",
+                        &[JValue::Bool(u8::from(active))],
+                    );
                 }
             }
         })
@@ -204,10 +222,14 @@ impl eframe::App for Shell {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.soft_keyboard_text(ui.ctx());
         let ppp = ui.ctx().pixels_per_point();
-        let [l, t, r, b] = std::array::from_fn::<f32, 4, _>(|i| INSETS[i].load(Relaxed) as f32 / ppp);
+        let [l, t, r, b] =
+            std::array::from_fn::<f32, 4, _>(|i| INSETS[i].load(Relaxed) as f32 / ppp);
         let full = ui.max_rect();
-        let safe = egui::Rect::from_min_max(full.min + egui::vec2(l, t), full.max - egui::vec2(r, b));
-        ui.scope_builder(egui::UiBuilder::new().max_rect(safe), |ui| lock(&self.app).show(ui));
+        let safe =
+            egui::Rect::from_min_max(full.min + egui::vec2(l, t), full.max - egui::vec2(r, b));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(safe), |ui| {
+            lock(&self.app).show(ui)
+        });
     }
 
     fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
@@ -221,7 +243,10 @@ impl eframe::App for Shell {
 /// `nativeInit()`: remembers the VM and the bridge class (FindClass from native threads only
 /// sees system classes).
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_nativeInit(env: JNIEnv<'_>, class: JClass<'_>) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_nativeInit(
+    env: JNIEnv<'_>,
+    class: JClass<'_>,
+) {
     if BRIDGE.get().is_some() {
         return;
     }
@@ -239,7 +264,9 @@ extern "system" fn Java_io_github_sonobusrs_NativeBridge_onCaptureData(
     buf: JByteBuffer<'_>,
     bytes: jint,
 ) {
-    let (Some(slot), Ok(ptr)) = (EXTERNAL.get(), env.get_direct_buffer_address(&buf)) else { return };
+    let (Some(slot), Ok(ptr)) = (EXTERNAL.get(), env.get_direct_buffer_address(&buf)) else {
+        return;
+    };
     let cap = env.get_direct_buffer_capacity(&buf).unwrap_or(0);
     let n = usize::try_from(bytes).unwrap_or(0).min(cap);
     if ptr.is_null() || n == 0 {
@@ -284,7 +311,11 @@ extern "system" fn Java_io_github_sonobusrs_NativeBridge_onCaptureState(
 }
 
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_onCaptureLatency(_env: JNIEnv<'_>, _class: JClass<'_>, ms: jfloat) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_onCaptureLatency(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    ms: jfloat,
+) {
     if let Ok(mut m) = MODEL.try_lock() {
         m.on_event(CaptureEvent::Latency(ms));
     }
@@ -292,14 +323,22 @@ extern "system" fn Java_io_github_sonobusrs_NativeBridge_onCaptureLatency(_env: 
 
 /// `onApps(list)`: one app per line, `uid \t package \t label`.
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_onApps(mut env: JNIEnv<'_>, _class: JClass<'_>, list: JString<'_>) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_onApps(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    list: JString<'_>,
+) {
     let list = jstring(&mut env, &list);
     let apps = list
         .lines()
         .filter_map(|l| {
             let mut f = l.splitn(3, '\t');
             let uid = f.next()?.parse().ok()?;
-            Some(AppInfo { uid, package: f.next()?.into(), label: f.next()?.into() })
+            Some(AppInfo {
+                uid,
+                package: f.next()?.into(),
+                label: f.next()?.into(),
+            })
         })
         .collect();
     lock(&MODEL).apps = apps;
@@ -322,28 +361,46 @@ extern "system" fn Java_io_github_sonobusrs_NativeBridge_onInsets(
 /// `onPermission(recordAudio)`: the microphone can be opened now; without it, drop the
 /// device input so the output (what peers send) still plays.
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_onPermission(_env: JNIEnv<'_>, _class: JClass<'_>, granted: jboolean) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_onPermission(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    granted: jboolean,
+) {
     let Some(app) = APP.get() else { return };
     let mut a = lock(app);
     if granted != 0 {
         a.ctrl.retry_audio();
     } else if a.ctrl.audio_setup().input != DeviceChoice::None {
-        let setup = sonobus_app::audio::DeviceSetup { input: DeviceChoice::None, ..a.ctrl.audio_setup().clone() };
+        let setup = sonobus_app::audio::DeviceSetup {
+            input: DeviceChoice::None,
+            ..a.ctrl.audio_setup().clone()
+        };
         let _ = a.ctrl.set_audio_setup(setup);
-        a.ctrl.set_status("Microphone permission denied: input off (System sound still works once allowed)", true);
+        a.ctrl.set_status(
+            "Microphone permission denied: input off (System sound still works once allowed)",
+            true,
+        );
     }
 }
 
 /// `onNetworkChanged(available)`: logged for now; the future iroh transport rebinds here.
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_onNetworkChanged(_env: JNIEnv<'_>, _class: JClass<'_>, available: jboolean) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_onNetworkChanged(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    available: jboolean,
+) {
     log(&format!("network changed (available: {})", available != 0));
 }
 
 /// `onOpenUrl(url)`: a `sonobus2://join/...` link (QR code scanned with the camera app, a
 /// tapped link). The UI shows what it names and asks before joining.
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_onOpenUrl(mut env: JNIEnv<'_>, _class: JClass<'_>, url: JString<'_>) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_onOpenUrl(
+    mut env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    url: JString<'_>,
+) {
     let url = jstring(&mut env, &url);
     match APP.get() {
         Some(app) => lock(app).open_link(&url),
@@ -353,7 +410,10 @@ extern "system" fn Java_io_github_sonobusrs_NativeBridge_onOpenUrl(mut env: JNIE
 
 /// `nativeSave()`: writes the settings (activity stopped, app quitting).
 #[unsafe(no_mangle)]
-extern "system" fn Java_io_github_sonobusrs_NativeBridge_nativeSave(_env: JNIEnv<'_>, _class: JClass<'_>) {
+extern "system" fn Java_io_github_sonobusrs_NativeBridge_nativeSave(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+) {
     if let Some(app) = APP.get() {
         lock(app).ctrl.shutdown();
     }

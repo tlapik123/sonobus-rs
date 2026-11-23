@@ -11,10 +11,10 @@ use common::*;
 use iroh::endpoint::{Connection, RecvStream, SendStream};
 use iroh::{Endpoint, EndpointAddr, EndpointId, TransportAddr};
 use sonobus_net::auth::{self, Id};
+use sonobus_net::rdv::Refusals;
 use sonobus_net::rdv::{Limits, Msg, RDV_ALPN};
 use sonobus_net::rt::CLOSE_AUTH;
 use sonobus_net::wire::Role;
-use sonobus_net::rdv::Refusals;
 use sonobus_net::{
     Config, ConnId, Event, Net, PeerAddr, PeerInfo, RdvAddr, RelayChoice, RendezvousServer,
 };
@@ -74,7 +74,11 @@ fn until(nodes: &mut [&mut Node], done: impl Fn(&[&mut Node]) -> bool) {
 
 fn full_mesh(nodes: &[&mut Node]) -> bool {
     nodes.iter().all(|n| {
-        let mut want: Vec<Id> = nodes.iter().map(|m| m.id()).filter(|&i| i != n.id()).collect();
+        let mut want: Vec<Id> = nodes
+            .iter()
+            .map(|m| m.id())
+            .filter(|&i| i != n.id())
+            .collect();
         want.sort();
         n.peers() == want
     })
@@ -99,14 +103,9 @@ fn joiner(ip: u8) -> Node {
 
 #[test]
 fn join_by_name_through_standalone_server() {
-    let server = RendezvousServer::start(
-        lo(1).into(),
-        0,
-        None,
-        RelayChoice::None,
-        Limits::default(),
-    )
-    .unwrap();
+    let server =
+        RendezvousServer::start(lo(1).into(), 0, None, RelayChoice::None, Limits::default())
+            .unwrap();
     let srv = server.addr();
     // The text form users paste, parsed back (no resolution involved for IP literals).
     let text = RdvAddr::from(srv.clone()).to_url();
@@ -121,7 +120,11 @@ fn join_by_name_through_standalone_server() {
     b.net.join_by_name(srv.clone(), NAME, PW).unwrap();
     until(&mut [&mut h, &mut a, &mut b], full_mesh);
     let c = server.counts();
-    assert_eq!((c.tags, c.registrations, c.refused), (1, 3, Refusals::default()), "{c:?}");
+    assert_eq!(
+        (c.tags, c.registrations, c.refused),
+        (1, 3, Refusals::default()),
+        "{c:?}"
+    );
     // The host leaves; the members stay registered, so a newcomer still finds one of them.
     drop(h);
     let mut c = joiner(5);
@@ -161,7 +164,10 @@ struct Raw {
 async fn raw(ep: &Endpoint, to: &PeerAddr) -> Result<Raw, String> {
     let id = EndpointId::from_bytes(&to.id).unwrap();
     let addr = EndpointAddr::from_parts(id, to.addrs.iter().copied().map(TransportAddr::Ip));
-    let conn = ep.connect(addr, RDV_ALPN).await.map_err(|e| e.to_string())?;
+    let conn = ep
+        .connect(addr, RDV_ALPN)
+        .await
+        .map_err(|e| e.to_string())?;
     let (send, recv) = conn.open_bi().await.map_err(|e| e.to_string())?;
     Ok(Raw { conn, send, recv })
 }
@@ -176,7 +182,10 @@ async fn recv(r: &mut Raw) -> Result<Msg, String> {
     let mut h = [0u8; 3];
     r.recv.read_exact(&mut h).await.map_err(|e| e.to_string())?;
     let mut body = vec![0; u16::from_le_bytes([h[0], h[1]]) as usize];
-    r.recv.read_exact(&mut body).await.map_err(|e| e.to_string())?;
+    r.recv
+        .read_exact(&mut body)
+        .await
+        .map_err(|e| e.to_string())?;
     Msg::decode_body(h[2], &body).map_err(|e| e.to_string())
 }
 
@@ -189,7 +198,10 @@ fn me(ep: &Endpoint) -> PeerAddr {
 }
 
 #[test]
-#[cfg_attr(not(any(target_os = "linux", windows)), ignore = "needs distinct loopback addresses")]
+#[cfg_attr(
+    not(any(target_os = "linux", windows)),
+    ignore = "needs distinct loopback addresses"
+)]
 fn server_limits_against_raw_clients() {
     let limits = Limits {
         per_ip: 4,
@@ -233,7 +245,14 @@ fn server_limits_against_raw_clients() {
         // the last one complete; the watcher sees the server-observed address of each.
         let ep_w = raw_endpoint(lo(21)).await;
         let mut w = raw(&ep_w, &srv).await.unwrap();
-        send(&mut w, &Msg::Register { tag, addr: me(&ep_w) }).await;
+        send(
+            &mut w,
+            &Msg::Register {
+                tag,
+                addr: me(&ep_w),
+            },
+        )
+        .await;
         assert_eq!(recv(&mut w).await, Ok(Msg::Peers(vec![])));
         let mut others = vec![];
         for n in 22..25 {
@@ -257,7 +276,10 @@ fn server_limits_against_raw_clients() {
         assert!(start.elapsed() < Duration::from_secs(2));
         for (p, (ep, _)) in last.iter().zip(&others) {
             assert_eq!(p.id, *ep.id().as_bytes());
-            assert!(p.addrs.iter().any(|a| a.ip() == ep.bound_sockets()[0].ip()), "{p:?}");
+            assert!(
+                p.addrs.iter().any(|a| a.ip() == ep.bound_sockets()[0].ip()),
+                "{p:?}"
+            );
         }
         // Closing unregisters: the watcher (kept alive by PING) is told.
         send(&mut w, &Msg::Ping).await;
@@ -266,7 +288,14 @@ fn server_limits_against_raw_clients() {
         // A registrant that never sends PING is dropped after `idle`.
         let ep_i = raw_endpoint(lo(26)).await;
         let mut r = raw(&ep_i, &srv).await.unwrap();
-        send(&mut r, &Msg::Register { tag, addr: me(&ep_i) }).await;
+        send(
+            &mut r,
+            &Msg::Register {
+                tag,
+                addr: me(&ep_i),
+            },
+        )
+        .await;
         let t = Instant::now();
         while recv(&mut r).await.is_ok() {}
         let idle = t.elapsed();
@@ -289,7 +318,14 @@ fn server_limits_against_raw_clients() {
         // Another address still gets in.
         let ep2 = raw_endpoint(lo(31)).await;
         let mut r = raw(&ep2, &srv).await.unwrap();
-        send(&mut r, &Msg::Register { tag, addr: me(&ep2) }).await;
+        send(
+            &mut r,
+            &Msg::Register {
+                tag,
+                addr: me(&ep2),
+            },
+        )
+        .await;
         assert!(matches!(recv(&mut r).await, Ok(Msg::Peers(_))));
         // Every refusal above, by reason (the registrants that stopped pinging all went idle).
         let c = server.counts();
@@ -312,14 +348,9 @@ fn server_limits_against_raw_clients() {
 
 #[test]
 fn stop_rendezvous_unregisters_and_strict_port() {
-    let server = RendezvousServer::start(
-        lo(1).into(),
-        0,
-        None,
-        RelayChoice::None,
-        Limits::default(),
-    )
-    .unwrap();
+    let server =
+        RendezvousServer::start(lo(1).into(), 0, None, RelayChoice::None, Limits::default())
+            .unwrap();
     let srv = server.addr();
     let h = host(2);
     let regs = |n: usize| {
@@ -347,10 +378,19 @@ fn stop_rendezvous_unregisters_and_strict_port() {
             true => RendezvousServer::start_strict,
             false => RendezvousServer::start,
         };
-        f(lo(1).into(), port, None, RelayChoice::None, Limits::default())
+        f(
+            lo(1).into(),
+            port,
+            None,
+            RelayChoice::None,
+            Limits::default(),
+        )
     };
     let e = start(true).err().unwrap().to_string();
-    assert!(e.starts_with(&format!("cannot bind UDP {}:{port}: ", lo(1))), "{e}");
+    assert!(
+        e.starts_with(&format!("cannot bind UDP {}:{port}: ", lo(1))),
+        "{e}"
+    );
     let other = start(false).unwrap();
     assert!(other.addr().addrs.iter().all(|a| a.port() != port));
 }
@@ -374,9 +414,7 @@ fn frame_flood_from_a_registrant_is_cut_off() {
         for _ in 0..100 {
             Msg::Ping.encode(&mut pings).unwrap();
         }
-        let flood = async {
-            while send.write_all(&pings).await.is_ok() {}
-        };
+        let flood = async { while send.write_all(&pings).await.is_ok() {} };
         let t = Instant::now();
         let cut = tokio::time::timeout(Duration::from_secs(12), async {
             tokio::select! {

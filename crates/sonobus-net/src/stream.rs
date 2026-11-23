@@ -946,14 +946,16 @@ impl TxStream {
         let Some(si) = self.subs.iter().position(|s| s.id == id) else {
             return;
         };
-        let rate = f64::from(self.bitrate(usize::from(self.subs[si].encoding))) / 8.0
-            * RESEND_SHARE;
+        let rate =
+            f64::from(self.bitrate(usize::from(self.subs[si].encoding))) / 8.0 * RESEND_SHARE;
         let burst = (rate * RESEND_BURST.as_secs_f64()).max(2.0 * MAX_DATAGRAM as f64);
         let sub = &mut self.subs[si];
         if sub.paused {
             return;
         }
-        let dt = sub.refilled.map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f64());
+        let dt = sub
+            .refilled
+            .map_or(0.0, |t| now.saturating_duration_since(t).as_secs_f64());
         sub.tokens = (sub.tokens + rate * dt).min(burst);
         sub.refilled = Some(now);
         let e = usize::from(sub.encoding);
@@ -987,7 +989,10 @@ impl TxStream {
                 if sent >= MAX_RESEND_PER_NACK {
                     return;
                 }
-                let done = b.resent.iter().find(|r| r.0 == id && usize::from(r.1) == fi);
+                let done = b
+                    .resent
+                    .iter()
+                    .find(|r| r.0 == id && usize::from(r.1) == fi);
                 if done.is_some_and(|r| r.2 >= RESEND_RETRIES) {
                     continue;
                 }
@@ -998,7 +1003,11 @@ impl TxStream {
                 sub.tokens -= len;
                 sent += 1;
                 let _ = wire::fragment_at(&h, block, fi, |d| out(id, Bytes::copy_from_slice(d)));
-                match b.resent.iter_mut().find(|r| r.0 == id && usize::from(r.1) == fi) {
+                match b
+                    .resent
+                    .iter_mut()
+                    .find(|r| r.0 == id && usize::from(r.1) == fi)
+                {
                     Some(r) => r.2 += 1,
                     None => b.resent.push((id, fi as u8, 1)),
                 }
@@ -1465,8 +1474,8 @@ impl Active {
         }
         // the frame at the output when the next block is due, against where that block goes
         let sr = f64::from(self.format.sample_rate);
-        let due = secs(p.due, self.epoch)
-            + (next as f64 - f64::from(p.seq)) * self.format.block_secs();
+        let due =
+            secs(p.due, self.epoch) + (next as f64 - f64::from(p.seq)) * self.format.block_secs();
         let e = a + due * sr - self.pushed as f64;
         // an honest target is due at most `span` after now: anything later is no target
         let span = p.span.as_secs_f64().min(f64::from(MAX_BUFFER_MS) * 1e-3);
@@ -1484,7 +1493,8 @@ impl Active {
         if seq < next {
             let behind = seq.abs_diff(next) as usize;
             let new = self.jb.played & (1 << (behind - 1).min(63)) == 0;
-            return (new && behind <= self.prefill).then(|| fill - (behind * self.block_frames) as f64);
+            return (new && behind <= self.prefill)
+                .then(|| fill - (behind * self.block_frames) as f64);
         }
         let i = (seq - next) as usize;
         let first = self.jb.queue.get(i).is_none_or(|e| !e.have);
@@ -1514,7 +1524,10 @@ impl Active {
     /// One raise per [`LIFT_HOLD`]; one that would not fit under the cap is not made (the
     /// buffer is too small for that lateness). Each raise is a gap: counted as a lost block.
     fn late_block(&mut self, now: Instant, h: f64, c: &mut Counters) {
-        if self.lift_at.is_some_and(|t| now.saturating_duration_since(t) < LIFT_HOLD) {
+        if self
+            .lift_at
+            .is_some_and(|t| now.saturating_duration_since(t) < LIFT_HOLD)
+        {
             return;
         }
         // what it lacked, and a block and the reordering hold more (the callback's phase moves
@@ -1589,7 +1602,9 @@ impl Active {
     fn went_late(&self, now: Instant) -> bool {
         let s = self.second(now);
         let ago = |at: u64| s.saturating_sub(at);
-        self.lows.iter().any(|&(at, _, late)| late && (2..LOWS as u64).contains(&ago(at)))
+        self.lows
+            .iter()
+            .any(|&(at, _, late)| late && (2..LOWS as u64).contains(&ago(at)))
     }
 
     /// Our own correction moved what plays before any later block by `d` frames.
@@ -1627,7 +1642,9 @@ impl Active {
         if !live {
             self.reported = None;
         }
-        let e = p.filter(|_| !self.rebuffer).and_then(|p| self.sync_error(p));
+        let e = p
+            .filter(|_| !self.rebuffer)
+            .and_then(|p| self.sync_error(p));
         let Some(e) = e else {
             self.reported = None;
             self.sync_err = None;
@@ -1720,7 +1737,9 @@ impl Active {
         let read = self.pushed - self.fill_frames() as u64;
         let pulled = (read - self.read_at) as usize;
         self.read_at = read;
-        let expired = self.pull_at.is_none_or(|t| now.saturating_duration_since(t) > PULL_HOLD);
+        let expired = self
+            .pull_at
+            .is_none_or(|t| now.saturating_duration_since(t) > PULL_HOLD);
         if pulled >= self.pull || expired {
             self.pull = pulled;
             self.pull_at = Some(now);
@@ -1745,7 +1764,11 @@ impl Active {
             let run = if synced {
                 1
             } else {
-                self.jb.queue.iter().rposition(|e| e.have).map_or(1, |i| i + 1)
+                self.jb
+                    .queue
+                    .iter()
+                    .rposition(|e| e.have)
+                    .map_or(1, |i| i + 1)
             };
             let have = self.fill_frames() / self.block_frames + run;
             let normal = self.prefill.saturating_sub(have) * self.block_frames;
@@ -1771,7 +1794,14 @@ impl Active {
                 && out.len() < MAX_NACK
                 && let Some(next) = self.jb.next
             {
-                ask_for(&mut self.reasm, now, *stream, self.generation, next as u32, out);
+                ask_for(
+                    &mut self.reasm,
+                    now,
+                    *stream,
+                    self.generation,
+                    next as u32,
+                    out,
+                );
             }
             if !self.play_front(c) {
                 break;
@@ -1855,7 +1885,8 @@ impl Active {
         // concealed but before it would have played raises the buffer, see `late_block`), or
         // with sync before it is concealed
         let conceal = if sync { self.conceal_at() } else { 0 };
-        let slack = (self.fill_frames() as f64 - conceal as f64) / f64::from(self.format.sample_rate);
+        let slack =
+            (self.fill_frames() as f64 - conceal as f64) / f64::from(self.format.sample_rate);
         let rtt_s = rtt.as_secs_f64();
         let retry = rtt.saturating_add(Duration::from_secs_f64(block));
         // reordering tolerance before the first NACK
@@ -2025,9 +2056,9 @@ impl RxStream {
     /// over its jitter buffer target). It stays until buffering restarts (an underrun,
     /// [`Self::set_buffer_ms`], [`Self::flush`]).
     pub fn lift_ms(&self) -> f32 {
-        self.st
-            .as_ref()
-            .map_or(0.0, |st| (st.lifted * 1e3 / f64::from(st.format.sample_rate)) as f32)
+        self.st.as_ref().map_or(0.0, |st| {
+            (st.lifted * 1e3 / f64::from(st.format.sample_rate)) as f32
+        })
     }
 
     /// New jitter buffer target. As the legacy sink, this restarts buffering (queued audio is
@@ -2071,7 +2102,8 @@ impl RxStream {
             lowered = new.generation == old.generation && new.span < old.span;
         }
         // sync starting over a buffer unsynced playout raised: from the jitter target instead
-        let syncs = |p: Option<Playout>, st: &Active| p.is_some_and(|p| p.generation == st.generation);
+        let syncs =
+            |p: Option<Playout>, st: &Active| p.is_some_and(|p| p.generation == st.generation);
         let raised = self
             .st
             .as_ref()
@@ -2081,7 +2113,11 @@ impl RxStream {
             // off: the ring as if sync had never been on; else room for half as much again, so
             // that a target moving later does not drop the buffered audio
             if off || span > self.span_ms {
-                self.span_ms = if off { 0.0 } else { (span * 1.5).min(MAX_BUFFER_MS) };
+                self.span_ms = if off {
+                    0.0
+                } else {
+                    (span * 1.5).min(MAX_BUFFER_MS)
+                };
             }
             self.shared.steer_ppm.store(0, Ordering::Relaxed);
             self.rebuild();
@@ -2367,7 +2403,14 @@ impl RxStream {
             st.steer(self.playout.as_ref(), now, &self.shared, self.playing);
             if enabled {
                 st.expect_tail(now);
-                st.scan_nacks(self.stream, now, rtt, self.opts.nack_retries, sync, &mut self.nacks);
+                st.scan_nacks(
+                    self.stream,
+                    now,
+                    rtt,
+                    self.opts.nack_retries,
+                    sync,
+                    &mut self.nacks,
+                );
             }
         }
         self.flush_counters();
@@ -2579,7 +2622,9 @@ mod tests {
         };
         let all: Vec<(u32, u8)> = (0..100).map(|s| (s, NACK_ALL)).collect();
         let raw = nack(&all[..MAX_NACK.min(100)]);
-        let Ok(wire::Datagram::Nack(n)) = wire::Datagram::decode(&raw) else { panic!() };
+        let Ok(wire::Datagram::Nack(n)) = wire::Datagram::decode(&raw) else {
+            panic!()
+        };
         let mut bytes = [0usize; 3];
         let flood = |tx: &mut TxStream, id: u64, now: Instant, bytes: &mut [usize; 3]| {
             tx.handle_nack_at(now, id, &n, |to, d| {
@@ -2613,13 +2658,22 @@ mod tests {
         for s in 2..60 {
             flood(&mut tx, 1, t0 + Duration::from_secs(s), &mut bytes);
         }
-        let resent: usize = tx.history.iter().flat_map(|b| &b.resent).filter(|r| r.0 == 1)
-            .map(|r| usize::from(r.2)).sum();
+        let resent: usize = tx
+            .history
+            .iter()
+            .flat_map(|b| &b.resent)
+            .filter(|r| r.0 == 1)
+            .map(|r| usize::from(r.2))
+            .sum();
         assert_eq!(resent, 100 * usize::from(RESEND_RETRIES));
         // blocks before the history or not sent yet: nothing, cheaply
         let raw = nack(&[(5000, NACK_ALL), (u32::MAX, 0)]);
-        let Ok(wire::Datagram::Nack(n2)) = wire::Datagram::decode(&raw) else { panic!() };
-        tx.handle_nack_at(t0 + Duration::from_secs(70), 2, &n2, |_, _| panic!("resent"));
+        let Ok(wire::Datagram::Nack(n2)) = wire::Datagram::decode(&raw) else {
+            panic!()
+        };
+        tx.handle_nack_at(t0 + Duration::from_secs(70), 2, &n2, |_, _| {
+            panic!("resent")
+        });
         // paused
         tx.set_resend_paused(2, true);
         tx.handle_nack_at(t0 + Duration::from_secs(80), 2, &n, |_, _| panic!("paused"));
@@ -2667,12 +2721,16 @@ mod tests {
         let c0 = copies();
         // fragment 7 of single-datagram blocks, with plenty of budget
         for s in 1..20 {
-            tx.handle_nack_at(t0 + Duration::from_secs(s), 1, &absent, |_, _| panic!("sent"));
+            tx.handle_nack_at(t0 + Duration::from_secs(s), 1, &absent, |_, _| {
+                panic!("sent")
+            });
         }
         assert_eq!(copies(), c0);
         // an empty bucket (a new subscriber)
         tx.subscribe(2, 0, 0);
-        tx.handle_nack_at(t0 - Duration::from_millis(500), 2, &all, |_, _| panic!("sent"));
+        tx.handle_nack_at(t0 - Duration::from_millis(500), 2, &all, |_, _| {
+            panic!("sent")
+        });
         assert_eq!(copies(), c0);
         // within the budget
         let mut sent = 0;
@@ -2721,7 +2779,9 @@ mod tests {
             let mut bytes = 0;
             for _ in 0..blocks {
                 let x: Vec<f32> = (0..480)
-                    .map(|i| ((k * 480 + i) as f32 * 0.05).sin() * 0.5 + ((i * 7919) % 13) as f32 * 0.01)
+                    .map(|i| {
+                        ((k * 480 + i) as f32 * 0.05).sin() * 0.5 + ((i * 7919) % 13) as f32 * 0.01
+                    })
                     .collect();
                 assert!(audio.process(&[&x[..]], t0 + Duration::from_millis(10 * u64::from(k))));
                 k += 1;
@@ -2738,8 +2798,8 @@ mod tests {
         assert!(low * 2 < high, "{high} -> {low}");
         assert_eq!(tx.wire_format().generation, generation, "no new generation");
         assert!(!tx.set_bitrate(1, 1000), "no such encoding");
-        let (mut p, _) = TxStream::new(0, dev, pcm(&[PcmBitDepth::Int16]), TxOptions::default())
-            .unwrap();
+        let (mut p, _) =
+            TxStream::new(0, dev, pcm(&[PcmBitDepth::Int16]), TxOptions::default()).unwrap();
         assert!(!p.set_bitrate(0, 1000));
         assert_eq!(p.bitrate(0), 16 * 48000 * 2);
     }

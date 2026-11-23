@@ -18,8 +18,9 @@ mod port;
 pub use cpal;
 pub use cpal::{DeviceId, Error, ErrorKind, HostId};
 pub use device::{
-    AppSource, DeviceChange, DeviceInfo, DeviceWatcher, InputConfig, InputSource, Session, SessionConfig,
-    StreamEvent, StreamRole, APP_REUSE, app_capture_supported, app_sources, default_host, devices, hosts,
+    APP_REUSE, AppSource, DeviceChange, DeviceInfo, DeviceWatcher, InputConfig, InputSource,
+    Session, SessionConfig, StreamEvent, StreamRole, app_capture_supported, app_sources,
+    default_host, devices, hosts,
 };
 
 pub use duplex::{AudioBlock, Duplex, MAX_CHANNELS, default_margin};

@@ -292,12 +292,15 @@ fn public_diff(known: &[(Arc<str>, i32)], now: &[(Arc<str>, i32)]) -> Vec<Vec<u8
             .ok()
             .map(|i| v[i].1)
     };
-    let adds = now.iter().filter(|(n, c)| find(known, n) != Some(*c)).map(|(n, c)| {
-        frame(&Message::ClientGroupPublicAdd {
-            group: n,
-            users: *c,
-        })
-    });
+    let adds = now
+        .iter()
+        .filter(|(n, c)| find(known, n) != Some(*c))
+        .map(|(n, c)| {
+            frame(&Message::ClientGroupPublicAdd {
+                group: n,
+                users: *c,
+            })
+        });
     let dels = known
         .iter()
         .filter(|(n, _)| find(now, n).is_none())
@@ -1562,10 +1565,7 @@ mod tests {
         );
         // another IP is not affected
         join_at(&mut s, 3, "g", false, t1);
-        assert_eq!(
-            join_errors(&tcp_out(&mut s), 3),
-            [("g".into(), "".into())]
-        );
+        assert_eq!(join_errors(&tcp_out(&mut s), 3), [("g".into(), "".into())]);
         assert_eq!(
             s.refusals(),
             Refusals {
@@ -1742,10 +1742,13 @@ mod tests {
             "ff02::1",
             &long,
         ];
-        let cases = [(0, 1, "1.2.3.4", "1.1.1.1"), (65536, 1, "1.2.3.4", "1.1.1.1")]
-            .into_iter()
-            .chain([(1, -1, "1.2.3.4", "1.1.1.1"), (1, 1, &*long, "1.1.1.1")])
-            .chain(bad_public.map(|p| (1, 1, "1.2.3.4", p)));
+        let cases = [
+            (0, 1, "1.2.3.4", "1.1.1.1"),
+            (65536, 1, "1.2.3.4", "1.1.1.1"),
+        ]
+        .into_iter()
+        .chain([(1, -1, "1.2.3.4", "1.1.1.1"), (1, 1, &*long, "1.1.1.1")])
+        .chain(bad_public.map(|p| (1, 1, "1.2.3.4", p)));
         for (pp, lp, lip, pip) in cases {
             let mut m = login_msg("a", 1);
             if let Message::ServerLogin {
@@ -1783,7 +1786,6 @@ mod tests {
             }
         );
     }
-
 
     /// The biggest bursts of output fit the send queue in both presets: a full public list
     /// (built here, worst case under the limits) and the peer joins for one group join.

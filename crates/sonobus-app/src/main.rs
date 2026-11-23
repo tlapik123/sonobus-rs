@@ -26,8 +26,15 @@ fn main() -> ExitCode {
         println!("sonobus version {}", env!("CARGO_PKG_VERSION"));
         return ExitCode::SUCCESS;
     }
-    let settings_dir = cli.settings_dir.as_ref().map(PathBuf::from).or_else(settings::app_dir);
-    let mut ctrl = match AppController::new(ControllerConfig { settings_dir, use_devices: !cli.no_audio }) {
+    let settings_dir = cli
+        .settings_dir
+        .as_ref()
+        .map(PathBuf::from)
+        .or_else(settings::app_dir);
+    let mut ctrl = match AppController::new(ControllerConfig {
+        settings_dir,
+        use_devices: !cli.no_audio,
+    }) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("sonobus: cannot start the engine: {e}");
@@ -46,7 +53,10 @@ fn main() -> ExitCode {
     let saved = ctrl.window();
     let size = std::env::var("SONOBUS_WINDOW_SIZE")
         .ok()
-        .and_then(|s| s.split_once('x').and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?])))
+        .and_then(|s| {
+            s.split_once('x')
+                .and_then(|(w, h)| Some([w.parse().ok()?, h.parse().ok()?]))
+        })
         .or(saved.map(|w| [w[2].max(320) as f32, w[3].max(400) as f32]))
         .unwrap_or([960.0, 760.0]);
     let mut viewport = egui::ViewportBuilder::default()
@@ -57,8 +67,15 @@ fn main() -> ExitCode {
     if let Some(w) = saved {
         viewport = viewport.with_position([w[0] as f32, w[1] as f32]);
     }
-    let options = eframe::NativeOptions { viewport, ..Default::default() };
-    match eframe::run_native("SonoBus", options, Box::new(move |_cc| Ok(Box::new(SonobusApp::new(ctrl, form))))) {
+    let options = eframe::NativeOptions {
+        viewport,
+        ..Default::default()
+    };
+    match eframe::run_native(
+        "SonoBus",
+        options,
+        Box::new(move |_cc| Ok(Box::new(SonobusApp::new(ctrl, form)))),
+    ) {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("sonobus: {e} (run with --headless to use it without a window)");
@@ -94,7 +111,10 @@ fn headless(mut ctrl: AppController, print_invite: bool) {
         }
         let a = match &vm.audio.state {
             Some(sonobus_app::audio::DeviceState::Retrying { error, .. }) => {
-                format!("audio device error: {} (retrying; null audio meanwhile)", sonobus_app::clean(error, 400))
+                format!(
+                    "audio device error: {} (retrying; null audio meanwhile)",
+                    sonobus_app::clean(error, 400)
+                )
             }
             Some(s) => format!("audio: {s:?}"),
             None => String::new(),
