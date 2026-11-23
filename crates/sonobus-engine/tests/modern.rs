@@ -486,7 +486,9 @@ fn induced_loss_is_repaired_and_adaptation_reacts() {
     // (shared CI runners do not always keep the test's audio loop at real-time pace: 45
     // repaired in "3 s" on macOS, 48 on Windows; what counts is that few are concealed)
     assert!(r1 - r0 > 25 && d1 - d0 < 10, "NACK repairs it");
-    assert!(near(b.tone(0, 440.0), CENTRE, 0.15));
+    // (not at this very moment: one concealed block inside the analysis window is enough to
+    // miss the level, and a few are allowed above)
+    assert!(hears(&mut [&mut a, &mut b], 1, 0, 440.0, CENTRE));
     assert_eq!(level(&a), Some((0, 0)), "nothing left for the adaptation");
 
     b.e.set_modern_receive_loss(50);

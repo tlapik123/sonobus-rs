@@ -17,9 +17,20 @@ fn set_params(h: &Host, f: impl FnOnce(&mut sonobus_core::state::Params)) {
     let p = h.plugin.sb_params();
     let mut c = p.to_core();
     f(&mut c);
-    p.set_from_core(&c);
-    // the parameter thread forwards it within 10 ms
-    std::thread::sleep(std::time::Duration::from_millis(60));
+    // The parameter thread forwards it on its 10 ms poll, and after a state load it first
+    // switches the metronome off again. On a slow runner neither had happened 60 ms later
+    // (macOS CI: no metronome clicks at all), so set it until the engine has it.
+    let start = std::time::Instant::now();
+    loop {
+        p.set_from_core(&c);
+        let want = p.to_core();
+        std::thread::sleep(std::time::Duration::from_millis(30));
+        let arrived = h.plugin.session().engine().is_none_or(|e| e.state().params == want);
+        if arrived && p.to_core() == want {
+            break;
+        }
+        assert!(start.elapsed().as_secs() < 10, "the parameters never reached the engine");
+    }
 }
 
 #[test]
@@ -144,6 +155,10 @@ fn plugin_default_file_applies_without_input_groups() {
 fn metronome_follows_host_tempo_and_beat() {
     let mut h = Host::new(0.0); // silent input
     assert!(h.activate(SR, BLOCK as u32, 1));
+    // the audio side takes what activation queued, so that the change below reaches it at once
+    for _ in 0..20 {
+        h.block(BLOCK);
+    }
     set_params(&h, |p| {
         p.met_enabled = true;
         p.met_tempo = 100.0; // the host's 120 bpm must win (syncMetHost, plugin default on)
