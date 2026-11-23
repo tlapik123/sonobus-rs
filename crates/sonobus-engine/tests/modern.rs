@@ -67,6 +67,12 @@ fn hears(nodes: &mut [&mut Node], node: usize, ch: usize, freq: f64, amp: f32) -
     ok
 }
 
+/// `node` stops hearing `freq` on `ch`. Not checked at one moment: the analysis window is
+/// half a second of audio, which a slow test loop (macOS CI) has not replaced when expected.
+fn silent(nodes: &mut [&mut Node], node: usize, ch: usize, freq: f64) -> bool {
+    eventually(nodes, 5.0, |n| n[node].tone(ch, freq) < 0.01)
+}
+
 #[test]
 fn two_engines_opus_mono_by_invite_then_leave() {
     let _serial = serial();
@@ -195,14 +201,15 @@ fn three_engines_controls_then_the_host_leaves() {
     b.e.set_peer_level(pa, 1.0);
     b.e.update_peer_groups(pa, |g, _| g[0].pans[0] = -1.0);
     assert!(hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, AMP));
-    assert!(b.tone(1, 440.0) < 0.01);
+    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 1, 440.0));
     b.e.set_peer_soloed(pc, true);
     run(&mut [&mut a, &mut b, &mut c], 0.6);
-    assert!(b.tone(0, 440.0) < 0.01);
+    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0));
     b.e.set_peer_soloed(pc, false);
     // receive mute: the stream is unsubscribed
     b.e.set_peer_recv_muted(pc, true);
     run(&mut [&mut a, &mut b, &mut c], 1.0);
+<<<<<<< HEAD
     assert!(b.tone(0, 990.0) < 0.01);
     assert!(
         !b.snap()
@@ -212,6 +219,10 @@ fn three_engines_controls_then_the_host_leaves() {
             .unwrap()
             .recv_active
     );
+=======
+    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0));
+    assert!(!b.snap().peers.iter().find(|p| p.id == pc).unwrap().recv_active);
+>>>>>>> devenv-template#locki-tzytin9h
     b.e.set_peer_recv_muted(pc, false);
     assert!(
         hears(&mut [&mut a, &mut b, &mut c], 1, 0, 990.0, CENTRE),
@@ -221,11 +232,16 @@ fn three_engines_controls_then_the_host_leaves() {
     let pb = a.peer("user1");
     a.e.set_peer_send_muted(pb, true);
     run(&mut [&mut a, &mut b, &mut c], 1.0);
+<<<<<<< HEAD
     assert!(b.tone(0, 440.0) < 0.01);
     assert!(
         hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE),
         "c still hears a"
     );
+=======
+    assert!(silent(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0));
+    assert!(hears(&mut [&mut a, &mut b, &mut c], 2, 0, 440.0, CENTRE), "c still hears a");
+>>>>>>> devenv-template#locki-tzytin9h
     a.e.set_peer_send_muted(pb, false);
     assert!(
         hears(&mut [&mut a, &mut b, &mut c], 1, 0, 440.0, AMP),
@@ -1099,13 +1115,20 @@ fn end_to_end_latency_legacy_vs_modern() {
             ms(legacy),
             ms(modern)
         );
-        // both: the 40 ms buffer plus a few blocks; modern within 15 ms of legacy
+        // both: the 40 ms buffer plus a few blocks; modern within 25 ms of legacy. A stream
+        // keeps the latency it started with, and that differs from start to start (Linux:
+        // legacy 48 to 54 ms, modern 43 to 64 ms; a macOS CI runner started legacy at 26.7 ms,
+        // below its buffer, and modern at 58.7 ms), so legacy counts as its buffer at least.
         assert!(ms(legacy) < 120.0 && ms(modern) < 120.0);
+<<<<<<< HEAD
         assert!(
             ms(modern) < ms(legacy) + 15.0,
             "{} vs {}",
             ms(modern),
             ms(legacy)
         );
+=======
+        assert!(ms(modern) < ms(legacy).max(40.0) + 25.0, "{} vs {}", ms(modern), ms(legacy));
+>>>>>>> devenv-template#locki-tzytin9h
     }
 }
